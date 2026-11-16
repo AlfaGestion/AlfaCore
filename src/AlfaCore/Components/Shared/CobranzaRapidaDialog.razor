@@ -2,7 +2,7 @@
 @using AlfaCore.Services
 @using AlfaCore.Components.Shared.AlfaDesign
 
-<AlfaDialog CloseOnBackdrop="false" Open="@(Preparacion is not null)" Title="Cobranza rápida" Eyebrow="Caja y Bancos"
+<AlfaDialog CloseOnBackdrop="false" Open="@(Preparacion is not null)" Title="@(Directo ? "Cobranza" : "Cobranza rápida")" Eyebrow="Caja y Bancos"
     Size="AlfaDialogSize.Xl" Loading="@Busy" ErrorMessage="@(_error ?? Error)" OnClose="OnClose">
     <ChildContent>
         @if (Preparacion is not null)
@@ -32,12 +32,15 @@
                             }
                             else { <small>Saldo no consultado</small> }
                         </div>
+                        @if (!Directo)
+                        {
                         <div class="cobranza-editor__ingreso">
                             <span>Recibido en el banco</span>
                             <strong class="cobranza-editor__importe">$ @Dinero(Preparacion.ImporteBanco)</strong>
                             <small>@Preparacion.Fecha.ToString("dd/MM/yyyy")</small>
                             <span>@Preparacion.Medios.FirstOrDefault(m=>m.Cuenta==Preparacion.CuentaBanco)?.Descripcion</span>
                         </div>
+                        }
                     </section>
                     <h3>1. Facturas a cancelar</h3>
                     <p>Seleccioná las facturas. Podés corregir el importe aplicado a cada una.</p>
@@ -58,7 +61,7 @@
                     </table></div>
                     <p>@_seleccionadas.Count factura(s) · Pendiente seleccionado: <strong>@Dinero(SaldoSeleccionado)</strong>.</p>
                 }
-                <h3>2. Banco y retenciones</h3>
+                <h3>@(Directo ? "2. Medios de pago" : "2. Banco y retenciones")</h3>
                 @foreach (var linea in _lineas)
                 {
                     <div class="cobranza-editor__medio" @key="linea">
@@ -69,11 +72,11 @@
                         }
                         else
                         {
-                            <AlfaSelect Label="Retención" Value="@linea.Cuenta"
-                                ValueChanged="v => { linea.Cuenta=v ?? string.Empty; linea.Sugerida=false; }" Options="@OpcionesRetenciones"
-                                Placeholder="Seleccionar retención" Disabled="@Busy" />
+                            <AlfaSelect Label="@(Directo ? "Medio de pago" : "Retención")" Value="@linea.Cuenta"
+                                ValueChanged="v => { linea.Cuenta=v ?? string.Empty; linea.Sugerida=false; linea.Auto=false; }" Options="@OpcionesRetenciones"
+                                Placeholder="@(Directo ? "Seleccionar medio de pago" : "Seleccionar retención")" Disabled="@Busy" />
                             <AlfaInput Label="Importe" Type="number" Step="0.01" Value="@linea.Importe"
-                                ValueChanged="v => { linea.Importe=v ?? string.Empty; linea.Sugerida=false; }" Disabled="@Busy" />
+                                ValueChanged="v => { linea.Importe=v ?? string.Empty; linea.Sugerida=false; linea.Auto=false; }" Disabled="@Busy" />
                         }
                         @if (!linea.Banco)
                         {
@@ -81,14 +84,15 @@
                             {
                                 <p class="cobranza-editor__sugerencia">Retención sugerida por la diferencia pendiente, según CB @anterior.Comprobante del @anterior.Fecha.ToString("dd/MM/yyyy"). Podés corregirla o quitarla.</p>
                             }
-                            <AlfaInput Label="Certificado de retención (opcional)" Value="@linea.Certificado" ValueChanged="v => { linea.Certificado=v ?? string.Empty; linea.Sugerida=false; }"
+                            <AlfaInput Label="@(Directo ? "Referencia o certificado (opcional)" : "Certificado de retención (opcional)")" Value="@linea.Certificado" ValueChanged="v => { linea.Certificado=v ?? string.Empty; linea.Sugerida=false; }"
                                 MaxLength="50" Disabled="@Busy" />
                             <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@Busy" OnClick="() => _lineas.Remove(linea)">Quitar</AlfaButton>
                         }
                     </div>
                 }
-                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(Busy || _lineas.Count>=20)" OnClick="AgregarRetencion">Agregar retención</AlfaButton>
-                @if (!_ajusteActivo)
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(Busy || _lineas.Count>=20)" OnClick="AgregarRetencion">@(Directo ? "Agregar medio de pago" : "Agregar retención")</AlfaButton>
+                @if (Directo) { }
+                else if (!_ajusteActivo)
                 {
                     <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(Busy || _seleccionadas.Count == 0 || Preparacion.CuentasAjuste.Count == 0 || DiferenciaParaAjuste == 0 || Math.Abs(DiferenciaParaAjuste) > Preparacion.LimiteAjuste)" OnClick="AgregarAjuste">Agregar ajuste de centavos</AlfaButton>
                     <p class="cobranza-editor__sugerencia">Ajuste opcional para cancelar el pendiente de las facturas seleccionadas. Límite: $ @Dinero(Preparacion.LimiteAjuste). No se registra como impuesto ni retención.</p>
@@ -138,6 +142,8 @@
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback<CobranzaSolicitud> OnConfirm { get; set; }
     [Parameter] public string? ComprobantePreferido { get; set; }
+    // Módulo Cobranzas: sin movimiento bancario; los medios (banco, efectivo, retenciones) y sus importes los carga el usuario.
+    [Parameter] public bool Directo { get; set; }
     private CobranzaPreparacion? _anterior;
     private Guid _operacion;
     private string _factura="",_talonario="",_fecha="";
@@ -191,7 +197,7 @@
     private IReadOnlyList<AlfaSelectOption> OpcionesTalonarios => TalonariosUnidad.Select(t=>new AlfaSelectOption(t.Talonario.ToString(),t.Display)).ToList();
     private IReadOnlyList<AlfaSelectOption> OpcionesBanco => Preparacion?.Medios.Where(m=>m.Cuenta==Preparacion.CuentaBanco)
         .Select(m=>new AlfaSelectOption(m.Cuenta,$"{m.Cuenta} — {m.Descripcion}")).ToList() ?? [];
-    private IReadOnlyList<AlfaSelectOption> OpcionesRetenciones => Preparacion?.Medios.Where(m=>m.Tipo!="DB"&&m.Moneda=="1")
+    private IReadOnlyList<AlfaSelectOption> OpcionesRetenciones => Preparacion?.Medios.Where(m=>(Directo||m.Tipo!="DB")&&m.Moneda=="1")
         .Select(m=>new AlfaSelectOption(m.Cuenta,$"{m.Descripcion} ({m.Tipo})")).ToList() ?? [];
     private decimal Total => _lineas.Sum(l=>decimal.TryParse(l.Importe,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0)+(_ajusteActivo?ParsearImporte(_importeAjuste):0);
     private CobranzaRetencionSugerida? UltimaRetencion => Preparacion?.RetencionesSugeridas.FirstOrDefault(r=>
@@ -204,7 +210,8 @@
         _operacion=Guid.NewGuid(); _detalle=_detalleSugerido="";
         if(Preparacion is null) return;
         _fecha=Preparacion.Fecha.ToString("yyyy-MM-dd");
-        _lineas.Add(new() { Banco=true,Cuenta=Preparacion.CuentaBanco,Importe=Preparacion.ImporteBanco.ToString("0.00",Invariante) });
+        if(Directo) _lineas.Add(new() { Auto=true });
+        else _lineas.Add(new() { Banco=true,Cuenta=Preparacion.CuentaBanco,Importe=Preparacion.ImporteBanco.ToString("0.00",Invariante) });
         var propuestaId=Preparacion.AplicacionesSugeridas.FirstOrDefault()?.FacturaId;
         CambiarFactura((Preparacion.Documentos.FirstOrDefault(d=>$"{d.Tc}|{d.Comprobante}"==ComprobantePreferido)
             ?? Preparacion.Documentos.FirstOrDefault(d=>d.Id==propuestaId) ?? Preparacion.Documentos.First()).Id.ToString());
@@ -234,15 +241,24 @@
         if(seleccionar) _seleccionadas.Add(documento.Id); else { _seleccionadas.Remove(documento.Id);_importesManuales.Remove(documento.Id); }
         _seleccionSugerida=false;_error=null;ActualizarRetencionSugerida();
     }
+    // En cobranza directa la primera línea acompaña al pendiente seleccionado hasta que el usuario la edita.
+    private void AutoCompletarDirecto()
+    {
+        if(!Directo||_lineas.FirstOrDefault(l=>l.Auto) is not { } auto) return;
+        var otros=_lineas.Where(l=>l!=auto).Sum(l=>ParsearImporte(l.Importe));
+        var importe=Math.Max(0,SaldoSeleccionado-otros);
+        auto.Importe=importe>0 ? importe.ToString("0.00",Invariante) : "";
+    }
     private void ActualizarRetencionSugerida()
     {
+        if(Directo){ AutoCompletarDirecto(); return; }
         _lineas.RemoveAll(l=>l.Sugerida);
         if(!_lineas.Any(l=>!l.Banco) && UltimaRetencion is { } retencion && SaldoSeleccionado>Total)
             _lineas.Add(new() { Cuenta=retencion.Cuenta,Importe=(SaldoSeleccionado-Total).ToString("0.00",Invariante),Sugerida=true });
     }
     private void AgregarRetencion() => _lineas.Add(new() {
-        Cuenta=UltimaRetencion?.Cuenta ?? "",
-        Importe=SaldoSeleccionado>Total ? (SaldoSeleccionado-Total).ToString("0.00",Invariante) : ""
+        Cuenta=Directo ? "" : UltimaRetencion?.Cuenta ?? "",
+        Importe=!Directo && SaldoSeleccionado>Total ? (SaldoSeleccionado-Total).ToString("0.00",Invariante) : ""
     });
     private void AgregarAjuste()
     {
@@ -285,6 +301,7 @@
     {
         public bool Banco { get; set; }
         public bool Sugerida { get; set; }
+        public bool Auto { get; set; }
         public string Cuenta { get; set; }="";
         public string Importe { get; set; }="";
         public string Certificado { get; set; }="";

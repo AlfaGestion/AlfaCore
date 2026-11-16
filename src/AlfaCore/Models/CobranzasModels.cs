@@ -11,6 +11,7 @@ public sealed class CobranzaDocumento
     public string Moneda { get; set; } = "";
     public decimal Saldo { get; set; }
     public DateTime Fecha { get; set; }
+    public DateTime? Vencimiento { get; set; }
     public string DetallePredeterminado => $"Cob. {Nombre.Trim()}";
     public string Display => $"{Tc} {Comprobante[..4]}-{Comprobante.Substring(4,8)} {Comprobante[^1]} · Saldo {Saldo.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}";
 }
@@ -69,6 +70,9 @@ public sealed class CobranzaRetencionSugerida
     public DateTime Fecha { get; set; }
 }
 
+// Filtros de la pantalla Cobranzas. Fechas sobre la fecha del comprobante, ambas inclusive.
+public sealed record CobranzaFiltro(string Buscar="",DateTime? Desde=null,DateTime? Hasta=null,string Unidad="",bool SoloVencidos=false);
+public sealed record CobranzaUnidad(string Codigo,string Descripcion);
 public sealed record CobranzaPago(string Cuenta, decimal Importe, string Certificado = "");
 public sealed record CobranzaAplicacion(int FacturaId, decimal Importe);
 public sealed record CobranzaAjuste(string Cuenta, decimal Importe, string Motivo, bool RecordarCuenta = true);

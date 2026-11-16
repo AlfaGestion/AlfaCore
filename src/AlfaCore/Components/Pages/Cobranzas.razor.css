@@ -1,0 +1,16 @@
+.cobranzas-search { width: 100%; }
+.cobranzas-search.smart-search .cobranzas-filter-panel { display: block; width: min(820px, calc(100vw - 40px)); right: 0; left: auto; padding: 1rem; max-height: 70vh; overflow: auto; }
+.cobranzas-filtros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; align-items: end; margin-bottom: 1rem; }
+.cobranzas-opciones { display: grid; gap: .6rem; }
+@media (max-width: 650px) { .cobranzas-filtros { grid-template-columns: 1fr; } }
+
+.cobranzas-page__lista { display: flex; flex-direction: column; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md, 8px); overflow: hidden; margin-bottom: 12px; }
+.cobranzas-page__cliente { display: grid; grid-template-columns: minmax(0, 1fr) 150px 110px 140px 90px; gap: 16px; align-items: center; padding: 10px 14px; background: var(--alfa-bg-surface); }
+.cobranzas-page__cliente + .cobranzas-page__cliente { border-top: 1px solid var(--alfa-border-default); }
+.cobranzas-page__cliente small { display: block; opacity: .7; }
+.cobranzas-page__encabezado { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; opacity: .75; padding-top: 8px; padding-bottom: 8px; }
+.cobranzas-page__importe { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) {
+    .cobranzas-page__cliente { grid-template-columns: minmax(0, 1fr) auto; }
+    .cobranzas-page__encabezado { display: none; }
+}

@@ -4,6 +4,19 @@
 
 Relevamiento e implementación inicial del 19/10/2026. Cobranza rápida CB desde Conciliación con servicio y editor compartidos para el futuro módulo Cobranzas. Validación en ALFANET2007_PRUEBAS, servidor 10.8.0.31, mediante la conexión de sesión, sin credenciales en código. Ver resultados de pruebas al final de este documento.
 
+## Pantalla Cobranzas (2026-11-16)
+
+Opción web **Ventas > Cobranzas** (`/ventas/cobranzas`, clave `D6003`, la misma que usa el legacy en el menú Ventas; script `2026-11-16-001__ventas_cobranzas_menu_web.sql`). Es el recibo CB de un cliente sin extracto bancario, equivalente a `Cobranzas.vbp` del legacy.
+
+- **Flujo:** buscar cliente (código, nombre o CUIT, mínimo 2 caracteres) → lista de clientes con pendientes agrupados por cliente y unidad de negocio → «Cobrar» abre `CobranzaRapidaDialog` con `Directo="true"`.
+- **Saldos de comprobantes:** salen de `VE_CPTES_SALDOS_VENTAS`, igual que el legacy (`CobranzasService.Documentos`). Solo comprobantes en pesos (FC, FP, ND).
+- **Saldo del cliente:** una sola suma en moneda local de `MV_ASIENTOS`. `IMPORTE` está siempre en moneda local y `MONEDA`/`COTIZACION` son referencia: no se agrupa por moneda (agrupar separaba cobros en pesos de facturas en dólares y mostraba saldos falsos).
+- **Medios admitidos:** banco (`DB`), efectivo (`EF`) y retenciones (`RI`, `RB`, `RG`, `RO`), todos en pesos. La conciliación sigue sin efectivo.
+- **Motor:** `CobranzasService.CobrarAsync` con `MovimientoId` nulo. El permiso es `D6003` (con movimiento sigue siendo `D75-CONCILIA-IA`). Permiso inicial en `ALFACORE_TAREAS_WEB`: usuarios que tienen D6003 en el legacy.
+- **Sin ajuste de centavos:** requiere movimiento bancario.
+
+Pendiente: cheques, tarjetas y documentos como medio de pago; anticipos y créditos sin aplicar; comprobantes en otras monedas; varias unidades en un mismo recibo; prueba en navegador contra una base con escritura.
+
 ## Compatibilidad de códigos con Alfa Gestión (2026-10-21)
 
 `CobranzasService` y `CargaComprobantesGrabador` graban los tipos de comprobante y las cuentas de movimientos sin relleno. La regla alcanza a las cabeceras, asientos, aplicaciones y tipos de origen/impresión. El formato de códigos de maestros permanece con `CodigoPk.Format`; no debe trasladarse a `TC` ni `CUENTA` en movimientos. El relleno rompe las claves concatenadas que utiliza «Ver asiento» del sistema legacy.

@@ -33,15 +33,16 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
         public string TipoMatch { get; set; } = "";
     }
 
-    private async Task<T> Ejecutar<T>(string accion, Func<SqlConnection,Usuario,Guid,CancellationToken,Task<T>> work, CancellationToken ct)
+    private async Task<T> Ejecutar<T>(string accion, Func<SqlConnection,Usuario,Guid,CancellationToken,Task<T>> work, CancellationToken ct, string? permiso = null)
     {
         if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions,users,out var session))
             throw new InvalidOperationException("Iniciá sesión en la base donde querés registrar la cobranza.");
         var connection=sessions.GetConnectionString();
         try
         {
-            if(!await permissions.HasAccessAsync(ConciliacionBancariaService.MenuKey,ct))
-                throw new InvalidOperationException("No tenés permiso para registrar cobranzas desde Conciliación.");
+            if(!await permissions.HasAccessAsync(permiso ?? ConciliacionBancariaService.MenuKey,ct))
+                throw new InvalidOperationException(permiso is null ? "No tenés permiso para registrar cobranzas desde Conciliación."
+                    : "No tenés permiso para registrar cobranzas.");
             VerificarSesion(session);
             await using var cn=new SqlConnection(connection);
             await cn.OpenAsync(ct);
@@ -57,8 +58,9 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
         catch(AppUserFacingException) { throw; }
         catch(Exception ex)
         {
-            var mensaje=ex is InvalidOperationException ? ex.Message : accion=="BuscarPagador"
+            var mensaje=ex is InvalidOperationException ? ex.Message : accion is "BuscarPagador" or "BuscarClientes"
                 ? "No se pudieron consultar los clientes y comprobantes pendientes."
+                : accion=="PrepararDirecta" ? "No se pudo preparar la cobranza del cliente."
                 : "No se pudo registrar la cobranza. Conservamos los datos para reintentar.";
             var code=await events.LogErrorAsync("Cobranzas",accion,ex,mensaje,ct:ct);
             throw new AppUserFacingException(mensaje,code,ex);
@@ -101,7 +103,8 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
     }
 
     private static async Task<IReadOnlyList<CobranzaDocumento>> Documentos(SqlConnection cn,string cliente,SqlTransaction? tx,CancellationToken ct,
-        Usuario? usuario=null,DateTime? hasta=null,string buscar="")
+        Usuario? usuario=null,DateTime? hasta=null,string buscar="",
+        DateTime? desde=null,string unidadFiltro="",DateTime? vencidoAl=null)
     {
         if(cliente.Length==0&&usuario is null)throw new InvalidOperationException("Falta el usuario para consultar pendientes.");
         var documento=new string(buscar.Where(char.IsDigit).ToArray());
@@ -109,9 +112,10 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
         var filas=(await cn.QueryAsync<CobranzaDocumento>(Cmd("""
             SELECT TOP(10001) f.ID Id,f.FECHA Fecha,LTRIM(RTRIM(f.CUENTA)) Cliente,LTRIM(RTRIM(f.NOMBRE)) Nombre,
                 LTRIM(RTRIM(f.UNEGOCIO)) Unidad,LTRIM(RTRIM(f.TC)) Tc,f.IDCOMPROBANTE Comprobante,
-                COALESCE(NULLIF(LTRIM(RTRIM(f.MONEDA)),''),asiento.Moneda) Moneda,CONVERT(decimal(18,2),s.SALDO) Saldo
+                COALESCE(NULLIF(LTRIM(RTRIM(f.MONEDA)),''),asiento.Moneda) Moneda,CONVERT(decimal(18,2),s.SALDO) Saldo,
+                s.VENCIMIENTO Vencimiento
             FROM (
-                SELECT CUENTA,TC,SUCURSAL,NUMERO,LETRA,SUM(SALDO) SALDO
+                SELECT CUENTA,TC,SUCURSAL,NUMERO,LETRA,SUM(SALDO) SALDO,MIN(ISNULL(VENCIMIENTO,FECHA)) VENCIMIENTO
                 FROM dbo.VE_CPTES_SALDOS_VENTAS
                 WHERE (@cliente='' OR LTRIM(RTRIM(CUENTA))=@cliente)
                 GROUP BY CUENTA,TC,SUCURSAL,NUMERO,LETRA HAVING CONVERT(decimal(18,2),SUM(SALDO))>0
@@ -126,25 +130,29 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             ) asiento
             WHERE (@cliente='' OR LTRIM(RTRIM(s.CUENTA))=@cliente) AND s.SALDO>0 AND ISNULL(f.ANULADA,0)=0
                 AND (@admin=1 OR LTRIM(RTRIM(f.UNEGOCIO))=@unidad)
-                AND (@hasta IS NULL OR f.FECHA<@hasta)
+                AND (@hasta IS NULL OR f.FECHA<@hasta) AND (@desde IS NULL OR f.FECHA>=@desde)
+                AND (@unidadFiltro='' OR LTRIM(RTRIM(f.UNEGOCIO))=@unidadFiltro)
+                AND (@vencidoAl IS NULL OR s.VENCIMIENTO<@vencidoAl)
                 AND (@buscar='' OR f.CUENTA LIKE @patron ESCAPE '~' OR f.NOMBRE LIKE @patron ESCAPE '~' OR f.DOCUMENTONUMERO LIKE @patron ESCAPE '~'
                     OR (@documento<>'' AND REPLACE(REPLACE(REPLACE(f.DOCUMENTONUMERO,'-',''),'.',''),' ','') LIKE @patronDocumento))
                 AND LTRIM(RTRIM(f.TC)) IN ('FC','FP','ND')
             ORDER BY f.FECHA,f.ID;
-            """,new { cliente,admin=usuario?.Admin??true,unidad=usuario?.Unidad??"",hasta,buscar,
+            """,new { cliente,admin=usuario?.Admin??true,unidad=usuario?.Unidad??"",hasta,buscar,desde,unidadFiltro,vencidoAl,
                 patron="%"+buscar.Replace("~","~~").Replace("%","~%").Replace("_","~_").Replace("[","~[")+"%",
                 documento,patronDocumento="%"+documento+"%" },tx,ct))).AsList();
         if(filas.Count>10000)throw new InvalidOperationException("Hay más de 10.000 facturas pendientes. Buscá por nombre, código o documento del cliente para acotar la consulta.");
         return filas;
     }
 
-    private static async Task<IReadOnlyList<CobranzaMedio>> Medios(SqlConnection cn,SqlTransaction? tx,CancellationToken ct)
+    // Efectivo (EF) solo en la cobranza directa: la conciliación cobra por banco y retenciones.
+    private static async Task<IReadOnlyList<CobranzaMedio>> Medios(SqlConnection cn,SqlTransaction? tx,CancellationToken ct,bool incluirEfectivo=false)
         => (await cn.QueryAsync<CobranzaMedio>(Cmd("""
             SELECT LTRIM(RTRIM(CODIGO)) Cuenta,LTRIM(RTRIM(DESCRIPCION)) Descripcion,
                 LTRIM(RTRIM(MEDIODEPAGO)) Tipo,LTRIM(RTRIM(MONEDA)) Moneda
-            FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(MEDIODEPAGO)) IN ('DB','RI','RB','RG','RO')
+            FROM dbo.MA_CUENTAS WHERE (LTRIM(RTRIM(MEDIODEPAGO)) IN ('DB','RI','RB','RG','RO')
+                OR (@efectivo=1 AND LTRIM(RTRIM(MEDIODEPAGO))='EF'))
                 AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0 ORDER BY DESCRIPCION,CODIGO;
-            """,null,tx,ct))).AsList();
+            """,new{efectivo=incluirEfectivo},tx,ct))).AsList();
 
     private static async Task<IReadOnlyList<CobranzaTalonario>> Talonarios(SqlConnection cn,string unidad,SqlTransaction? tx,CancellationToken ct)
     {
@@ -223,18 +231,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             var saldoAl=DateTime.Today;
             var ajusteConfig=await LeerAjusteConfigAsync(cn,null,token);
             var cuentasAjuste=await CuentasAjusteAsync(cn,null,token);
-            var saldos=(await cn.QueryAsync<CobranzaSaldoCliente>(Cmd("""
-                SELECT LTRIM(RTRIM(a.CUENTA)) Cliente,
-                    COALESCE(NULLIF(MAX(LTRIM(RTRIM(mon.DESCRIPCION))),''),NULLIF(LTRIM(RTRIM(a.MONEDA)),''),'Sin informar') Moneda,
-                    CONVERT(decimal(19,4),SUM(CASE WHEN a.[DEBE-HABER]='D' THEN a.IMPORTE
-                        WHEN a.[DEBE-HABER]='H' THEN -a.IMPORTE ELSE 0 END)) Saldo
-                FROM dbo.MV_ASIENTOS a
-                LEFT JOIN dbo.TA_MONEDAS mon ON LTRIM(RTRIM(mon.CODIGO))=LTRIM(RTRIM(a.MONEDA))
-                WHERE LTRIM(RTRIM(a.CUENTA))=@cliente AND a.EsResumen=0 AND a.FECHA<@hasta
-                    AND (@admin=1 OR LTRIM(RTRIM(a.UNEGOCIO))=@unidad)
-                GROUP BY LTRIM(RTRIM(a.CUENTA)),LTRIM(RTRIM(a.MONEDA))
-                ORDER BY LTRIM(RTRIM(a.MONEDA));
-                """,new { cliente=mov.Cliente,hasta=saldoAl.AddDays(1),admin=user.Admin,unidad=user.Unidad },null,token))).AsList();
+            var saldos=await SaldoClienteAsync(cn,mov.Cliente,saldoAl,user,null,token);
             VerificarSesion(session);
             return new CobranzaPreparacion { MovimientoId=mov.Id,Fecha=mov.Fecha,CuentaBanco=mov.Cuenta,ImporteBanco=mov.Importe,
                 SaldoAl=saldoAl,SaldosCliente=saldos,
@@ -286,7 +283,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
                 throw new OperationCanceledException("El usuario cambió durante la cobranza.");
             tx.Commit();
             return result;
-        },ct);
+        },ct,solicitud.MovimientoId is null ? MenuKey : null);
 
     // Se usa también en ensayos con transacción externa y rollback, sin modificar producción.
     internal async Task<CobranzaResultado> GrabarEnTransaccionAsync(SqlConnection cn,SqlTransaction tx,CobranzaSolicitud solicitud,CancellationToken ct)
@@ -361,7 +358,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             throw new InvalidOperationException("La moneda del comprobante no es pesos o no se puede determinar desde su asiento.");
         if(doc is null||aplicada.Importe>doc.Saldo) throw new InvalidOperationException("El importe aplicado supera el saldo pendiente actual de uno de los comprobantes. Revisá los importes o actualizá la selección.");
         }
-        var medios=await Medios(cn,tx,ct);
+        var medios=await Medios(cn,tx,ct,incluirEfectivo:solicitud.MovimientoId is null);
         if(solicitud.Ajuste is {} ajusteValidar)
         {
             var configAjuste=await LeerAjusteConfigAsync(cn,tx,ct);
