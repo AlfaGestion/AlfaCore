@@ -497,18 +497,20 @@
     padding-right: 0.4rem;
 }
 
-.salon-config-familias {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.3rem 0.8rem;
-    max-height: 240px;
-    overflow-y: auto;
-    padding: 0.5rem;
+.salon-modal__nota {
+    margin: 0;
+    padding: 0.6rem 0.75rem;
     border: 1px solid var(--alfa-border-default);
     border-radius: var(--alfa-radius-sm, 6px);
+    font-size: var(--alfa-font-small, 0.85rem);
+    line-height: 1.45;
 }
 
-.salon-config-familias label,
+.salon-modal__nota a {
+    display: inline-block;
+    margin-top: 0.35rem;
+}
+
 .salon-check {
     display: flex;
     align-items: center;

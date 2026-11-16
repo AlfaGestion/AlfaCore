@@ -365,6 +365,9 @@ public sealed class PuntoVentaService(
         }, "No se pudieron cargar las familias del punto de venta.", ct);
 
     public Task<IReadOnlyList<PuntoVentaRubroDto>> GetRubrosAsync(CancellationToken ct = default)
+        => GetRubrosAsync(0, ct);
+
+    public Task<IReadOnlyList<PuntoVentaRubroDto>> GetRubrosAsync(int idPuntoVenta, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetRubros", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
@@ -372,14 +375,39 @@ public sealed class PuntoVentaService(
             if (!await ObjectExistsAsync(cn, "V_TA_Rubros", null, token))
                 return [];
 
-            var rows = await cn.QueryAsync<PuntoVentaRubroDto>(new CommandDefinition("""
+            var rows = (await cn.QueryAsync<PuntoVentaRubroDto>(new CommandDefinition("""
                 SELECT LTRIM(RTRIM(IdRubro)) AS IdRubro,
                        ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion
                 FROM dbo.V_TA_Rubros
                 ORDER BY Descripcion, IdRubro;
-                """, cancellationToken: token));
-            return (IReadOnlyList<PuntoVentaRubroDto>)rows.ToList();
+                """, cancellationToken: token))).ToList();
+
+            var pv = await GetPuntoVentaComercialAsync(cn, idPuntoVenta, token);
+            if (pv.Rubros.Count > 0)
+                rows = rows.Where(r => pv.Rubros.Contains(r.IdRubro.Trim(), StringComparer.OrdinalIgnoreCase)).ToList();
+            return (IReadOnlyList<PuntoVentaRubroDto>)rows;
         }, "No se pudieron cargar los rubros del punto de venta.", ct);
+
+    /// <summary>Lista, clase de precio y rubros configurados en el punto de venta (POS_PUNTOVENTA).</summary>
+    private sealed record PuntoVentaComercial(string IdLista, int? ClasePrecio, IReadOnlyList<string> Rubros)
+    {
+        public static readonly PuntoVentaComercial Vacio = new(string.Empty, null, []);
+    }
+
+    private static async Task<PuntoVentaComercial> GetPuntoVentaComercialAsync(SqlConnection cn, int idPuntoVenta, CancellationToken ct)
+    {
+        if (idPuntoVenta <= 0)
+            return PuntoVentaComercial.Vacio;
+
+        using var multi = await cn.QueryMultipleAsync(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista, CLASEPRECIO AS ClasePrecio
+            FROM dbo.POS_PUNTOVENTA WHERE ID = @Id;
+            SELECT LTRIM(RTRIM(IDRUBRO)) FROM dbo.POS_PUNTOVENTA_RUBRO WHERE IDPUNTOVENTA = @Id;
+            """, new { Id = idPuntoVenta }, cancellationToken: ct));
+        var row = await multi.ReadFirstOrDefaultAsync<(string IdLista, int? ClasePrecio)>();
+        var rubros = (await multi.ReadAsync<string>()).Where(r => !string.IsNullOrWhiteSpace(r)).ToList();
+        return new PuntoVentaComercial(row.IdLista ?? string.Empty, row.ClasePrecio is >= 1 and <= 8 ? row.ClasePrecio : null, rubros);
+    }
 
     public Task<PuntoVentaSaleResultDto> CreateSaleAsync(PuntoVentaSaleRequestDto request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "CreateSale", async token =>
@@ -1043,7 +1071,8 @@ public sealed class PuntoVentaService(
             if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
                 throw new InvalidOperationException("La base activa no tiene V_MA_ARTICULOS. No se puede consultar el catálogo del POS.");
 
-            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo);
+            var puntoVenta = await GetPuntoVentaComercialAsync(cn, filters.IdPuntoVenta, token);
+            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo, puntoVenta);
             var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
             var clasePrecioOferta = ParseClasePrecio(pricing.ClasePrecioOfertaActual);
             var ofertaSelect = clasePrecioOferta > 0
@@ -1051,6 +1080,10 @@ public sealed class PuntoVentaService(
                     ? $"ISNULL(a.PRECIO{clasePrecioOferta}, 0)"
                     : $"CASE WHEN p.FhOfertaDesde IS NOT NULL AND GETDATE() >= p.FhOfertaDesde AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN ISNULL(p.Precio{clasePrecioOferta}, 0) ELSE 0 END"
                 : "CAST(0 AS decimal(18,4))";
+            // Rubros del punto de venta (sin configurar = todos).
+            var rubrosPvFilter = puntoVenta.Rubros.Count > 0
+                ? "AND LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) IN @RubrosPv"
+                : string.Empty;
             var familyFilter = filters.IdFamilia.Trim();
             var rubroFilter = filters.IdRubro.Trim();
             var search = filters.Texto.Trim();
@@ -1087,6 +1120,8 @@ public sealed class PuntoVentaService(
             parameters.Add("Retail", pricing.Retail);
             parameters.Add("IdFamilia", familyFilter);
             parameters.Add("IdRubro", rubroFilter);
+            if (puntoVenta.Rubros.Count > 0)
+                parameters.Add("RubrosPv", puntoVenta.Rubros);
             for (var i = 0; i < palabras.Length; i++)
                 parameters.Add($"Like{i}", $"%{palabras[i]}%");
 
@@ -1137,6 +1172,7 @@ public sealed class PuntoVentaService(
                   AND (@Retail = 0 OR ISNULL(p.Precio{clasePrecio}, 0) > 0)
                   AND (@IdFamilia = '' OR LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = @IdFamilia)
                   AND (@IdRubro = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @IdRubro)
+                  {rubrosPvFilter}
                   {wordFilters}
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS
@@ -1195,6 +1231,9 @@ public sealed class PuntoVentaService(
         => GetArticuloPorCodigoAsync(codigo, null, ct);
 
     public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, string? clienteCodigo, CancellationToken ct = default)
+        => GetArticuloPorCodigoAsync(codigo, clienteCodigo, 0, ct);
+
+    public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, string? clienteCodigo, int idPuntoVenta, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetArticuloPorCodigo", async token =>
         {
             var buscar = (codigo ?? string.Empty).Trim().ToUpperInvariant();
@@ -1207,7 +1246,7 @@ public sealed class PuntoVentaService(
             if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
                 return null;
 
-            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo);
+            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo, await GetPuntoVentaComercialAsync(cn, idPuntoVenta, token));
             var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
             var clasePrecioOferta = ParseClasePrecio(pricing.ClasePrecioOfertaActual);
             var ofertaSelect = clasePrecioOferta > 0
@@ -1552,14 +1591,37 @@ public sealed class PuntoVentaService(
             ?? new ClienteIvaData(codigo?.Trim() ?? string.Empty, string.Empty);
     }
 
-    private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct, string? clienteCodigo = null)
+    private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct, string? clienteCodigo = null, PuntoVentaComercial? puntoVenta = null)
     {
         var resolved = await articuloPrecioResolver.ResolveContextAsync(cn, clienteCodigo, ct);
-        var clasePrecio = Math.Clamp(resolved.ClasePrecio, 1, 8).ToString();
+        var claseResuelta = resolved.ClasePrecio;
+        var idLista = resolved.IdLista?.Trim() ?? string.Empty;
+
+        // Lista / clase del punto de venta: reemplazan a las generales (consumidor final o cliente
+        // sin lista/clase propia). Un cliente con lista o clase propia la conserva.
+        if (puntoVenta is not null && (puntoVenta.IdLista.Length > 0 || puntoVenta.ClasePrecio is not null))
+        {
+            var codigo = (clienteCodigo ?? string.Empty).Trim();
+            var consumidorFinal = (await TryReadConfigValueAsync(cn, "CUENTACONSUMIDORFINAL", ct)).Trim();
+            (string IdLista, int Clase) propio = (string.Empty, 0);
+            if (codigo.Length > 0 && !string.Equals(codigo, consumidorFinal, StringComparison.OrdinalIgnoreCase))
+            {
+                propio = await cn.QueryFirstOrDefaultAsync<(string IdLista, int Clase)>(new CommandDefinition("""
+                    SELECT TOP (1) ISNULL(LTRIM(RTRIM(IdLista)), ''), ISNULL(Clase, 0)
+                    FROM dbo.Vt_Clientes WHERE LTRIM(RTRIM(Codigo)) = @Codigo;
+                    """, new { Codigo = codigo }, cancellationToken: ct));
+            }
+
+            if (puntoVenta.IdLista.Length > 0 && string.IsNullOrWhiteSpace(propio.IdLista))
+                idLista = puntoVenta.IdLista;
+            if (puntoVenta.ClasePrecio is { } clasePv && propio.Clase is < 1 or > 8)
+                claseResuelta = clasePv;
+        }
+
+        var clasePrecio = Math.Clamp(claseResuelta, 1, 8).ToString();
         var clasePrecioOferta = await TryReadConfigValueAsync(cn, "CLASEPRECIOOFERTA", ct);
         if (ParseClasePrecio(clasePrecioOferta) == 1 && !string.Equals(clasePrecioOferta.Trim(), "1", StringComparison.Ordinal))
             clasePrecioOferta = string.Empty;
-        var idLista = resolved.IdLista?.Trim() ?? string.Empty;
         var nombreLista = string.Empty;
         var retail = resolved.Retail;
 

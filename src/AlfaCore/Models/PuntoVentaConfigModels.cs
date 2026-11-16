@@ -20,6 +20,8 @@ public sealed class PuntoVentaCatalogosDto
     public IReadOnlyList<PuntoVentaCatalogoOpcionDto> Sucursales { get; init; } = [];
     public IReadOnlyList<PuntoVentaCatalogoOpcionDto> Cajas { get; init; } = [];
     public IReadOnlyList<PuntoVentaCatalogoOpcionDto> UnidadesNegocio { get; init; } = [];
+    public IReadOnlyList<PuntoVentaCatalogoOpcionDto> ListasPrecios { get; init; } = [];
+    public IReadOnlyList<PuntoVentaCatalogoOpcionDto> Rubros { get; init; } = [];
 }
 
 public sealed class PuntoVentaEntidadDto
@@ -31,6 +33,12 @@ public sealed class PuntoVentaEntidadDto
     public string Unegocio { get; set; } = string.Empty;
     public string IdCaja { get; set; } = string.Empty;
     public string Sucursal { get; set; } = string.Empty;
+    /// <summary>Lista de precios del punto de venta. Vacia = la del cliente / configuracion general.</summary>
+    public string IdLista { get; set; } = string.Empty;
+    /// <summary>Clase de precio 1..8. Null = la de la configuracion general.</summary>
+    public int? ClasePrecio { get; set; }
+    /// <summary>Rubros que vende el punto de venta. Vacio = todos.</summary>
+    public List<string> Rubros { get; set; } = [];
     public bool Activo { get; set; } = true;
     public string Usuario { get; set; } = string.Empty;
     public DateTime? FechaHoraAlta { get; set; }
@@ -46,6 +54,9 @@ public sealed class PuntoVentaEntidadSaveRequest
     public string Unegocio { get; set; } = string.Empty;
     public string IdCaja { get; set; } = string.Empty;
     public string Sucursal { get; set; } = string.Empty;
+    public string IdLista { get; set; } = string.Empty;
+    public int? ClasePrecio { get; set; }
+    public List<string> Rubros { get; set; } = [];
     public bool Activo { get; set; } = true;
     public string? UsuarioAccion { get; set; }
 }

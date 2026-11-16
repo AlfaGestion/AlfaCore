@@ -24,7 +24,8 @@ Mercado Pago Point y turno de caja).
 7. **Carta QR**: en el salón → *Carta QR*:
    - *Solo ver la carta* o *Ver, pedir, llamar al mozo y pedir la cuenta*.
    - *Enviar a cocina sin que el mozo confirme* (si no, el mozo acepta cada pedido QR con un toque).
-   - Mensaje de bienvenida y familias que forman la carta. Marcar una familia incluye sus subfamilias.
+   - Mensaje de bienvenida. Los productos salen de los **rubros** y la **lista de precios** del punto de venta
+     (Agregar o editar puntos: `POS_PUNTOVENTA_RUBRO`, `IDLISTA`, `CLASEPRECIO`), agrupados por familia.
    - *Imprimir QR de las mesas*.
 8. **PC de la cocina**:
    - Pantalla: abrir `Cocina` y dejar tildado *Pantalla*.
@@ -66,7 +67,10 @@ Comensal: Enviar pedido (QR) ─────────────────
 - `POS_COMANDA`: una por envío y destino. Es el ticket de cocina y la cola de la comandera (`IMPRESA`, `ESTACION`).
 - `POS_ARTICULO_AGOTADO`: agotados por punto de venta.
 - `POS_MESA_LLAMADO`: "llamar al mozo" / "pedir la cuenta" desde el QR.
-- `POS_CARTA_FAMILIA`: familias de la carta QR.
+- `POS_CARTA_FAMILIA`: familias de la carta QR (en desuso desde 16-11: la carta usa los rubros/lista del punto de venta; al guardar la carta se vacía).
+- `POS_PUNTOVENTA.IDLISTA` / `CLASEPRECIO` y `POS_PUNTOVENTA_RUBRO` (2026-11-16-001): lista, clase y rubros por punto de venta.
+  Aplican al catálogo del Mostrador, a los rubros del filtro y a la carta. Precio: un cliente con lista/clase propia
+  la conserva; si no, la del punto de venta; si no, la general (consumidor final / configuración).
 - `POS_PUNTOVENTA.QR_MODO` / `QR_AUTOACEPTA` / `QR_MENSAJE`.
 - Scripts: `App_Data/updates/2026-11-14-001__ventas_pos_salon_mesas.sql` y `2026-11-14-002__ventas_pos_salon_cocina_qr.sql`.
 

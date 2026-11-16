@@ -12,10 +12,14 @@ public interface IPuntoVentaService
     Task<IReadOnlyList<PuntoVentaCuentaImputacionDto>> GetCuentasVentasAsync(CancellationToken ct = default);
     Task<IReadOnlyList<PuntoVentaFamilyDto>> GetFamiliasAsync(CancellationToken ct = default);
     Task<IReadOnlyList<PuntoVentaRubroDto>> GetRubrosAsync(CancellationToken ct = default);
+    /// <summary>Rubros del punto de venta (los configurados; sin configurar = todos).</summary>
+    Task<IReadOnlyList<PuntoVentaRubroDto>> GetRubrosAsync(int idPuntoVenta, CancellationToken ct = default);
     Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, CancellationToken ct = default);
     Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, string? clienteCodigo, CancellationToken ct = default);
     Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, CancellationToken ct = default);
     Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, string? clienteCodigo, CancellationToken ct = default);
+    /// <summary>Igual, con la lista/clase de precio del punto de venta.</summary>
+    Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, string? clienteCodigo, int idPuntoVenta, CancellationToken ct = default);
     Task<PuntoVentaSaleResultDto> CreateSaleAsync(PuntoVentaSaleRequestDto request, CancellationToken ct = default);
     /// <summary>Reintenta pedir el CAE de un comprobante ya creado (quedó "Rechazado" o "Pendiente").
     /// No vuelve a tocar V_MV_Cpte/cobranza -- solo pide de nuevo el CAE y persiste el nuevo intento.</summary>

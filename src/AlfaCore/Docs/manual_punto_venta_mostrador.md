@@ -12,7 +12,10 @@ Lo prepara una sola vez el administrador, en **Ventas → Punto de Venta → Agr
 2. Elegí el **Modo**: *Mostrador* para la venta en caja, *Delivery* o *Take Away* para pedidos, *Salón* para mesas.
 3. En **Comprobante habitual** elegí con qué comprobante arranca la pantalla (normalmente factura electrónica).
 4. En **Sucursal** elegí el punto de venta fiscal dado de alta en ARCA. No puede repetirse entre dos puntos de venta. Si lo dejás en *Usar configuración general*, se usa la sucursal configurada para el POS.
-5. Dejá marcado **Activo** y tocá **Guardar**.
+5. En **Lista de precios** elegí la lista con la que vende ese punto de venta. Sin lista, usa los precios del maestro de artículos. Un cliente que tiene lista propia sigue usando la suya.
+6. En **Clase de precio** elegí qué precio (1 a 8) usa. Si lo dejás en *Usar configuración general*, toma la clase de la configuración.
+7. En **Rubros que vende** marcá los rubros de ese punto de venta (por ejemplo, la librería solo *Librería*). El catálogo y los rubros del Mostrador, y la carta QR del salón, muestran solo esos artículos. Sin marcar ninguno (*Todos*) se ven todos.
+8. Dejá marcado **Activo** y tocá **Guardar**.
 
 Además conviene revisar:
 
@@ -192,7 +195,7 @@ Los puntos de venta en modo **Delivery** o **Take Away** trabajan desde el **tab
 4. En delivery son obligatorios el **teléfono**, la **dirección** y la **fecha y hora de entrega**. En take away la hora de retiro es opcional (vacía = lo retira ahora).
 5. Agregá observaciones si hace falta y tocá **Aceptar y cargar artículos**.
 
-Se abre el Mostrador con un aviso arriba con los datos del pedido. Cargá los artículos y tocá **Guardar pedido**: se guarda sin cobrar y volvés al tablero.
+Se abre el Mostrador con un aviso arriba con los datos del pedido. Cargá los artículos y tocá **Guardar pedido**: se guarda sin cobrar y volvés al tablero. Para salir sin guardar, tocá **Volver a pedidos** en el aviso.
 
 En el tablero cada pedido muestra su estado: *Pendiente*, *En preparación*, *Listo*, *En camino* (solo delivery), *Entregado* o *Anulado*. Desde ahí:
 
@@ -228,7 +231,9 @@ La lista también está en el menú ☰ → **Atajos rápidos**. Desde ese menú
 
 **No sale la letra que esperaba.** La letra la define la condición de IVA del cliente. Revisá en el encabezado que el cliente sea el correcto y su condición de IVA.
 
-**Los precios no coinciden.** Salen de la lista y la clase de precio del cliente elegido; al cambiar de cliente se recalculan. Las ofertas solo valen dentro de sus fechas de vigencia.
+**Los precios no coinciden.** Salen de la lista y la clase de precio del punto de venta, salvo que el cliente elegido tenga lista o clase propia; al cambiar de cliente se recalculan. Las ofertas solo valen dentro de sus fechas de vigencia.
+
+**No aparece un artículo.** Revisá que su rubro esté entre los **rubros que vende** el punto de venta (en **Agregar o editar puntos**) y que no esté suspendido. El lector de códigos encuentra cualquier artículo, aunque sea de otro rubro.
 
 **El email no sale.** Falta configurar el correo saliente (servidor, puerto, cuenta y clave). Consultá al administrador.
 

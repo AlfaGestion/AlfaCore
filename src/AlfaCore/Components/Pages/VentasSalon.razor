@@ -435,18 +435,15 @@
                             <input type="text" maxlength="200" @bind="_cartaConfig.Mensaje" placeholder="Ej: ¡Bienvenidos! La cocina cierra a las 23:30" />
                         </div>
                         <div class="field">
-                            <label>Familias de la carta (sin marcar ninguna = todas las que tengan precio)</label>
-                            <div class="salon-config-familias">
-                                @foreach (var familia in _familias)
-                                {
-                                    var id = familia.IdFamilia.Trim();
-                                    <label>
-                                        <input type="checkbox" checked="@_cartaConfig.Familias.Contains(id)"
-                                               @onchange="e => ToggleFamilia(id, (bool)e.Value!)" />
-                                        @familia.Descripcion
-                                    </label>
-                                }
-                            </div>
+                            <label>Qué productos muestra</label>
+                            <p class="salon-modal__nota">
+                                Los artículos con precio de
+                                <b>@(_cartaConfig.Rubros.Count == 0 ? "todos los rubros" : (_cartaConfig.Rubros.Count == 1 ? "el rubro " : "los rubros ") + string.Join(", ", _cartaConfig.Rubros))</b>,
+                                con los precios de
+                                <b>@(string.IsNullOrWhiteSpace(_cartaConfig.Lista) ? "el maestro de artículos" : "la lista " + _cartaConfig.Lista)</b>,
+                                ordenados por familia. Los platos agotados no aparecen.
+                                <a href="@RouteCtx.BuildRoute("/ventas/puntos-venta")">Cambiar rubros o lista del punto de venta</a>
+                            </p>
                         </div>
                     }
                     @if (_modalError is not null)
@@ -470,7 +467,6 @@
     private enum ModalSalon { Ninguno, Abrir, Editar, Mover, Unir, AnularLinea, Liberar, Carta }
 
     private PuntoVentaCartaConfigDto? _cartaConfig;
-    private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
     private HashSet<int> _llamadosVistos = [];
     private bool _llamadosInicializados;
 
@@ -661,22 +657,12 @@
             _cartaConfig = await CartaSvc.GetConfigAsync(IdPuntoVentaQuery!.Value);
             if (_cartaConfig.QrModo == PuntoVentaQrModoKeys.No)
                 _cartaConfig.QrModo = PuntoVentaQrModoKeys.Pedido;
-            _familias = await PuntoVentaSvc.GetFamiliasAsync();
             _modal = ModalSalon.Carta;
         }
         catch (Exception ex)
         {
             _feedback = AppUiMessage.Warning("No se pudo abrir la configuración de la carta", ex.Message);
         }
-    }
-
-    private void ToggleFamilia(string idFamilia, bool marcada)
-    {
-        if (_cartaConfig is null)
-            return;
-        _cartaConfig.Familias.Remove(idFamilia);
-        if (marcada)
-            _cartaConfig.Familias.Add(idFamilia);
     }
 
     private Task GuardarConfigCartaAsync()

@@ -12,7 +12,7 @@ El cobro es el mismo del Mostrador: los mismos comprobantes, medios de pago, Mer
 
 Lo prepara una sola vez el administrador:
 
-1. En **Agregar o editar puntos**, creá un punto de venta con modo **Salón** y elegí la caja y la sucursal.
+1. En **Agregar o editar puntos**, creá un punto de venta con modo **Salón** y elegí la caja y la sucursal. Ahí también elegís los **rubros** que vende (por ejemplo, solo *Bar y cocina*), la **lista de precios** y la **clase de precio**: valen para el salón, el Mostrador y la carta QR.
 2. En el mismo lugar, cargá los **sectores** (Salón, Terraza, Barra…) y las **mesas** de cada sector, con su capacidad.
 3. Entrá al salón y acomodá las mesas en el plano (ver **Editar el plano**).
 4. En cada artículo que se prepara, indicá a dónde va: en el campo de destino del artículo (**TalleDefault**) poné **C** para cocina, **B** para barra o **R** para barra 2. Es el mismo dato que usa el salón de Alfa Gestión. Lo que no tiene letra (gaseosas, agua, cubiertos) no pasa por la cocina.
@@ -50,6 +50,8 @@ Tocá una mesa ocupada para ver su detalle a la derecha: lo cargado, el estado d
 1. En el detalle de la mesa, tocá **Agregar artículos**.
 2. Se abre el Mostrador con el carrito vacío. Buscá y agregá los artículos como siempre.
 3. Tocá **Enviar comanda**. Lo cargado se suma a la mesa y sale a la cocina o a la barra, según el artículo.
+
+Si entraste por error o no querés mandar nada, tocá **Volver al salón** (arriba, en el aviso de la mesa). Si ya habías cargado algo, te pregunta antes de salir sin enviarlo.
 
 Cada vez que agregás es una **ronda** nueva: lo que ya se mandó a la cocina no se toca.
 
@@ -143,9 +145,9 @@ En el salón, tocá **Carta QR**:
   - *Ver, pedir, llamar al mozo y pedir la cuenta:* la carta completa.
 - **Enviar a cocina sin que el mozo confirme:** si lo tildás, lo que piden desde el celular sale directo a la cocina. Si no, el mozo lo acepta con un toque (recomendado al empezar).
 - **Mensaje de bienvenida:** aparece arriba de la carta (por ejemplo, *La cocina cierra a las 23:30*).
-- **Familias de la carta:** marcá las familias de artículos que forman la carta. Marcar una familia incluye sus subfamilias. Sin ninguna marcada se muestran todas las familias con artículos con precio, así que conviene elegirlas.
+- **Qué productos muestra:** la carta toma los artículos con precio de los **rubros** del punto de venta y, si el punto de venta tiene **lista de precios**, solo los que están en esa lista. Se ordenan por familia (cada familia es una pestaña de la carta). Los rubros y la lista se cambian en **Agregar o editar puntos** (hay un enlace en la misma ventana).
 
-Los precios de la carta son los mismos que usa el Mostrador. Los cambios de carta pueden tardar hasta un minuto en verse en los celulares; los agotados se ven al instante.
+Los precios de la carta son los mismos que usa el Mostrador: la lista y la clase de precio del punto de venta. Los cambios de carta pueden tardar hasta un minuto en verse en los celulares; los agotados se ven al instante.
 
 ## Imprimir los QR de las mesas
 

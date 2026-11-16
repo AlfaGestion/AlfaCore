@@ -21,6 +21,8 @@ public sealed class PuntoVentaCatalogFiltersDto
     public string Texto { get; set; } = string.Empty;
     public string IdFamilia { get; set; } = string.Empty;
     public string IdRubro { get; set; } = string.Empty;
+    /// <summary>Punto de venta: aplica su lista/clase de precio y sus rubros (0 = sin punto de venta).</summary>
+    public int IdPuntoVenta { get; set; }
     public int TamanioPagina { get; set; } = 24;
     public int Pagina { get; set; } = 1;
 }

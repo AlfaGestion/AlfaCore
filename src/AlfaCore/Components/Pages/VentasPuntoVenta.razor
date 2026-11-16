@@ -2060,6 +2060,35 @@
         background: rgba(209, 250, 229, 0.08);
     }
 
+    .pos-pedido-banner .pos-pedido-banner__volver,
+    .pos-pedido-banner__acciones button {
+        padding: 0.35rem 0.9rem;
+        font-size: 0.9rem;
+        font-weight: 700;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .pos-pedido-banner__acciones .pos-pedido-banner__salir {
+        background: #d1fae5;
+        border-color: #d1fae5;
+        color: #064e3b;
+    }
+
+    .pos-pedido-banner__acciones .pos-pedido-banner__salir:hover {
+        background: #a7f3d0;
+    }
+
+    .pos-pedido-banner__acciones {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+
     .pos-charge-modal__feedback--error {
         border-color: rgba(239, 68, 68, 0.24);
         background: rgba(239, 68, 68, 0.12);
@@ -5385,8 +5414,22 @@
         @if (_pedidoContexto is not null)
         {
             <section class="pos-loading" style="padding-top:0.75rem;">
-                <div class="pos-charge-modal__feedback pos-success-banner">
+                <div class="pos-charge-modal__feedback pos-success-banner pos-pedido-banner">
                     <span>@GetPedidoContextoTexto()</span>
+                    @if (_confirmarVolverPedido)
+                    {
+                        <span class="pos-pedido-banner__acciones">
+                            <span>Hay @_cartItems.Count artículo(s) sin @(EsPedidoSalon ? "enviar" : "guardar"). ¿Salir igual?</span>
+                            <button type="button" @onclick="() => _confirmarVolverPedido = false">Seguir cargando</button>
+                            <button type="button" class="pos-pedido-banner__salir" @onclick="() => VolverDePedido(true)">Salir sin @(EsPedidoSalon ? "enviar" : "guardar")</button>
+                        </span>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn--ghost btn--sm pos-pedido-banner__volver" @onclick="() => VolverDePedido(false)">
+                            <i class="bi bi-arrow-left"></i> @(EsPedidoSalon ? "Volver al salón" : "Volver a pedidos")
+                        </button>
+                    }
                 </div>
             </section>
         }
@@ -7370,9 +7413,7 @@
                 _mpModoPrueba = mpConfig.ModoPrueba;
             }
             catch { /* Sin Mercado Pago Point configurado, ningún medio de pago dispara el cobro real. */ }
-            _familias = await PuntoVentaSvc.GetFamiliasAsync();
-            _rubros = await PuntoVentaSvc.GetRubrosAsync();
-            await LoadCatalogAsync();
+            _idPuntoVentaActual = IdPuntoVentaQuery ?? 0;
 
             if (IdPuntoVentaQuery is > 0)
             {
@@ -7394,6 +7435,8 @@
                 }
                 else
                 {
+                    // La lista/clase de precio y los rubros salen del punto de venta del pedido.
+                    _idPuntoVentaActual = _pedidoContexto.IdPuntoVenta;
                     // El carrito es un estado compartido por circuito (no por pedido):
                     // se limpia y se repuebla con los ítems ya guardados del pedido para
                     // no arrastrar un carrito de otra sesión de Mostrador.
@@ -7442,7 +7485,6 @@
                         _cuentaCliente = _pedidoContexto.IdCliente;
                         _cuentaClienteNombre = _pedidoContexto.NombreCliente;
                         await RecalculateCartPricesAsync();
-                        await LoadCatalogAsync();
                     }
 
                     var puntoVentaPedido = await PosConfigSvc.GetPuntoVentaByIdAsync(_pedidoContexto.IdPuntoVenta);
@@ -7460,6 +7502,10 @@
             }
 
             _idPuntoVentaActual = _pedidoContexto?.IdPuntoVenta ?? IdPuntoVentaQuery ?? 0;
+            _familias = await PuntoVentaSvc.GetFamiliasAsync();
+            _rubros = await PuntoVentaSvc.GetRubrosAsync(_idPuntoVentaActual);
+            await LoadCatalogAsync();
+
             _idCajaActual = _context?.CajaActual ?? string.Empty;
             if (_idPuntoVentaActual > 0 && !string.IsNullOrWhiteSpace(_idCajaActual))
             {
@@ -7536,6 +7582,26 @@
         {
             _pedidoError = ex.Message;
         }
+    }
+
+    private bool _confirmarVolverPedido;
+
+    /// <summary>Vuelve al salón (o al tablero de pedidos) sin grabar; si hay artículos cargados, pide confirmación.</summary>
+    private void VolverDePedido(bool confirmado)
+    {
+        if (_pedidoContexto is null)
+            return;
+        if (!confirmado && !EsCierrePedido && _cartItems.Count > 0)
+        {
+            _confirmarVolverPedido = true;
+            return;
+        }
+
+        _confirmarVolverPedido = false;
+        CartState.Clear();
+        Nav.NavigateTo(RouteCtx.BuildRoute(EsPedidoSalon
+            ? $"{RutaSalon}&idPedido={_pedidoContexto.Id}"
+            : $"/ventas/delivery?idPuntoVenta={_pedidoContexto.IdPuntoVenta}"));
     }
 
     private string GetPedidoContextoTexto()
@@ -8070,6 +8136,7 @@
             Texto = _filters.Texto,
             IdFamilia = _filters.IdFamilia,
             IdRubro = _filters.IdRubro,
+            IdPuntoVenta = _idPuntoVentaActual,
             TamanioPagina = _filters.TamanioPagina,
             Pagina = pagina
         };
@@ -8401,7 +8468,7 @@
         _scanLoading = true;
         try
         {
-            var art = await PuntoVentaSvc.GetArticuloPorCodigoAsync(codigo, _cuentaCliente);
+            var art = await PuntoVentaSvc.GetArticuloPorCodigoAsync(codigo, _cuentaCliente, _idPuntoVentaActual);
             if (art is not null)
             {
                 _scanCode = string.Empty;
@@ -8494,7 +8561,7 @@
                 if (EsArticuloManual(item.IdArticulo))
                     continue;
 
-                var article = await PuntoVentaSvc.GetArticuloPorCodigoAsync(item.IdArticulo, _cuentaCliente);
+                var article = await PuntoVentaSvc.GetArticuloPorCodigoAsync(item.IdArticulo, _cuentaCliente, _idPuntoVentaActual);
                 if (article is null || article.PrecioUnitario <= 0m)
                     continue;
 

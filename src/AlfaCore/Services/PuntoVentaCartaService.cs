@@ -42,9 +42,21 @@ public sealed class PuntoVentaCartaService(
             if (row.Id <= 0)
                 throw new InvalidOperationException("No se encontró el punto de venta indicado.");
 
-            var familias = (await cn.QueryAsync<string>(new CommandDefinition(
-                "SELECT IDFAMILIA FROM dbo.POS_CARTA_FAMILIA WHERE IDPUNTOVENTA = @Id ORDER BY ORDEN, IDFAMILIA;",
-                new { Id = idPuntoVenta }, cancellationToken: token))).Select(f => f.Trim()).ToList();
+            // La carta sale de los rubros y la lista de precios del punto de venta (Agregar o editar puntos).
+            using var multi = await cn.QueryMultipleAsync(new CommandDefinition("""
+                SELECT ISNULL(NULLIF(LTRIM(RTRIM(r.Descripcion)), ''), LTRIM(RTRIM(pr.IDRUBRO)))
+                FROM dbo.POS_PUNTOVENTA_RUBRO pr
+                LEFT JOIN dbo.V_TA_Rubros r ON LTRIM(RTRIM(r.IdRubro)) = LTRIM(RTRIM(pr.IDRUBRO))
+                WHERE pr.IDPUNTOVENTA = @Id
+                ORDER BY 1;
+                SELECT LTRIM(RTRIM(ISNULL(pv.IDLISTA, ''))) + ISNULL(' · ' + NULLIF(LTRIM(RTRIM(c.Nombre)), ''), '')
+                FROM dbo.POS_PUNTOVENTA pv
+                OUTER APPLY (SELECT TOP (1) Nombre FROM dbo.V_MA_PreciosCab c
+                             WHERE c.TipoLista = 'V' AND LTRIM(RTRIM(c.IdLista)) = LTRIM(RTRIM(pv.IDLISTA))) c
+                WHERE pv.ID = @Id AND LTRIM(RTRIM(ISNULL(pv.IDLISTA, ''))) <> '';
+                """, new { Id = idPuntoVenta }, cancellationToken: token));
+            var rubros = (await multi.ReadAsync<string>()).ToList();
+            var lista = await multi.ReadFirstOrDefaultAsync<string>() ?? string.Empty;
 
             return new PuntoVentaCartaConfigDto
             {
@@ -52,7 +64,8 @@ public sealed class PuntoVentaCartaService(
                 QrModo = NormalizeQrModo(row.QrModo, PuntoVentaQrModoKeys.No),
                 AutoAcepta = row.AutoAcepta,
                 Mensaje = row.Mensaje.Trim(),
-                Familias = familias
+                Rubros = rubros,
+                Lista = lista
             };
         }, "No se pudo cargar la configuración de la carta.", ct);
 
@@ -68,6 +81,7 @@ public sealed class PuntoVentaCartaService(
                     UPDATE dbo.POS_PUNTOVENTA
                     SET QR_MODO = @QrModo, QR_AUTOACEPTA = @AutoAcepta, QR_MENSAJE = @Mensaje, FECHAHORA_MODIFICACION = GETDATE()
                     WHERE ID = @Id;
+                    -- Las familias tildadas ya no se usan: la carta sale de los rubros/lista del punto de venta.
                     DELETE FROM dbo.POS_CARTA_FAMILIA WHERE IDPUNTOVENTA = @Id;
                     """, new
                 {
@@ -76,14 +90,6 @@ public sealed class PuntoVentaCartaService(
                     config.AutoAcepta,
                     Mensaje = Truncate((config.Mensaje ?? string.Empty).Trim(), 200)
                 }, tx, cancellationToken: token));
-
-                var orden = 0;
-                foreach (var familia in config.Familias.Select(f => (f ?? string.Empty).Trim()).Where(f => f.Length > 0).Distinct())
-                {
-                    await cn.ExecuteAsync(new CommandDefinition(
-                        "INSERT INTO dbo.POS_CARTA_FAMILIA (IDPUNTOVENTA, IDFAMILIA, ORDEN) VALUES (@Id, @Familia, @Orden);",
-                        new { Id = config.IdPuntoVenta, Familia = Truncate(familia, 30), Orden = orden++ }, tx, cancellationToken: token));
-                }
 
                 await tx.CommitAsync(token);
             }
@@ -94,7 +100,7 @@ public sealed class PuntoVentaCartaService(
             }
 
             CacheCarta.TryRemove(CacheKey(config.IdPuntoVenta), out _);
-            await AuditAsync("SaveConfig", config.IdPuntoVenta.ToString(),"Configuración de la carta QR actualizada.", new { config.QrModo, config.AutoAcepta, config.Familias });
+            await AuditAsync("SaveConfig", config.IdPuntoVenta.ToString(),"Configuración de la carta QR actualizada.", new { config.QrModo, config.AutoAcepta });
             return true;
         }, "No se pudo guardar la configuración de la carta.", ct);
 
@@ -144,9 +150,9 @@ public sealed class PuntoVentaCartaService(
         => $"{sessionService.GetActiveSession()?.BaseId}:{ConnectionString.GetHashCode()}:{idPuntoVenta}";
 
     /// <summary>
-    /// Arma la carta: articulos cuya familia empieza con alguna de las familias configuradas (incluye
-    /// subfamilias: "07" trae 0701, 0702...). Sin familias configuradas, toda familia con articulos.
-    /// El precio sale de PuntoVentaService (misma lista/clase/oferta que el Mostrador).
+    /// Arma la carta: los articulos de los rubros del punto de venta (sin rubros = todos) y, si el punto
+    /// de venta tiene lista de precios, solo los que estan en esa lista. Se agrupan por familia.
+    /// El precio sale de PuntoVentaService con la lista/clase del punto de venta (igual que el Mostrador).
     /// </summary>
     private async Task<PuntoVentaCartaDto> ArmarCartaAsync(int idPuntoVenta, CancellationToken ct)
     {
@@ -162,11 +168,14 @@ public sealed class PuntoVentaCartaService(
             candidatos = (await cn.QueryAsync<(string IdArticulo, string IdFamilia)>(new CommandDefinition($"""
                 SELECT TOP ({MaxArticulosCarta}) LTRIM(RTRIM(a.IdArticulo)), LTRIM(RTRIM(ISNULL(a.IdFamilia, '')))
                 FROM dbo.V_MA_ARTICULOS a
+                CROSS JOIN (SELECT LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista FROM dbo.POS_PUNTOVENTA WHERE ID = @Id) pv
                 WHERE ISNULL(a.Suspendido, 0) <> 1 AND ISNULL(a.SuspendidoV, 0) <> 1
-                  AND LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))) <> ''
-                  AND (NOT EXISTS (SELECT 1 FROM dbo.POS_CARTA_FAMILIA cf WHERE cf.IDPUNTOVENTA = @Id)
-                       OR EXISTS (SELECT 1 FROM dbo.POS_CARTA_FAMILIA cf
-                                  WHERE cf.IDPUNTOVENTA = @Id AND LTRIM(RTRIM(a.IdFamilia)) LIKE LTRIM(RTRIM(cf.IDFAMILIA)) + '%'))
+                  AND (NOT EXISTS (SELECT 1 FROM dbo.POS_PUNTOVENTA_RUBRO pr WHERE pr.IDPUNTOVENTA = @Id)
+                       OR EXISTS (SELECT 1 FROM dbo.POS_PUNTOVENTA_RUBRO pr
+                                  WHERE pr.IDPUNTOVENTA = @Id AND LTRIM(RTRIM(pr.IDRUBRO)) = LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))))
+                  AND (pv.IdLista = ''
+                       OR EXISTS (SELECT 1 FROM dbo.V_MA_Precios p
+                                  WHERE p.IdArticulo = a.IDARTICULO AND p.TipoLista = 'V' AND LTRIM(RTRIM(p.IdLista)) = pv.IdLista))
                 ORDER BY a.IdFamilia, a.DESCRIPCION;
                 """, new { Id = idPuntoVenta }, cancellationToken: ct))).ToList();
 
@@ -179,19 +188,14 @@ public sealed class PuntoVentaCartaService(
         var settings = await puntoVentaService.GetSettingsAsync(ct);
         var idBase = sessionService.GetActiveSession()?.BaseId;
 
-        // Cada articulo va a la familia configurada mas especifica que lo contiene (o a la suya).
-        var familiasConfig = config.Familias.OrderByDescending(f => f.Length).ToList();
-        string GrupoDe(string idFamilia) => familiasConfig.FirstOrDefault(f => idFamilia.StartsWith(f, StringComparison.OrdinalIgnoreCase)) ?? idFamilia;
-        var orden = config.Familias.Select((f, i) => (f, i)).ToDictionary(x => x.f, x => x.i, StringComparer.OrdinalIgnoreCase);
-
         var grupos = new Dictionary<string, List<PuntoVentaCartaArticuloDto>>(StringComparer.OrdinalIgnoreCase);
         foreach (var (idArticulo, idFamilia) in candidatos)
         {
-            var articulo = await puntoVentaService.GetArticuloPorCodigoAsync(idArticulo, ct);
+            var articulo = await puntoVentaService.GetArticuloPorCodigoAsync(idArticulo, null, idPuntoVenta, ct);
             if (articulo is null || articulo.PrecioUnitario <= 0)
                 continue;
 
-            var grupo = GrupoDe(idFamilia);
+            var grupo = idFamilia;
             if (!grupos.TryGetValue(grupo, out var lista))
                 grupos[grupo] = lista = [];
             lista.Add(new PuntoVentaCartaArticuloDto
@@ -210,12 +214,12 @@ public sealed class PuntoVentaCartaService(
             QrModo = config.QrModo,
             Mensaje = config.Mensaje,
             Familias = grupos
-                .OrderBy(g => orden.TryGetValue(g.Key, out var i) ? i : int.MaxValue)
+                .OrderBy(g => g.Key.Length == 0 ? 1 : 0)
                 .ThenBy(g => g.Key)
                 .Select(g => new PuntoVentaCartaFamiliaDto
                 {
-                    IdFamilia = g.Key,
-                    Descripcion = ToTitulo(nombresFamilia.TryGetValue(g.Key, out var nombre) && nombre.Length > 0 ? nombre : g.Key),
+                    IdFamilia = g.Key.Length == 0 ? "-" : g.Key,
+                    Descripcion = g.Key.Length == 0 ? "Otros" : ToTitulo(nombresFamilia.TryGetValue(g.Key, out var nombre) && nombre.Length > 0 ? nombre : g.Key),
                     Articulos = g.Value.OrderBy(a => a.Descripcion).ToList()
                 })
                 .ToList()
@@ -350,7 +354,7 @@ public sealed class PuntoVentaCartaService(
                 if (!enCarta.Contains(id))
                     throw new InvalidOperationException("Uno de los productos ya no está disponible. Actualizá la carta.");
 
-                var articulo = await puntoVentaService.GetArticuloPorCodigoAsync(id, token)
+                var articulo = await puntoVentaService.GetArticuloPorCodigoAsync(id, null, mesa.IdPuntoVenta, token)
                     ?? throw new InvalidOperationException("Uno de los productos ya no está disponible. Actualizá la carta.");
 
                 lineas.Add(new PuntoVentaPedidoItemDto

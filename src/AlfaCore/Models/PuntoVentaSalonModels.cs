@@ -205,8 +205,10 @@ public sealed class PuntoVentaCartaConfigDto
     public string QrModo { get; set; } = PuntoVentaQrModoKeys.Pedido;
     public bool AutoAcepta { get; set; }
     public string Mensaje { get; set; } = string.Empty;
-    /// <summary>Familias de la carta. Vacio = todas las familias con articulos con precio.</summary>
-    public List<string> Familias { get; set; } = [];
+    /// <summary>Solo lectura: rubros del punto de venta que forman la carta (vacio = todos).</summary>
+    public List<string> Rubros { get; set; } = [];
+    /// <summary>Solo lectura: lista de precios del punto de venta (vacio = maestro de articulos).</summary>
+    public string Lista { get; set; } = string.Empty;
 }
 
 public sealed class PuntoVentaCartaDto

@@ -67,11 +67,31 @@ public sealed class PuntoVentaConfigService(
             foreach (var sucursal in sucursalesGuardadas)
                 AgregarOpcion(sucursales, sucursal, NormalizarCodigo(sucursal));
 
+            var listas = (await cn.QueryAsync<PuntoVentaCatalogoOpcionDto>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.V_MA_PreciosCab') IS NOT NULL
+                    SELECT LTRIM(RTRIM(IdLista)) AS Valor,
+                           LTRIM(RTRIM(IdLista)) + CASE WHEN LTRIM(RTRIM(ISNULL(Nombre, ''))) = '' THEN '' ELSE ' · ' + LTRIM(RTRIM(Nombre)) END AS Descripcion
+                    FROM dbo.V_MA_PreciosCab
+                    WHERE TipoLista = 'V' AND LTRIM(RTRIM(ISNULL(IdLista, ''))) <> ''
+                    ORDER BY IdLista;
+                """, cancellationToken: token))).ToList();
+
+            var rubros = (await cn.QueryAsync<PuntoVentaCatalogoOpcionDto>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.V_TA_Rubros') IS NOT NULL
+                    SELECT LTRIM(RTRIM(IdRubro)) AS Valor,
+                           LTRIM(RTRIM(ISNULL(Descripcion, IdRubro))) AS Descripcion
+                    FROM dbo.V_TA_Rubros
+                    WHERE LTRIM(RTRIM(ISNULL(IdRubro, ''))) <> ''
+                    ORDER BY Descripcion, IdRubro;
+                """, cancellationToken: token))).ToList();
+
             return new PuntoVentaCatalogosDto
             {
                 Sucursales = sucursales.OrderBy(x => x.Valor).ToList(),
                 Cajas = cajas,
-                UnidadesNegocio = unidades
+                UnidadesNegocio = unidades,
+                ListasPrecios = listas,
+                Rubros = rubros
             };
         }, "No se pudieron cargar los catálogos de puntos de venta.", ct);
 
@@ -161,6 +181,8 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(UNEGOCIO, '') AS Unegocio,
                     ISNULL(IDCAJA, '') AS IdCaja,
                     ISNULL(SUCURSAL, '') AS Sucursal,
+                    LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista,
+                    CLASEPRECIO AS ClasePrecio,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -169,8 +191,11 @@ public sealed class PuntoVentaConfigService(
                 ORDER BY NOMBRE, CODIGO;
                 """;
 
-            var rows = await cn.QueryAsync<PuntoVentaEntidadDto>(new CommandDefinition(sql, cancellationToken: token));
-            return (IReadOnlyList<PuntoVentaEntidadDto>)rows.ToList();
+            var rows = (await cn.QueryAsync<PuntoVentaEntidadDto>(new CommandDefinition(sql, cancellationToken: token))).ToList();
+            var rubros = await GetRubrosPorPuntoVentaAsync(cn, null, token);
+            foreach (var row in rows)
+                row.Rubros = rubros.TryGetValue(row.Id, out var lista) ? lista : [];
+            return (IReadOnlyList<PuntoVentaEntidadDto>)rows;
         }, "No se pudieron cargar los puntos de venta.", ct);
 
     public Task<PuntoVentaEntidadDto?> GetPuntoVentaByIdAsync(int id, CancellationToken ct = default)
@@ -188,6 +213,8 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(UNEGOCIO, '') AS Unegocio,
                     ISNULL(IDCAJA, '') AS IdCaja,
                     ISNULL(SUCURSAL, '') AS Sucursal,
+                    LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista,
+                    CLASEPRECIO AS ClasePrecio,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -195,8 +222,32 @@ public sealed class PuntoVentaConfigService(
                 WHERE ID = @Id;
                 """;
 
-            return await cn.QuerySingleOrDefaultAsync<PuntoVentaEntidadDto>(new CommandDefinition(sql, new { Id = id }, cancellationToken: token));
+            var pv = await cn.QuerySingleOrDefaultAsync<PuntoVentaEntidadDto>(new CommandDefinition(sql, new { Id = id }, cancellationToken: token));
+            if (pv is not null)
+                pv.Rubros = (await GetRubrosPorPuntoVentaAsync(cn, id, token)).TryGetValue(id, out var lista) ? lista : [];
+            return pv;
         }, "No se pudo cargar el punto de venta seleccionado.", ct);
+
+    private static async Task<Dictionary<int, List<string>>> GetRubrosPorPuntoVentaAsync(SqlConnection cn, int? id, CancellationToken ct)
+    {
+        var rows = await cn.QueryAsync<(int IdPuntoVenta, string IdRubro)>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.POS_PUNTOVENTA_RUBRO', N'U') IS NOT NULL
+                SELECT IDPUNTOVENTA, LTRIM(RTRIM(IDRUBRO))
+                FROM dbo.POS_PUNTOVENTA_RUBRO
+                WHERE @Id IS NULL OR IDPUNTOVENTA = @Id
+                ORDER BY IDPUNTOVENTA, IDRUBRO;
+            """, new { Id = id }, cancellationToken: ct));
+        return rows.GroupBy(r => r.IdPuntoVenta).ToDictionary(g => g.Key, g => g.Select(r => r.IdRubro).ToList());
+    }
+
+    private static async Task GuardarRubrosAsync(SqlConnection cn, SqlTransaction tx, int id, IEnumerable<string> rubros, CancellationToken ct)
+    {
+        await cn.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.POS_PUNTOVENTA_RUBRO WHERE IDPUNTOVENTA = @Id;", new { Id = id }, tx, cancellationToken: ct));
+        foreach (var rubro in rubros.Select(r => (r ?? string.Empty).Trim()).Where(r => r.Length is > 0 and <= 10).Distinct(StringComparer.OrdinalIgnoreCase))
+            await cn.ExecuteAsync(new CommandDefinition(
+                "INSERT INTO dbo.POS_PUNTOVENTA_RUBRO (IDPUNTOVENTA, IDRUBRO) VALUES (@Id, @Rubro);",
+                new { Id = id, Rubro = rubro }, tx, cancellationToken: ct));
+    }
 
     public Task<int> SavePuntoVentaAsync(PuntoVentaEntidadSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SavePuntoVenta", async token =>
@@ -208,6 +259,10 @@ public sealed class PuntoVentaConfigService(
             request.Unegocio = (request.Unegocio ?? string.Empty).Trim();
             request.IdCaja = (request.IdCaja ?? string.Empty).Trim();
             request.Sucursal = (request.Sucursal ?? string.Empty).Trim();
+            request.IdLista = (request.IdLista ?? string.Empty).Trim();
+            if (request.ClasePrecio is < 1 or > 8)
+                request.ClasePrecio = null;
+            request.Rubros ??= [];
 
             var validation = await validator.ValidatePuntoVentaForSaveAsync(request, token);
             if (!validation.IsValid)
@@ -219,16 +274,17 @@ public sealed class PuntoVentaConfigService(
             var isNew = !request.Id.HasValue || request.Id.Value <= 0;
             var usuario = (request.UsuarioAccion ?? string.Empty).Trim();
 
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
             if (isNew)
             {
                 const string insertSql = """
                     INSERT INTO dbo.POS_PUNTOVENTA
-                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, ACTIVO, USUARIO, FECHAHORA_ALTA)
+                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, ACTIVO, USUARIO, FECHAHORA_ALTA)
                     VALUES
-                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @Activo, @Usuario, GETDATE());
+                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @Activo, @Usuario, GETDATE());
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """;
-                return await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
+                var nuevoId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
                 {
                     request.Codigo,
                     request.Nombre,
@@ -236,9 +292,14 @@ public sealed class PuntoVentaConfigService(
                     request.Unegocio,
                     request.IdCaja,
                     request.Sucursal,
+                    request.IdLista,
+                    request.ClasePrecio,
                     request.Activo,
                     Usuario = usuario
-                }, cancellationToken: token));
+                }, tx, cancellationToken: token));
+                await GuardarRubrosAsync(cn, tx, nuevoId, request.Rubros, token);
+                await tx.CommitAsync(token);
+                return nuevoId;
             }
 
             const string updateSql = """
@@ -249,6 +310,8 @@ public sealed class PuntoVentaConfigService(
                     UNEGOCIO = @Unegocio,
                     IDCAJA = @IdCaja,
                     SUCURSAL = @Sucursal,
+                    IDLISTA = @IdLista,
+                    CLASEPRECIO = @ClasePrecio,
                     ACTIVO = @Activo,
                     USUARIO = @Usuario,
                     FECHAHORA_MODIFICACION = GETDATE()
@@ -263,13 +326,17 @@ public sealed class PuntoVentaConfigService(
                 request.Unegocio,
                 request.IdCaja,
                 request.Sucursal,
+                request.IdLista,
+                request.ClasePrecio,
                 request.Activo,
                 Usuario = usuario
-            }, cancellationToken: token));
+            }, tx, cancellationToken: token));
 
             if (affected <= 0)
                 throw new InvalidOperationException("No se encontró el punto de venta para actualizar.");
 
+            await GuardarRubrosAsync(cn, tx, request.Id!.Value, request.Rubros, token);
+            await tx.CommitAsync(token);
             return request.Id!.Value;
         }, "No se pudo guardar el punto de venta.", ct);
 

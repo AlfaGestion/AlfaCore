@@ -13,6 +13,32 @@
 <PageTitle>Puntos de Venta | Configuración</PageTitle>
 
 <style>
+    .pv-admin-rubros {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1.25rem;
+        padding: 0.35rem 0;
+    }
+
+    .pv-admin-rubros .pv-admin-rubro {
+        display: inline-flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.4rem;
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 500;
+        text-transform: none;
+        cursor: pointer;
+    }
+
+    .pv-admin-rubros .pv-admin-rubro input {
+        width: auto;
+        height: auto;
+        min-height: 0;
+        margin: 0;
+    }
+
     .pv-admin-form-actions {
         justify-content: flex-end;
         margin-bottom: 1rem;
@@ -150,6 +176,55 @@
                                 <option value="@item.Valor">@item.Descripcion</option>
                             }
                         </select>
+                    </div>
+                    <div class="field">
+                        <label>Lista de precios</label>
+                        <select @bind="_puntoVentaForm.IdLista">
+                            <option value="">Sin lista (precios del maestro de artículos)</option>
+                            @foreach (var item in _catalogos.ListasPrecios)
+                            {
+                                <option value="@item.Valor">@item.Descripcion</option>
+                            }
+                        </select>
+                        <small>Un cliente con lista propia sigue usando la suya.</small>
+                    </div>
+                    <div class="field">
+                        <label>Clase de precio</label>
+                        <select value="@(_puntoVentaForm.ClasePrecio?.ToString() ?? string.Empty)"
+                                @onchange="args => _puntoVentaForm.ClasePrecio = int.TryParse(args.Value?.ToString(), out var clase) ? clase : null">
+                            <option value="">Usar configuración general</option>
+                            @for (var clase = 1; clase <= 8; clase++)
+                            {
+                                <option value="@clase">Clase @clase</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Rubros que vende</label>
+                        @if (_catalogos.Rubros.Count == 0)
+                        {
+                            <small>No hay rubros cargados: se venden todos los artículos.</small>
+                        }
+                        else
+                        {
+                            <div class="pv-admin-rubros">
+                                <label class="pv-admin-rubro">
+                                    <input type="checkbox" checked="@(_puntoVentaForm.Rubros.Count == 0)"
+                                           @onchange="_ => _puntoVentaForm.Rubros.Clear()" />
+                                    Todos
+                                </label>
+                                @foreach (var rubro in _catalogos.Rubros)
+                                {
+                                    var id = rubro.Valor;
+                                    <label class="pv-admin-rubro">
+                                        <input type="checkbox" checked="@_puntoVentaForm.Rubros.Contains(id, StringComparer.OrdinalIgnoreCase)"
+                                               @onchange="_ => ToggleRubro(id)" />
+                                        @rubro.Descripcion
+                                    </label>
+                                }
+                            </div>
+                            <small>Limita los artículos del Mostrador y de la carta QR. Sin marcar ninguno = todos.</small>
+                        }
                     </div>
                     <label class="carga-viajes-check">
                         <input class="carga-viajes-check__input" type="checkbox" checked="@_puntoVentaForm.Activo" @onchange="args => _puntoVentaForm.Activo = args.Value is bool flag && flag" />
@@ -416,12 +491,24 @@
             Unegocio = pv.Unegocio,
             IdCaja = pv.IdCaja,
             Sucursal = pv.Sucursal,
+            IdLista = pv.IdLista,
+            ClasePrecio = pv.ClasePrecio,
+            Rubros = pv.Rubros.ToList(),
             Activo = pv.Activo
         };
         _showPuntoVentaForm = true;
 
         if (string.Equals(pv.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
             await LoadSectoresAsync(pv.Id);
+    }
+
+    private void ToggleRubro(string idRubro)
+    {
+        var existente = _puntoVentaForm.Rubros.FirstOrDefault(r => string.Equals(r, idRubro, StringComparison.OrdinalIgnoreCase));
+        if (existente is null)
+            _puntoVentaForm.Rubros.Add(idRubro);
+        else
+            _puntoVentaForm.Rubros.Remove(existente);
     }
 
     private void CancelarPuntoVentaForm()
