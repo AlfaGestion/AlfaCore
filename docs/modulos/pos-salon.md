@@ -68,7 +68,7 @@ Comensal: Enviar pedido (QR) ─────────────────
 - `POS_ARTICULO_AGOTADO`: agotados por punto de venta.
 - `POS_MESA_LLAMADO`: "llamar al mozo" / "pedir la cuenta" desde el QR.
 - `POS_CARTA_FAMILIA`: familias de la carta QR (en desuso desde 16-11: la carta usa los rubros/lista del punto de venta; al guardar la carta se vacía).
-- `POS_PUNTOVENTA.IDLISTA` / `CLASEPRECIO` y `POS_PUNTOVENTA_RUBRO` (2026-11-16-001): lista, clase y rubros por punto de venta.
+- `POS_PUNTOVENTA.IDLISTA` / `CLASEPRECIO` y `POS_PUNTOVENTA_RUBRO` (2026-11-16-002): lista, clase y rubros por punto de venta.
   Aplican al catálogo del Mostrador, a los rubros del filtro y a la carta. Precio: un cliente con lista/clase propia
   la conserva; si no, la del punto de venta; si no, la general (consumidor final / configuración).
 - `POS_PUNTOVENTA.QR_MODO` / `QR_AUTOACEPTA` / `QR_MENSAJE`.
