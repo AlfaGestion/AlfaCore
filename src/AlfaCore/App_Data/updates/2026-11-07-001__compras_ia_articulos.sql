@@ -10,6 +10,11 @@
 */
 SET NOCOUNT ON;
 GO
+-- Algunas bases conservan TA_CONFIGURACION.DESCRIPCION en 50 caracteres (no se les aplicó el ensanche de 2026-05-10-001): las
+-- descripciones de abajo se truncarían y el script entero fallaría, frenando toda la cola de actualizaciones.
+IF COL_LENGTH(N'dbo.TA_CONFIGURACION', N'DESCRIPCION') IS NOT NULL AND COL_LENGTH(N'dbo.TA_CONFIGURACION', N'DESCRIPCION') < 500
+    ALTER TABLE dbo.TA_CONFIGURACION ALTER COLUMN DESCRIPCION nvarchar(250) NULL;
+GO
 IF OBJECT_ID(N'dbo.IA_ProveedorArticuloUdsXBl', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.IA_ProveedorArticuloUdsXBl
