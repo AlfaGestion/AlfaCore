@@ -6,7 +6,7 @@ namespace AlfaCore.Services;
 public sealed partial class ConciliacionBancariaService
 {
     // Misma fuente y exclusión EsResumen que la cuenta corriente comercial. Los saldos
-    // incluyen toda la historia anterior al corte y nunca suman monedas distintas.
+    // incluyen toda la historia anterior al corte, en moneda local (IMPORTE de MV_ASIENTOS ya es local).
     private const string CuentaCorrienteBaseSql = AlfaCore.ConciliacionBancaria.Infrastructure.ConciliacionRepository.ToleranciaCobroSql + """
         DECLARE @cliente nvarchar(30),@fecha date,@importe money;
         SELECT @fecha=m.FechaMovimiento,@importe=m.Importe FROM dbo.BK_ExtractoMovimiento m WHERE m.MovimientoId=@movimientoId;
@@ -41,7 +41,7 @@ public sealed partial class ConciliacionBancariaService
             if (cantidad is not (30 or 50 or 100)) throw new InvalidOperationException("Elegí 30, 50 o 100 movimientos.");
             using var r = await cn.QueryMultipleAsync(new CommandDefinition(CuentaCorrienteBaseSql + """
                 DECLARE @corte date=COALESCE(@hasta,DATEADD(day,15,@fecha));
-                SELECT *,SUM(Debe-Haber) OVER(PARTITION BY CodigoMoneda ORDER BY Fecha,Periodo,Mes,Asiento,
+                SELECT *,SUM(Debe-Haber) OVER(ORDER BY Fecha,Periodo,Mes,Asiento,
                     Secuencia,Tc,Comprobante,TipoRegistro ROWS UNBOUNDED PRECEDING) Saldo
                 INTO #Cta FROM #CtaBase WHERE Fecha<DATEADD(day,1,@corte);
                 SELECT TOP(@cantidad) * FROM #Cta ORDER BY Fecha DESC,Periodo DESC,Mes DESC,Asiento DESC,
@@ -49,7 +49,10 @@ public sealed partial class ConciliacionBancariaService
                 -- Independiente del límite/corte de la grilla: no esconder el recibo que motivó el aviso.
                 SELECT *,CONVERT(decimal(19,4),0) Saldo FROM #CtaBase WHERE ReciboCercano=1 AND Haber>0 AND CodigoMoneda='1'
                     ORDER BY PosibleCoincidencia DESC,ABS(Haber-ImporteBanco),ABS(DATEDIFF(day,Fecha,@fecha)),Fecha DESC,Periodo,Mes,Asiento,Secuencia;
-                SELECT MAX(Moneda) Moneda,SUM(Debe-Haber) Saldo FROM #Cta GROUP BY CodigoMoneda ORDER BY CodigoMoneda;
+                -- MV_ASIENTOS.IMPORTE siempre está en moneda local; MONEDA/COTIZACION son solo referencia.
+                -- El saldo es una única suma en moneda local (igual que VE_CPTES_SALDOS_VENTAS del legacy).
+                SELECT ISNULL((SELECT TOP(1) NULLIF(LTRIM(RTRIM(mon.DESCRIPCION)),'') FROM dbo.TA_MONEDAS mon
+                    WHERE LTRIM(RTRIM(mon.CODIGO))='1'),'$') Moneda,SUM(Debe-Haber) Saldo FROM #Cta HAVING COUNT(*)>0;
                 """, new { movimientoId, cantidad, hasta = hasta?.Date, usuario = users.GetCurrentUserName() },
                 commandTimeout: 120, cancellationToken: token));
             return new ConciliacionCuentaCorriente((await r.ReadAsync<ConciliacionCtaMovimiento>()).AsList(),
