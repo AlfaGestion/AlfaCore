@@ -56,4 +56,32 @@ public sealed class CobranzaDirectaTests
         Assert.DoesNotContain("Recibido en el banco",html);
         Assert.DoesNotContain("Agregar ajuste de centavos",html);
     }
+
+    [Fact]
+    public async Task EditorDirectoPreseleccionaLosComprobantesTildadosYMuestraFechaYConcepto()
+    {
+        var services=new ServiceCollection();services.AddLogging();
+        services.AddSingleton(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime,CargaComprobantesUiTests.EventOnlyProxy>());
+        using var provider=services.BuildServiceProvider();
+        await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        var html=await renderer.Dispatcher.InvokeAsync(async()=>
+        {
+            var prep=new CobranzaPreparacion {Fecha=new(2026,11,16),SaldoAl=new(2026,11,16),
+                Documentos=[
+                    new(){Id=1,Cliente="112010854",Nombre="DANLOVIC S. R. L.",Unidad="2",Tc="FC",Comprobante="000200003860A",Moneda="1",Saldo=100m,Fecha=new(2026,10,1)},
+                    new(){Id=2,Cliente="112010854",Nombre="DANLOVIC S. R. L.",Unidad="2",Tc="FC",Comprobante="000200003861A",Moneda="1",Saldo=250m,Fecha=new(2026,10,5)},
+                    new(){Id=3,Cliente="112010854",Nombre="DANLOVIC S. R. L.",Unidad="2",Tc="FC",Comprobante="000200003862A",Moneda="1",Saldo=400m,Fecha=new(2026,10,9)}],
+                Medios=[new(){Cuenta="111010001",Descripcion="Caja Efectivo Pesos.",Tipo="EF",Moneda="1"}],
+                Talonarios=[new(){Talonario=0,Unidad="2",Sucursal=1}]};
+            var root=await renderer.RenderComponentAsync<CobranzaRapidaDialog>(ParameterView.FromDictionary(new Dictionary<string,object?> {
+                ["Preparacion"]=prep,["Directo"]=true,["Preseleccion"]=new List<int>{2,3}}));
+            return System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+        });
+        Assert.Contains("2 factura(s)",html);          // tildadas 2 y 3; la 1 queda disponible para sumarla
+        Assert.Contains("650,00",html);                  // 250 + 400
+        Assert.Contains("0002-00003861 A",html);
+        Assert.Contains("Fecha de cobranza",html);
+        Assert.Contains("Concepto / observación",html);
+        Assert.Contains("<details class=\"cobranza-editor__opciones\" open",html);
+    }
 }

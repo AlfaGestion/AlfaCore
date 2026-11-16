@@ -50,6 +50,23 @@ public sealed partial class CobranzasService
             return grupos;
         },ct,MenuKey);
 
+    // Comprobantes pendientes en pesos, uno por fila, para el listado de la pantalla Cobranzas. Aplica fechas, unidad y
+    // vencidos en SQL; la búsqueda libre por cualquier columna la resuelve la pantalla sobre lo ya cargado.
+    public Task<IReadOnlyList<CobranzaDocumento>> PendientesAsync(CobranzaFiltro filtro,CancellationToken ct=default)
+        => Ejecutar<IReadOnlyList<CobranzaDocumento>>("BuscarClientes",async(cn,user,session,token)=>
+        {
+            if(filtro.Desde is { } d&&filtro.Hasta is { } h&&d.Date>h.Date)
+                throw new InvalidOperationException("La fecha desde no puede ser posterior a la fecha hasta.");
+            var unidad=(filtro.Unidad??"").Trim();
+            if(unidad.Length>0&&!user.Admin&&unidad!=user.Unidad)
+                throw new InvalidOperationException("La unidad de negocio no está autorizada para el usuario.");
+            var docs=await Documentos(cn,"",null,token,user,filtro.Hasta?.Date.AddDays(1),"",filtro.Desde?.Date,unidad,
+                filtro.SoloVencidos?DateTime.Today:null);
+            var filas=docs.Where(d=>d.Moneda=="1"&&!string.IsNullOrWhiteSpace(d.Unidad)).ToList();
+            VerificarSesion(session);
+            return filas;
+        },ct,MenuKey);
+
     // Unidades que el usuario puede ver: todas si es administrador central; si no, solo la propia.
     public Task<IReadOnlyList<CobranzaUnidad>> UnidadesAsync(CancellationToken ct=default)
         => Ejecutar<IReadOnlyList<CobranzaUnidad>>("Unidades",async(cn,user,session,token)=>

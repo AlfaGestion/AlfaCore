@@ -113,7 +113,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             SELECT TOP(10001) f.ID Id,f.FECHA Fecha,LTRIM(RTRIM(f.CUENTA)) Cliente,LTRIM(RTRIM(f.NOMBRE)) Nombre,
                 LTRIM(RTRIM(f.UNEGOCIO)) Unidad,LTRIM(RTRIM(f.TC)) Tc,f.IDCOMPROBANTE Comprobante,
                 COALESCE(NULLIF(LTRIM(RTRIM(f.MONEDA)),''),asiento.Moneda) Moneda,CONVERT(decimal(18,2),s.SALDO) Saldo,
-                s.VENCIMIENTO Vencimiento
+                s.VENCIMIENTO Vencimiento,LTRIM(RTRIM(ISNULL(f.DOCUMENTONUMERO,''))) Cuit
             FROM (
                 SELECT CUENTA,TC,SUCURSAL,NUMERO,LETRA,SUM(SALDO) SALDO,MIN(ISNULL(VENCIMIENTO,FECHA)) VENCIMIENTO
                 FROM dbo.VE_CPTES_SALDOS_VENTAS

@@ -52,7 +52,7 @@
                             var importe=AplicacionesActuales.FirstOrDefault(a=>a.FacturaId==d.Id)?.Importe ?? 0;
                             <tr @key="d.Id">
                                 <td><AlfaCheckbox Value="@_seleccionadas.Contains(d.Id)" ValueChanged="v=>CambiarSeleccion(d,v==true)" Disabled="@Busy">@($"Seleccionar {d.Tc} {d.Comprobante}")</AlfaCheckbox></td>
-                                <td>@d.Tc @d.Comprobante[..4]-@d.Comprobante.Substring(4,8) @d.Comprobante[^1]</td><td class="numero">@Dinero(d.Saldo)</td>
+                                <td>@d.Tc @d.Numero · @d.Fecha.ToString("dd/MM/yyyy")</td><td class="numero">@Dinero(d.Saldo)</td>
                                 <td><AlfaInput Label="@($"Aplicar a {d.Tc} {d.Comprobante}")" Type="number" Step="0.01"
                                     Value="@(_importesManuales.TryGetValue(d.Id,out var editado) ? editado : importe.ToString("0.00",Invariante))"
                                     ValueChanged="v=>_importesManuales[d.Id]=v ?? string.Empty" Disabled="@(Busy || !_seleccionadas.Contains(d.Id))" /></td>
@@ -109,14 +109,14 @@
                     </div>
                     <p class="cobranza-editor__sugerencia">El ajuste agrega una línea contable al recibo. El importe recibido en el banco se conserva. Revisá cuenta, signo e importe antes de confirmar.</p>
                 }
-                <details class="cobranza-editor__opciones" open="@string.IsNullOrWhiteSpace(_talonario)">
-                    <summary>3. Datos del recibo y comentario · @FechaResumen</summary>
+                <details class="cobranza-editor__opciones" open="@(Directo || string.IsNullOrWhiteSpace(_talonario))">
+                    <summary>3. Fecha, talonario y concepto del recibo · @FechaResumen</summary>
                     <div class="cobranza-editor__cabecera">
                         <AlfaInput Label="Fecha de cobranza" Type="date" Value="@_fecha" ValueChanged="v => _fecha=v ?? string.Empty" Disabled="@Busy" />
                         <AlfaSelect Label="Talonario del recibo" Value="@_talonario" ValueChanged="v => _talonario=v ?? string.Empty"
                             Options="@OpcionesTalonarios" Placeholder="Seleccionar talonario CB" Disabled="@Busy" />
                     </div>
-                    <AlfaInput Label="Detalle de la cobranza" Value="@_detalle" ValueChanged="v => _detalle=v ?? string.Empty" MaxLength="100" Disabled="@Busy" />
+                    <AlfaInput Label="@(Directo ? "Concepto / observación" : "Detalle de la cobranza")" Value="@_detalle" ValueChanged="v => _detalle=v ?? string.Empty" MaxLength="100" Disabled="@Busy" />
                     <p class="cobranza-editor__sugerencia">El número definitivo de CB se asignará al confirmar.</p>
                 </details>
             </div>
@@ -144,6 +144,8 @@
     [Parameter] public string? ComprobantePreferido { get; set; }
     // Módulo Cobranzas: sin movimiento bancario; los medios (banco, efectivo, retenciones) y sus importes los carga el usuario.
     [Parameter] public bool Directo { get; set; }
+    // Cobranza directa: comprobantes tildados en el listado; el resto del cliente y unidad se puede tildar acá.
+    [Parameter] public IReadOnlyList<int>? Preseleccion { get; set; }
     private CobranzaPreparacion? _anterior;
     private Guid _operacion;
     private string _factura="",_talonario="",_fecha="";
@@ -213,8 +215,14 @@
         if(Directo) _lineas.Add(new() { Auto=true });
         else _lineas.Add(new() { Banco=true,Cuenta=Preparacion.CuentaBanco,Importe=Preparacion.ImporteBanco.ToString("0.00",Invariante) });
         var propuestaId=Preparacion.AplicacionesSugeridas.FirstOrDefault()?.FacturaId;
-        CambiarFactura((Preparacion.Documentos.FirstOrDefault(d=>$"{d.Tc}|{d.Comprobante}"==ComprobantePreferido)
+        CambiarFactura((Preparacion.Documentos.FirstOrDefault(d=>Preseleccion?.Contains(d.Id)==true)
+            ?? Preparacion.Documentos.FirstOrDefault(d=>$"{d.Tc}|{d.Comprobante}"==ComprobantePreferido)
             ?? Preparacion.Documentos.FirstOrDefault(d=>d.Id==propuestaId) ?? Preparacion.Documentos.First()).Id.ToString());
+        if(Directo && Preseleccion is { Count: >0 })
+        {
+            foreach(var id in Preseleccion.Where(id=>DocumentosUnidad.Any(d=>d.Id==id))) _seleccionadas.Add(id);
+            ActualizarRetencionSugerida();
+        }
         if(Preparacion.AplicacionesSugeridas.Count>0 && Preparacion.AplicacionesSugeridas.Any(a=>a.FacturaId==Documento?.Id)
             && Preparacion.AplicacionesSugeridas.All(a=>DocumentosUnidad.Any(d=>d.Id==a.FacturaId)))
         {

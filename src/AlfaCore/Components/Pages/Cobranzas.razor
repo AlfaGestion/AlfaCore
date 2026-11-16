@@ -3,6 +3,7 @@
 @using System.Globalization
 @using AlfaCore.Models
 @using AlfaCore.Services
+@using AlfaCore.Components.Shared
 @using AlfaCore.Components.Shared.AlfaDesign
 @inject CobranzasService Servicio
 @inject IPageHeaderService PageHeader
@@ -14,7 +15,7 @@
     <header class="gd-header">
         <div>
             <h2>Cobranzas</h2>
-            <p>Recibo CB de un cliente. Filtrá los comprobantes pendientes arriba, elegí el cliente y cargá los medios de pago.</p>
+            <p>Comprobantes pendientes de cobro. Tildá uno o varios del mismo cliente y unidad de negocio y emití el recibo CB; en la ventana de cobro podés sumar otros comprobantes del cliente.</p>
         </div>
     </header>
 
@@ -28,56 +29,99 @@
         <AlfaNotification Message="@AppUiMessage.Warning("Cobranzas", _error)" OnDismiss="() => _error = string.Empty" />
     }
 
-    @if (_busy && _grupos is null)
+    @if (_busy && _docs is null)
     {
         <p role="status" class="gd-hint">Buscando comprobantes pendientes…</p>
     }
-    else if (_grupos is { Count: 0 })
+    else if (_docs is not null)
     {
-        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes pendientes"
-            Message="No hay clientes con facturas, proformas o notas de débito pendientes en pesos para esos filtros, dentro de tus unidades de negocio." />
-    }
-    else if (_grupos is not null)
-    {
-        <div class="cobranzas-page__lista" role="list" aria-label="Clientes con comprobantes pendientes">
-            <div class="cobranzas-page__cliente cobranzas-page__encabezado" aria-hidden="true">
-                <span>Cliente</span><span>Comprobantes</span><span>Más antiguo</span><span class="cobranzas-page__importe">Pendiente</span><span></span>
+        var filtrados = Filtrados();
+        var total = filtrados.Count;
+        var paginas = Math.Max(1, (int)Math.Ceiling(total / (double)TamPagina));
+        if (_pagina >= paginas) _pagina = paginas - 1;
+        var visibles = filtrados.Skip(_pagina * TamPagina).Take(TamPagina).ToList();
+
+        if (total == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes pendientes"
+                Message="No hay facturas, proformas o notas de débito pendientes en pesos para esa búsqueda, dentro de tus unidades de negocio." />
+        }
+        else
+        {
+            <div class="cobranzas-page__scroll">
+                <table class="cobranzas-page__tabla">
+                    <thead>
+                        <tr>
+                            <th class="cobranzas-page__check"></th>
+                            @Cabecera("nombre", "Cliente")
+                            @Cabecera("cuit", "CUIT")
+                            @Cabecera("unidad", "Unidad")
+                            @Cabecera("tc", "Tipo")
+                            @Cabecera("numero", "Comprobante")
+                            @Cabecera("fecha", "Fecha")
+                            @Cabecera("vencimiento", "Vencimiento")
+                            @Cabecera("saldo", "Pendiente", true)
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in visibles)
+                        {
+                            var vencido = d.Vencimiento is { } v && v.Date < DateTime.Today;
+                            <tr @key="d.Id" class="@(_seleccion.Contains(d.Id) ? "is-selected" : string.Empty)">
+                                <td class="cobranzas-page__check">
+                                    <AlfaCheckbox Value="@_seleccion.Contains(d.Id)" ValueChanged="v => Tildar(d, v == true)" Disabled="@_busy">@($"Seleccionar {d.Tc} {d.Numero}")</AlfaCheckbox>
+                                </td>
+                                <td><strong>@d.Nombre</strong><small>@d.Cliente</small></td>
+                                <td>@d.Cuit</td>
+                                <td>@NombreUnidad(d.Unidad)</td>
+                                <td>@d.Tc</td>
+                                <td>@d.Numero</td>
+                                <td>@d.Fecha.ToString("dd/MM/yyyy")</td>
+                                <td class="@(vencido ? "cobranzas-page__vencido" : string.Empty)">@(d.Vencimiento?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                <td class="cobranzas-page__importe">@Dinero(d.Saldo)</td>
+                                <td><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => CobrarAsync(d)">Cobrar</AlfaButton></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             </div>
-            @foreach (var g in _grupos)
-            {
-                var masAntiguo = g.Documentos.Min(d => d.Fecha);
-                var vencidos = g.Documentos.Count(d => d.Vencimiento is { } v && v.Date < DateTime.Today);
-                <div class="cobranzas-page__cliente" role="listitem" @key="(g.Cliente, g.Unidad)">
-                    <div>
-                        <strong>@g.Nombre</strong>
-                        <small>Cliente @g.Cliente · Unidad @NombreUnidad(g.Unidad)</small>
-                    </div>
-                    <span>@g.Documentos.Count@(vencidos > 0 ? $" ({vencidos} vencido{(vencidos == 1 ? "" : "s")})" : "")</span>
-                    <span>@masAntiguo.ToString("dd/MM/yyyy")</span>
-                    <strong class="cobranzas-page__importe">@Dinero(g.TotalPendiente)</strong>
-                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => CobrarAsync(g)">Cobrar</AlfaButton>
-                </div>
-            }
-        </div>
-        <p class="gd-hint">@_grupos.Count cliente(s) · Pendiente total @Dinero(_grupos.Sum(g => g.TotalPendiente)). Solo comprobantes en pesos; medios: banco, efectivo y retenciones. Cheques y tarjetas todavía se registran desde Alfa Gestión.</p>
+            <div class="cobranzas-page__pie">
+                <span>@total comprobante(s) · Pendiente @Dinero(filtrados.Sum(d => d.Saldo))
+                    @if (_seleccion.Count > 0) { <text> · <strong>@_seleccion.Count seleccionado(s): @Dinero(SaldoSeleccionado)</strong></text> }
+                </span>
+                <span class="cobranzas-page__paginas">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina == 0)" OnClick="() => _pagina--">Anterior</AlfaButton>
+                    <span>Página @(_pagina + 1) de @paginas</span>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina >= paginas - 1)" OnClick="() => _pagina++">Siguiente</AlfaButton>
+                </span>
+            </div>
+            <p class="gd-hint">Solo comprobantes en pesos; medios: banco, efectivo y retenciones. Cheques y tarjetas todavía se registran desde Alfa Gestión.</p>
+        }
     }
 </div>
 
-<CobranzaRapidaDialog Directo="true" Preparacion="@_preparacion" Busy="@_busy" Error="@_errorDialogo"
+<CobranzaRapidaDialog Directo="true" Preparacion="@_preparacion" Preseleccion="@_preseleccion" Busy="@_busy" Error="@_errorDialogo"
     OnClose="CerrarEditor" OnConfirm="ConfirmarAsync" />
 
 @code {
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
-    private const string FormatoFecha = "yyyy-MM-dd";
+    private const int TamPagina = 50;
     // Filtros editables (panel) y filtros aplicados (chips y resultados).
-    private string _buscar = string.Empty, _desde = string.Empty, _hasta = string.Empty, _unidad = string.Empty;
+    private string _texto = string.Empty, _unidad = string.Empty;
+    private DateTime? _desde, _hasta;
     private bool _vencidos;
     private CobranzaFiltro _aplicado = new();
     private bool _mostrarFiltros;
     private string _error = string.Empty, _errorDialogo = string.Empty;
     private bool _busy;
-    private IReadOnlyList<CobranzaPagadorGrupo>? _grupos;
+    private int _pagina;
+    private string _ordenCampo = "fecha";
+    private bool _ordenDesc;
+    private IReadOnlyList<CobranzaDocumento>? _docs;
     private IReadOnlyList<CobranzaUnidad> _unidades = [];
+    private readonly HashSet<int> _seleccion = [];
+    private IReadOnlyList<int>? _preseleccion;
     private CobranzaPreparacion? _preparacion;
     private CobranzaResultado? _resultado;
     private PageHeaderConfig? _pageHeaderPublicado;
@@ -88,8 +132,72 @@
         => _unidades.FirstOrDefault(u => u.Codigo == codigo) is { } u && u.Descripcion.Length > 0 ? $"{u.Codigo} - {u.Descripcion}" : codigo;
     private IReadOnlyList<AlfaSelectOption> OpcionesUnidad
         => [new("", "Todas las unidades"), .. _unidades.Select(u => new AlfaSelectOption(u.Codigo, u.Descripcion.Length > 0 ? $"{u.Codigo} - {u.Descripcion}" : u.Codigo))];
-    private static DateTime? Fecha(string texto)
-        => DateTime.TryParseExact(texto, FormatoFecha, CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f.Date : null;
+    private decimal SaldoSeleccionado => _docs?.Where(d => _seleccion.Contains(d.Id)).Sum(d => d.Saldo) ?? 0;
+
+    // ---- Orden y búsqueda libre sobre cualquier columna del listado ----
+    private RenderFragment Cabecera(string campo, string titulo, bool derecha = false) => @<th class="@(derecha ? "cobranzas-page__importe" : string.Empty)" aria-sort="@(_ordenCampo == campo ? (_ordenDesc ? "descending" : "ascending") : "none")">
+        <button type="button" class="cobranzas-page__orden @(_ordenCampo == campo ? "is-active" : string.Empty)" @onclick="() => Ordenar(campo)">
+            @titulo @if (_ordenCampo == campo) { <i class="bi @(_ordenDesc ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i> }
+        </button>
+    </th>;
+
+    private void Ordenar(string campo)
+    {
+        if (_ordenCampo == campo) _ordenDesc = !_ordenDesc; else { _ordenCampo = campo; _ordenDesc = false; }
+        _pagina = 0;
+    }
+
+    private IEnumerable<CobranzaDocumento> Ordenados(IEnumerable<CobranzaDocumento> docs)
+    {
+        IOrderedEnumerable<CobranzaDocumento> o = _ordenCampo switch
+        {
+            "cuit" => Ord(docs, d => d.Cuit),
+            "unidad" => Ord(docs, d => d.Unidad),
+            "tc" => Ord(docs, d => d.Tc),
+            "numero" => Ord(docs, d => d.Comprobante),
+            "fecha" => Ord(docs, d => d.Fecha),
+            "vencimiento" => Ord(docs, d => d.Vencimiento ?? DateTime.MaxValue),
+            "saldo" => Ord(docs, d => d.Saldo),
+            _ => Ord(docs, d => d.Nombre)
+        };
+        return o.ThenBy(d => d.Fecha).ThenBy(d => d.Id);
+    }
+
+    private IOrderedEnumerable<CobranzaDocumento> Ord<T>(IEnumerable<CobranzaDocumento> docs, Func<CobranzaDocumento, T> clave)
+        => _ordenDesc ? docs.OrderByDescending(clave) : docs.OrderBy(clave);
+
+    private List<CobranzaDocumento> Filtrados()
+    {
+        var palabras = (_texto ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var origen = _docs ?? [];
+        if (palabras.Length > 0)
+            origen = origen.Where(d => { var pajar = Pajar(d); return palabras.All(p => Contiene(pajar, p)); }).ToList();
+        return Ordenados(origen).ToList();
+    }
+
+    // Todo lo que se ve en la fila, para que el texto coincida con cualquier columna (importes con y sin formato).
+    private string Pajar(CobranzaDocumento d)
+        => string.Join(' ', d.Cliente, d.Nombre, d.Cuit, d.Unidad, NombreUnidad(d.Unidad), d.Tc, d.Comprobante, d.Numero,
+            d.Fecha.ToString("dd/MM/yyyy"), d.Vencimiento?.ToString("dd/MM/yyyy") ?? string.Empty,
+            Dinero(d.Saldo), d.Saldo.ToString("0.00", CultureInfo.InvariantCulture));
+
+    private static bool Contiene(string pajar, string palabra)
+        => Ar.CompareInfo.IndexOf(pajar, palabra, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
+
+    private void CambiarTexto(string? valor) { _texto = valor ?? string.Empty; _pagina = 0; }
+
+    // ---- Selección: un recibo no mezcla clientes ni unidades de negocio ----
+    private void Tildar(CobranzaDocumento d, bool marcar)
+    {
+        if (!marcar) _seleccion.Remove(d.Id);
+        else
+        {
+            var primero = _docs?.FirstOrDefault(x => _seleccion.Contains(x.Id));
+            if (primero is not null && (primero.Cliente != d.Cliente || primero.Unidad != d.Unidad)) _seleccion.Clear();
+            _seleccion.Add(d.Id);
+        }
+        UpdateHeader();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -109,7 +217,9 @@
         TopNavigationItems = [new() { Key = "cobranzas", Label = "Cobranzas", Active = true }],
         SearchContent = RenderFiltros(),
         Actions = [
-            new() { Key = "buscar", Label = "Buscar", Icon = "bi-search", Style = PageHeaderActionStyle.Primary, Disabled = _busy,
+            new() { Key = "cobrar", Label = _seleccion.Count > 0 ? $"Cobrar seleccionados ({_seleccion.Count})" : "Cobrar seleccionados", Icon = "bi-cash-coin", Style = PageHeaderActionStyle.Primary,
+                Disabled = _busy || _seleccion.Count == 0, OnClick = () => { _ = CobrarSeleccionAsync(); return Task.CompletedTask; } },
+            new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Disabled = _busy,
                 OnClick = () => { _ = BuscarAsync(); return Task.CompletedTask; } },
             new() { Key = "limpiar", Label = "Limpiar filtros", Icon = "bi-x-circle", Disabled = _busy,
                 OnClick = () => { LimpiarFiltros(); _ = BuscarAsync(); return Task.CompletedTask; } }
@@ -118,34 +228,28 @@
 
     private void ToggleFiltros() { _mostrarFiltros = !_mostrarFiltros; UpdateHeader(); }
 
-    private void LimpiarFiltros() { _buscar = _desde = _hasta = _unidad = string.Empty; _vencidos = false; }
-
-    private string ResumenFechas => (_aplicado.Desde, _aplicado.Hasta) switch
-    {
-        ({ } d, { } h) => $"{d:dd/MM/yyyy} al {h:dd/MM/yyyy}",
-        ({ } d, null) => $"Desde {d:dd/MM/yyyy}",
-        (null, { } h) => $"Hasta {h:dd/MM/yyyy}",
-        _ => "Todas las fechas"
-    };
+    private void LimpiarFiltros() { _texto = _unidad = string.Empty; _desde = _hasta = null; _vencidos = false; _pagina = 0; }
 
     private RenderFragment RenderFiltros() => @<div class="smart-search cobranzas-search" @onclick:stopPropagation>
         <div class="smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
             <button type="button" class="smart-search__filter-button is-active" title="Filtros de cobranzas" aria-label="Filtros de cobranzas" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi bi-funnel-fill"></i></button>
             <div class="smart-search__active-filters" aria-label="Filtros aplicados">
-                @if (_aplicado.Buscar.Length > 0) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Cliente: @_aplicado.Buscar</span></button> }
-                <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>@ResumenFechas</span></button>
-                <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>@(_aplicado.Unidad.Length == 0 ? "Todas las unidades" : $"Unidad {_aplicado.Unidad}")</span></button>
+                <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>@GestionRangosFecha.Etiqueta(_aplicado.Desde, _aplicado.Hasta)</span></button>
+                @if (_aplicado.Unidad.Length > 0) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Unidad @_aplicado.Unidad</span></button> }
                 @if (_aplicado.SoloVencidos) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Solo vencidos</span></button> }
             </div>
+            <input type="search" placeholder="Buscar en cualquier columna: cliente, CUIT, comprobante, importe…" value="@_texto"
+                   @oninput="e => CambiarTexto(e.Value?.ToString())" />
             <button type="button" class="smart-search__toggle" title="Filtros y opciones" aria-label="Filtros y opciones" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi @(_mostrarFiltros ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
         </div>
         @if (_mostrarFiltros)
         {
             <div class="smart-search__panel cobranzas-filter-panel">
-                <div class="cobranzas-filtros">
-                    <AlfaInput Label="Cliente (código, nombre o CUIT)" Value="@_buscar" ValueChanged="v => _buscar = v ?? string.Empty" MaxLength="100" Disabled="@_busy" />
-                    <AlfaInput Label="Comprobantes desde" Type="date" Value="@_desde" ValueChanged="v => _desde = v ?? string.Empty" Disabled="@_busy" />
-                    <AlfaInput Label="Comprobantes hasta" Type="date" Value="@_hasta" ValueChanged="v => _hasta = v ?? string.Empty" Disabled="@_busy" />
+                <FiltroPeriodo Titulo="Fecha del comprobante" Desde="_desde" Hasta="_hasta" IncluirTodo="true" Disabled="@_busy"
+                    PeriodoChanged="p => (_desde, _hasta) = p" RangoElegido="_ => BuscarAsync()" />
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-building"></i> Unidad de negocio</h4>
                     <AlfaSelect Label="Unidad de negocio" Value="@_unidad" ValueChanged="v => _unidad = v ?? string.Empty" Options="@OpcionesUnidad" Disabled="@_busy" />
                     <div class="cobranzas-opciones">
                         <AlfaCheckbox Value="@_vencidos" ValueChanged="v => _vencidos = v == true" Disabled="@_busy">Solo comprobantes vencidos</AlfaCheckbox>
@@ -163,26 +267,44 @@
     {
         if (_busy) return;
         _busy = true; _error = string.Empty; _resultado = null; _mostrarFiltros = false;
-        var filtro = new CobranzaFiltro(_buscar.Trim(), Fecha(_desde), Fecha(_hasta), _unidad, _vencidos);
+        var filtro = new CobranzaFiltro(string.Empty, _desde?.Date, _hasta?.Date, _unidad, _vencidos);
         UpdateHeader();
-        try { _grupos = await Servicio.BuscarClientesPendientesAsync(filtro, _cts.Token); _aplicado = filtro; }
+        try
+        {
+            _docs = await Servicio.PendientesAsync(filtro, _cts.Token); _aplicado = filtro; _pagina = 0;
+            _seleccion.IntersectWith(_docs.Select(d => d.Id));
+        }
         catch (OperationCanceledException) { }
-        catch (InvalidOperationException ex) { _error = ex.Message; _grupos = null; }
+        catch (InvalidOperationException ex) { _error = ex.Message; _docs = null; }
         finally { _busy = false; UpdateHeader(); }
         StateHasChanged();
     }
 
-    private async Task CobrarAsync(CobranzaPagadorGrupo g)
+    private Task CobrarSeleccionAsync() => AbrirAsync();
+
+    private Task CobrarAsync(CobranzaDocumento d)
     {
-        if (_busy) return;
-        _busy = true; _error = string.Empty; _errorDialogo = string.Empty; _resultado = null;
-        try { _preparacion = await Servicio.PrepararDirectaAsync(g.Cliente, g.Unidad, _cts.Token); }
-        catch (OperationCanceledException) { }
-        catch (InvalidOperationException ex) { _error = ex.Message; }
-        finally { _busy = false; }
+        if (!_seleccion.Contains(d.Id)) { _seleccion.Clear(); _seleccion.Add(d.Id); }
+        return AbrirAsync();
     }
 
-    private void CerrarEditor() { if (!_busy) { _preparacion = null; _errorDialogo = string.Empty; } }
+    private async Task AbrirAsync()
+    {
+        if (_busy || _docs is null) return;
+        var elegidos = _docs.Where(d => _seleccion.Contains(d.Id)).ToList();
+        if (elegidos.Count == 0) return;
+        _busy = true; _error = string.Empty; _errorDialogo = string.Empty; _resultado = null;
+        try
+        {
+            _preseleccion = elegidos.Select(d => d.Id).ToList();
+            _preparacion = await Servicio.PrepararDirectaAsync(elegidos[0].Cliente, elegidos[0].Unidad, _cts.Token);
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _busy = false; UpdateHeader(); }
+    }
+
+    private void CerrarEditor() { if (!_busy) { _preparacion = null; _preseleccion = null; _errorDialogo = string.Empty; } }
 
     private async Task ConfirmarAsync(CobranzaSolicitud solicitud)
     {
@@ -191,14 +313,14 @@
         try
         {
             _resultado = await Servicio.CobrarAsync(solicitud, _cts.Token);
-            _preparacion = null;
+            _preparacion = null; _preseleccion = null; _seleccion.Clear();
             // Los saldos cambiaron: se consulta de nuevo con los mismos filtros para no ofrecer comprobantes ya cobrados.
-            _grupos = await Servicio.BuscarClientesPendientesAsync(_aplicado, _cts.Token);
+            _docs = await Servicio.PendientesAsync(_aplicado, _cts.Token);
         }
         catch (OperationCanceledException) { }
         catch (InvalidOperationException ex) when (_preparacion is not null) { _errorDialogo = ex.Message; }
-        catch (InvalidOperationException ex) { _error = ex.Message; _grupos = null; }
-        finally { _busy = false; }
+        catch (InvalidOperationException ex) { _error = ex.Message; _docs = null; }
+        finally { _busy = false; UpdateHeader(); }
     }
 
     public void Dispose()

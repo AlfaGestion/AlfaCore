@@ -12,6 +12,9 @@ public sealed class CobranzaDocumento
     public decimal Saldo { get; set; }
     public DateTime Fecha { get; set; }
     public DateTime? Vencimiento { get; set; }
+    public string Cuit { get; set; } = "";
+    /// <summary>Comprobante con el formato del legacy: 0001-00000123 X.</summary>
+    public string Numero => Comprobante.Length >= 13 ? $"{Comprobante[..4]}-{Comprobante.Substring(4,8)} {Comprobante[^1]}" : Comprobante;
     public string DetallePredeterminado => $"Cob. {Nombre.Trim()}";
     public string Display => $"{Tc} {Comprobante[..4]}-{Comprobante.Substring(4,8)} {Comprobante[^1]} · Saldo {Saldo.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}";
 }
