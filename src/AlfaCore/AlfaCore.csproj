@@ -40,6 +40,7 @@
     <EmbeddedResource Include="Docs\manual_cobranzas.md" />
     <EmbeddedResource Include="Docs\manual_stock_movimientos.md" />
     <EmbeddedResource Include="Docs\manual_punto_venta_salon.md" />
+    <EmbeddedResource Include="Docs\manual_punto_venta_mostrador.md" />
   </ItemGroup>
 
   <ItemGroup>

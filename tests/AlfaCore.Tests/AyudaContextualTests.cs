@@ -21,6 +21,8 @@ public sealed class AyudaContextualTests
     [InlineData("tarjetas","sucursal")]
     [InlineData("salon","agotado")]
     [InlineData("salon","comandera")]
+    [InlineData("mostrador","corte x")]
+    [InlineData("mostrador","consumidor final")]
     public void ManualesIncluidosBuscanSinAcentosYNoExponenOtrosArchivos(string tema,string consulta)
     {
         var manual=AyudaManuales.Obtener(tema);

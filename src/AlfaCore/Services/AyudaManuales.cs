@@ -24,7 +24,8 @@ public static class AyudaManuales
         new AyudaTema("tarjetas","Conciliación de tarjetas asistida con IA","AlfaCore.Docs.manual_conciliacion_tarjetas.md"),
         new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md"),
         new AyudaTema("stock","Stock","AlfaCore.Docs.manual_stock_movimientos.md"),
-        new AyudaTema("salon","Punto de Venta: Salón y carta QR","AlfaCore.Docs.manual_punto_venta_salon.md") });
+        new AyudaTema("salon","Punto de Venta: Salón y carta QR","AlfaCore.Docs.manual_punto_venta_salon.md"),
+        new AyudaTema("mostrador","Punto de Venta: Mostrador y delivery","AlfaCore.Docs.manual_punto_venta_mostrador.md") });
     private static readonly Lazy<IReadOnlyDictionary<string,AyudaManual>> Manuales=new(()=>Temas.ToDictionary(t=>t.Clave,Cargar));
     private static readonly MarkdownPipeline Pipeline=new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
     public static AyudaManual Obtener(string tema)=>Manuales.Value.TryGetValue(tema,out var manual)
@@ -36,6 +37,11 @@ public static class AyudaManuales
         ("/ventas/punto-venta/salon/qr","salon","Imprimir los QR de las mesas"),
         ("/ventas/punto-venta/salon","salon","Trabajar con el salón"),
         ("/ventas/punto-venta/cocina","salon","Pantalla de cocina y barra"),
+        ("/ventas/punto-venta/mostrador","mostrador","Buscar y cargar artículos"),
+        ("/ventas/punto-venta/informe","mostrador","Informe del punto de venta"),
+        ("/ventas/delivery","mostrador","Pedidos de delivery y take away"),
+        ("/ventas/puntos-venta","mostrador","Antes de empezar"),
+        ("/ventas/punto-venta","mostrador","Elegir el punto de venta"),
         ("conciliacion-bancaria","conciliacion",null),
         ("conciliacion-tarjetas","tarjetas",null),
         ("cobranzas","cobranzas",null),
