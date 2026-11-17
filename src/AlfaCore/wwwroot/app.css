@@ -5599,6 +5599,38 @@ html[data-theme="light"] .menu__search-result:hover {
     transition: background .18s ease, border-color .18s ease, transform .18s ease;
 }
 
+.message-card__ad-referral {
+    display: grid;
+    gap: .15rem;
+    min-width: 0;
+    margin-bottom: .2rem;
+    padding: .38rem .5rem;
+    border-left: 3px solid rgba(245, 158, 11, .8);
+    border-radius: 6px;
+    background: rgba(2, 6, 23, .22);
+    color: var(--color-muted);
+    font-size: .72rem;
+}
+
+.message-card__ad-referral strong {
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.message-card__ad-referral p {
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.message-card__ad-referral a {
+    color: rgba(56, 189, 248, .95);
+    width: fit-content;
+}
+
 .message-card__quote:hover,
 .message-card__quote:focus-visible {
     border-left-color: rgba(34, 211, 238, .95);

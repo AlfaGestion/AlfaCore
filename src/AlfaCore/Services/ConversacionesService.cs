@@ -15200,7 +15200,20 @@ public sealed partial class ConversacionesService(
         if (string.IsNullOrWhiteSpace(usuario))
             return;
 
+        // La línea de base sólo existe para que, al empezar a seguir la lectura de un usuario, el
+        // historial viejo no aparezca entero como "no leído". Nunca debe tocar conversaciones con
+        // mensajes del cliente recibidos DESPUÉS de que el usuario empezó a tener seguimiento: antes
+        // corría cada 15 minutos sobre cualquier conversación sin fila (p. ej. un cliente nuevo que
+        // escribe por primera vez) y la marcaba leída sin que nadie la abriera (reporte DW, 11/2026).
+        // Ambas fechas son GETDATE() del mismo SQL Server (CONV_MENSAJES.FechaHora_Grabacion y
+        // CONV_CONVERSACIONES_LECTURA_USUARIO.FechaHora_Grabacion).
         const string sql = """
+            DECLARE @InicioSeguimiento datetime;
+
+            SELECT @InicioSeguimiento = MIN(r.FechaHora_Grabacion)
+            FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
+            WHERE r.Usuario = @Usuario;
+
             INSERT INTO dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
             (
                 Usuario,
@@ -15219,12 +15232,19 @@ public sealed partial class ConversacionesService(
                 GETDATE()
             FROM dbo.CONV_CONVERSACIONES c
             OUTER APPLY (
-                SELECT MAX(m.IdMensaje) AS IdUltimoMensajeCliente
+                SELECT
+                    MAX(m.IdMensaje) AS IdUltimoMensajeCliente,
+                    MAX(m.FechaHora_Grabacion) AS FechaUltimoMensajeCliente
                 FROM dbo.CONV_MENSAJES m
                 WHERE m.IdConversacion = c.IdConversacion
                   AND m.Direction = N'ENTRANTE'
             ) ult
             WHERE (@ClienteCodigo IS NULL OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo)
+              AND (
+                  @InicioSeguimiento IS NULL
+                  OR ult.FechaUltimoMensajeCliente IS NULL
+                  OR ult.FechaUltimoMensajeCliente < @InicioSeguimiento
+              )
               AND NOT EXISTS (
                 SELECT 1
                 FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r

@@ -1835,6 +1835,25 @@
                                         <span>@GetMessageAuthor(message)</span>
                                         <span>@FormatShortDate(message.FechaHora)</span>
                                     </div>
+                                    @if (string.Equals(message.Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase)
+                                         && AlfaCore.Services.WhatsAppAdReferral.TryParse(message.PayloadJson, out var adReferral))
+                                    {
+                                        <div class="message-card__ad-referral" title="El cliente escribió desde este @adReferral.OrigenNombre.ToLowerInvariant() de Facebook o Instagram">
+                                            <span><i class="bi bi-megaphone"></i> Vino de un @adReferral.OrigenNombre.ToLowerInvariant()</span>
+                                            @if (!string.IsNullOrWhiteSpace(adReferral.Titulo))
+                                            {
+                                                <strong>@adReferral.Titulo</strong>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(adReferral.Texto))
+                                            {
+                                                <p>@adReferral.Texto</p>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(adReferral.Url))
+                                            {
+                                                <a href="@adReferral.Url" target="_blank" rel="noopener noreferrer" @onclick:stopPropagation>Ver @adReferral.OrigenNombre.ToLowerInvariant()</a>
+                                            }
+                                        </div>
+                                    }
                                     @if (TryGetQuotedMessage(message, out var quotedMessage))
                                     {
                                         <button type="button"

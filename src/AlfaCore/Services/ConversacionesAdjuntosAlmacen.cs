@@ -39,9 +39,12 @@ internal static partial class ConversacionesAdjuntosAlmacen
             await File.WriteAllBytesAsync(temporal, contenido, ct);
             File.Move(temporal, ruta, overwrite: true);
         }
-        catch (IOException) when (ExisteCompleto(ruta, contenido.LongLength))
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && ExisteCompleto(ruta, contenido.LongLength))
         {
             // Otro proceso lo grabó primero (o lo tiene abierto para servirlo): mismo hash, mismo contenido.
+            // En Windows, renombrar sobre un archivo que otro está renombrando o leyendo da "acceso denegado"
+            // (UnauthorizedAccessException, no IOException): antes eso hacía fallar el envío de la imagen y
+            // recién salía al reintentar (reporte DW, 17/11/2026).
         }
         finally
         {
