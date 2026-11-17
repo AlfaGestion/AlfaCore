@@ -3908,12 +3908,17 @@ public sealed partial class ConversacionesService(
         return (true, debt.DetailText, debt.Observation);
     }
 
-    /// <summary>Resolver real de pago.formaPago -- reusa la misma config CONV_COBRANZA_FORMA_PAGO de siempre.</summary>
+    /// <summary>
+    /// Resolver real de pago.formaPago: CONV_COBRANZA_FORMA_PAGO o, si está vacía, la "Forma de pago"
+    /// que se carga en Ventas → Reclamo de saldos (RECLAMO-SALDOS-FORMA-PAGO). Así se configura en un solo lugar.
+    /// </summary>
     private async Task<(bool Resolved, string Value, string? Observation)> ResolvePagoFormaPagoAutoValueAsync(SqlConnection cn, CancellationToken ct)
     {
         var payment = await ReadConversationConfigValueAsync(cn, "CONV_COBRANZA_FORMA_PAGO", ct);
         if (string.IsNullOrWhiteSpace(payment))
-            return (false, string.Empty, "Falta configurar CONV_COBRANZA_FORMA_PAGO en TA_CONFIGURACION.");
+            payment = await ReadConversationConfigValueAsync(cn, "RECLAMO-SALDOS-FORMA-PAGO", ct);
+        if (string.IsNullOrWhiteSpace(payment))
+            return (false, string.Empty, "Faltan los datos de transferencia: cargalos en Ventas → Reclamo de saldos → Forma de pago.");
 
         return (true, payment, null);
     }
@@ -7576,12 +7581,14 @@ public sealed partial class ConversacionesService(
             var comprobanteDateColumn = FirstMatchingColumn(columns, "FECHA", "FECHACOMPROBANTE", "FECHA_COMPROBANTE", "EMISION");
             var objectName = $"dbo.{QuoteSqlName(source)}";
 
+            // Sin TRY_CONVERT: las bases de clientes pueden estar en compatibility level 80/100 y ahí
+            // falla con el error 195 (ALFANET2007, 2026-11-17: el detalle de deuda salía vacío).
             var daysExpression = string.IsNullOrWhiteSpace(dateColumn)
                 ? "0"
-                : $"MAX(CASE WHEN TRY_CONVERT(date, {QuoteSqlName(dateColumn)}) IS NULL THEN 0 ELSE DATEDIFF(day, TRY_CONVERT(date, {QuoteSqlName(dateColumn)}), GETDATE()) END)";
+                : $"MAX(CASE WHEN ISDATE({QuoteSqlName(dateColumn)}) = 1 THEN DATEDIFF(day, CONVERT(datetime, {QuoteSqlName(dateColumn)}), GETDATE()) ELSE 0 END)";
             var oldestExpression = string.IsNullOrWhiteSpace(comprobanteDateColumn)
                 ? "NULL"
-                : $"MIN(TRY_CONVERT(date, {QuoteSqlName(comprobanteDateColumn)}))";
+                : $"MIN(CASE WHEN ISDATE({QuoteSqlName(comprobanteDateColumn)}) = 1 THEN CONVERT(datetime, {QuoteSqlName(comprobanteDateColumn)}) END)";
 
             var sql = $"""
                 SELECT
