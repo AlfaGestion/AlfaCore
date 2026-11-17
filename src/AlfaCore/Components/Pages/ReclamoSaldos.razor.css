@@ -53,3 +53,9 @@
 
 .reclamo-envio { display: grid; gap: 12px; }
 .reclamo-envio__resultados { max-height: 260px; min-height: 0; }
+.reclamo-envio__avance { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--alfa-border-default); border-radius: 8px; background: var(--alfa-bg-surface); }
+.reclamo-envio__avance p { margin: 0; }
+.reclamo-envio__avance progress { width: 100%; height: 10px; accent-color: var(--alfa-accent, #2f7bff); }
+.reclamo-page__acciones { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+.reclamo-page__enlace { font-size: 13px; color: var(--alfa-accent, #2f7bff); text-decoration: none; }
+.reclamo-page__enlace:hover { text-decoration: underline; }

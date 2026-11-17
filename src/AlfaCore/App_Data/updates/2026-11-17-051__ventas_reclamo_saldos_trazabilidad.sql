@@ -1,0 +1,45 @@
+-- Reclamo de saldos: trazabilidad de cada envio.
+--  * ALFACORE_RECLAMO_SALDO_ENVIO gana: IdLote (todos los envios de una misma accion), IdConversacion / IdMensaje
+--    (WhatsApp: enlaza con Conversaciones) y Cuerpo (mail o texto tal como salio; el token del enlace al portal va enmascarado).
+--  * ALFACORE_RECLAMO_SALDO_ENVIO_CPTE: foto de los comprobantes incluidos en cada reclamo.
+-- Los envios anteriores quedan con esas columnas en NULL. Idempotente. Compatible con compatibility level 100.
+SET NOCOUNT ON;
+
+IF OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'IdLote') IS NULL
+        ALTER TABLE dbo.ALFACORE_RECLAMO_SALDO_ENVIO ADD IdLote uniqueidentifier NULL;
+    IF COL_LENGTH(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'IdConversacion') IS NULL
+        ALTER TABLE dbo.ALFACORE_RECLAMO_SALDO_ENVIO ADD IdConversacion bigint NULL;
+    IF COL_LENGTH(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'IdMensaje') IS NULL
+        ALTER TABLE dbo.ALFACORE_RECLAMO_SALDO_ENVIO ADD IdMensaje bigint NULL;
+    IF COL_LENGTH(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'Cuerpo') IS NULL
+        ALTER TABLE dbo.ALFACORE_RECLAMO_SALDO_ENVIO ADD Cuerpo nvarchar(max) NULL;
+END
+GO
+
+IF OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO_CPTE', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ALFACORE_RECLAMO_SALDO_ENVIO_CPTE
+    (
+        IdCpte      bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE PRIMARY KEY,
+        IdEnvio     bigint NOT NULL,
+        Unidad      nvarchar(10) NOT NULL CONSTRAINT DF_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE_Unidad DEFAULT (N''),
+        Tc          nvarchar(10) NOT NULL CONSTRAINT DF_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE_Tc DEFAULT (N''),
+        Numero      nvarchar(40) NOT NULL CONSTRAINT DF_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE_Numero DEFAULT (N''),
+        Fecha       datetime NULL,
+        Vencimiento datetime NULL,
+        Importe     decimal(18,2) NOT NULL CONSTRAINT DF_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE_Importe DEFAULT (0),
+        Saldo       decimal(18,2) NOT NULL CONSTRAINT DF_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE_Saldo DEFAULT (0),
+        DiasVencido int NOT NULL CONSTRAINT DF_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE_Dias DEFAULT (0)
+    );
+    CREATE INDEX IX_ALFACORE_RECLAMO_SALDO_ENVIO_CPTE_Envio ON dbo.ALFACORE_RECLAMO_SALDO_ENVIO_CPTE (IdEnvio);
+END
+GO
+
+IF OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'IdLote') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ALFACORE_RECLAMO_SALDO_ENVIO_Lote' AND object_id = OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO'))
+    CREATE INDEX IX_ALFACORE_RECLAMO_SALDO_ENVIO_Lote ON dbo.ALFACORE_RECLAMO_SALDO_ENVIO (IdLote);
+GO

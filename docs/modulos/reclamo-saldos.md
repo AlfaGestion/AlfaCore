@@ -42,6 +42,13 @@ con fondo blanco, para que se vea como lo recibe el cliente y no herede el tema 
   - Requiere la URL pública del sistema (Conversaciones → Configuración); si falta, la vista previa avisa y `<PORTAL>` va vacío.
   - No aplica a WhatsApp (las variables de plantilla las define Meta).
 
+## Pestaña Enviados
+Historial de la bitácora (`ALFACORE_RECLAMO_SALDO_ENVIO`): fecha, cliente, canal, destino, tramo, saldo, asunto, estado (con el
+motivo si falló) y usuario. Filtros por fecha, texto, canal, estado y envíos de prueba; últimos 500. Las simulaciones no se
+registran. "Ver enviado" muestra el texto tal como salió y la foto de los comprobantes reclamados; los WhatsApp tienen un enlace
+a su conversación en Conversaciones. Cada acción de "Enviar" comparte un lote. Todo esto se guarda desde el script
+`2026-11-17-051` (los envíos anteriores no lo tienen); el token del enlace al portal se guarda enmascarado. No lee respuestas: las de WhatsApp están en Conversaciones y las de email llegan a la casilla "responder a".
+
 ## Forma de pago y cambio de email
 - `<FORMADEPAGO>` sale primero de "Formas de pago" de la unidad de negocio del último comprobante pendiente del cliente
   (Archivos → Unidades de negocio, clave `FORMADEPAGO_UN_<unidad>`, la misma del mail de facturación). Si está vacía, usa el

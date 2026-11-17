@@ -7,6 +7,7 @@
 @using AlfaCore.Components.Shared.AlfaDesign
 @inject ReclamoSaldosService Servicio
 @inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
 @implements IDisposable
 
 <PageTitle>Reclamo de saldos | AlfaCore</PageTitle>
@@ -140,6 +141,62 @@
             }
         }
     }
+    else if (_tab == "enviados")
+    {
+        <div class="reclamo-filtros">
+            <AlfaInput Label="Desde" Type="date" Value="@_envDesde" ValueChanged="v => _envDesde = v ?? string.Empty" />
+            <AlfaInput Label="Hasta" Type="date" Value="@_envHasta" ValueChanged="v => _envHasta = v ?? string.Empty" />
+            <AlfaInput Label="Cliente, destino o asunto" Value="@_envTexto" ValueChanged="v => _envTexto = v ?? string.Empty" />
+            <AlfaSelect Label="Canal" Value="@_envCanal" ValueChanged="v => _envCanal = v ?? string.Empty" Options="@OpcionesEnvCanal" />
+            <AlfaSelect Label="Estado" Value="@_envEstado" ValueChanged="v => _envEstado = v ?? string.Empty" Options="@OpcionesEnvEstado" />
+            <AlfaCheckbox Value="@_envPruebas" ValueChanged="v => _envPruebas = v == true">Incluir envíos de prueba</AlfaCheckbox>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="@_cargandoEnv" OnClick="_ => BuscarEnviosAsync()">Buscar</AlfaButton>
+        </div>
+        @if (_cargandoEnv)
+        {
+            <p role="status" class="gd-hint">Buscando envíos…</p>
+        }
+        else if (_envios is not null)
+        {
+            @if (_envios.Count == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin envíos" Message="No hay reclamos enviados para esos filtros. Las simulaciones no se registran." />
+            }
+            else
+            {
+                <div class="reclamo-page__scroll">
+                    <table class="reclamo-page__tabla">
+                        <thead><tr><th>Fecha</th><th>Cliente</th><th>Canal</th><th>Destino</th><th>Tramo</th><th class="reclamo-page__num">Saldo</th><th class="reclamo-page__num">Vencido</th><th>Asunto</th><th>Estado</th><th>Usuario</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var e in _envios)
+                            {
+                                <tr @key="e.IdEnvio">
+                                    <td>@e.FechaHora.ToString("dd/MM/yy HH:mm")</td>
+                                    <td><strong>@e.Nombre</strong><small>@e.Cuenta</small></td>
+                                    <td>@(e.Canal == "WHATSAPP" ? "WhatsApp" : "Email")@if (e.EsPrueba) { <small>prueba</small> }</td>
+                                    <td>@e.Destino</td>
+                                    <td><span class="reclamo-tramo reclamo-tramo--@e.Tramo">@e.Tramo</span></td>
+                                    <td class="reclamo-page__num">@Dinero(e.Saldo)</td>
+                                    <td class="reclamo-page__num">@Dinero(e.Vencido)</td>
+                                    <td>@e.Asunto</td>
+                                    <td class="@(e.Estado == "ERROR" ? "reclamo-page__vencido" : "reclamo-page__ok")" title="@e.Detalle">@(e.Estado == "ERROR" ? "Error" : "Enviado")@if (e.Estado == "ERROR" && e.Detalle.Length > 0) { <small>@e.Detalle</small> }</td>
+                                    <td>@e.Usuario</td>
+                                    <td class="reclamo-page__acciones">
+                                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="_ => VerEnvioAsync(e)">Ver enviado</AlfaButton>
+                                        @if (e.IdConversacion is { } conv)
+                                        {
+                                            <a class="reclamo-page__enlace" href="@($"{RouteContext.BuildRoute("/conversaciones")}?id={conv}")" title="Abrir la conversación en Conversaciones"><i class="bi bi-chat-dots"></i> Conversación</a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="gd-hint">@_envios.Count envío(s) (máximo 500, los más recientes) · @_envios.Count(x => x.Estado == "ENVIADO") enviados · @_envios.Count(x => x.Estado == "ERROR") con error. Las respuestas por WhatsApp se ven en Conversaciones; las de email llegan a la casilla "responder a" de la cuenta de correo.</p>
+            }
+        }
+    }
     else if (_tab == "diferencias")
     {
         <p class="gd-hint">Comprobantes con un saldo de hasta @Dinero(_cfg?.Tolerancia ?? 1m) (centavos de diferencia). No se reclaman ni suman días de atraso: ajustalos (nota de crédito/débito o redondeo) para dejarlos en cero.</p>
@@ -265,7 +322,61 @@
     </Footer>
 </AlfaDialog>
 
-<AlfaDialog Open="@_envioAbierto" Title="Enviar reclamo" Eyebrow="@($"{_marcados.Count} cliente(s)")" Size="AlfaDialogSize.Lg" Loading="@_busy"
+<AlfaDialog Open="@(_envFila is not null)" Title="@(_envFila is null ? string.Empty : $"Reclamo a {_envFila.Nombre}")" Eyebrow="@(_envFila is null ? null : $"{(_envFila.Canal == "WHATSAPP" ? "WhatsApp" : "Email")} · {_envFila.FechaHora:dd/MM/yyyy HH:mm}")"
+            Size="AlfaDialogSize.Lg" OnClose="() => { _envFila = null; _envDetalle = null; }">
+    <ChildContent>
+    @if (_envFila is { } ef)
+    {
+        <dl class="reclamo-vista__datos">
+            <dt>Destino</dt><dd>@ef.Destino@(ef.EsPrueba ? " (envío de prueba)" : string.Empty)</dd>
+            <dt>Asunto</dt><dd>@(ef.Asunto.Length > 0 ? ef.Asunto : "—")</dd>
+            <dt>Estado</dt><dd>@(ef.Estado == "ERROR" ? "Error: " + ef.Detalle : "Enviado")</dd>
+            <dt>Usuario</dt><dd>@ef.Usuario</dd>
+            @if (ef.IdLote is { } lote) { <dt>Lote</dt><dd>@lote.ToString("N")[..8] (todos los envíos de la misma acción)</dd> }
+        </dl>
+        @if (_envDetalle is null)
+        {
+            <p role="status" class="gd-hint">Leyendo…</p>
+        }
+        else
+        {
+            @if (_envDetalle.Cuerpo.Length == 0)
+            {
+                <p class="gd-hint">Este envío es anterior a la trazabilidad: no se guardó el texto ni los comprobantes.</p>
+            }
+            else if (ef.Canal == "WHATSAPP")
+            {
+                <p class="reclamo-cfg__plantilla">@_envDetalle.Cuerpo</p>
+            }
+            else
+            {
+                <iframe class="reclamo-vista__cuerpo" sandbox title="Email enviado" srcdoc="@ReclamoSaldosPlantilla.DocumentoVistaPrevia(_envDetalle.Cuerpo)"></iframe>
+            }
+            @if (_envDetalle.Comprobantes.Count > 0)
+            {
+                <h4>Comprobantes reclamados</h4>
+                <div class="reclamo-page__scroll reclamo-envio__resultados">
+                    <table class="reclamo-page__tabla">
+                        <thead><tr><th>Comprobante</th><th>Unidad</th><th>Fecha</th><th>Vencimiento</th><th class="reclamo-page__num">Días</th><th class="reclamo-page__num">Importe</th><th class="reclamo-page__num">Pendiente</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in _envDetalle.Comprobantes)
+                            {
+                                <tr><td>@c.Tc @c.Numero</td><td>@c.Unidad</td><td>@c.Fecha.ToString("dd/MM/yyyy")</td><td>@(c.Vencimiento?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                    <td class="reclamo-page__num">@c.DiasVencido</td><td class="reclamo-page__num">@Dinero(c.Importe)</td><td class="reclamo-page__num">@Dinero(c.Saldo)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="_ => { _envFila = null; _envDetalle = null; }">Cerrar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@_envioAbierto" Title="Enviar reclamo" Eyebrow="@($"{_marcados.Count} cliente(s)")" Size="AlfaDialogSize.Lg"
             OnClose="CerrarEnvio" CloseOnBackdrop="false">
     <ChildContent>
     <div class="reclamo-envio">
@@ -280,6 +391,22 @@
         @if (!_simular && string.IsNullOrWhiteSpace(_mailPrueba) && string.IsNullOrWhiteSpace(_telPrueba))
         {
             <p class="reclamo-vista__aviso"><i class="bi bi-exclamation-triangle"></i> Se va a enviar a los clientes reales.</p>
+        }
+        @if (_busy || _envioMensaje.Length > 0)
+        {
+            var hechos = _resultados.Select(r => r.Cuenta).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            <div class="reclamo-envio__avance" role="status" aria-live="polite">
+                @if (_busy)
+                {
+                    <p><strong>@(_simular ? "Simulando" : "Enviando")</strong> @(_actual.Length > 0 ? $"· {_actual}" : "· preparando…")</p>
+                    <progress max="@Math.Max(1, _envioTotal)" value="@hechos"></progress>
+                    <p class="gd-hint">@hechos de @_envioTotal cliente(s) procesados@(_cancelando ? " · cancelando, termina el cliente en curso…" : string.Empty)</p>
+                }
+                else
+                {
+                    <p><strong>@_envioMensaje</strong></p>
+                }
+            </div>
         }
         @if (_resultados.Count > 0)
         {
@@ -300,8 +427,15 @@
     </div>
     </ChildContent>
     <Footer>
-        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_busy" OnClick="_ => CerrarEnvio()">Cerrar</AlfaButton>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Disabled="@_busy" OnClick="_ => EnviarAsync()">@(_simular ? "Simular" : "Enviar")</AlfaButton>
+        @if (_busy)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-x-circle" Disabled="@_cancelando" OnClick="_ => CancelarEnvio()">@(_cancelando ? "Cancelando…" : "Cancelar envío")</AlfaButton>
+        }
+        else
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="_ => CerrarEnvio()">Cerrar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" OnClick="_ => EnviarAsync()">@(_simular ? "Simular" : "Enviar")</AlfaButton>
+        }
     </Footer>
 </AlfaDialog>
 
@@ -310,12 +444,48 @@
     private const string DefSaldo = "1", DefDias = "0", DefCanal = "Email";
     private const int TamPagina = 50;
     private string _tab = "clientes";
+    private IReadOnlyList<ReclamoEnvioFila>? _envios;
+    private bool _cargandoEnv, _envPruebas = true;
+    private string _envDesde = DateTime.Today.AddDays(-30).ToString("yyyy-MM-dd"), _envHasta = string.Empty, _envTexto = string.Empty, _envCanal = string.Empty, _envEstado = string.Empty;
+    private static IReadOnlyList<AlfaSelectOption> OpcionesEnvCanal => [new("", "Todos"), new("EMAIL", "Email"), new("WHATSAPP", "WhatsApp")];
+    private static IReadOnlyList<AlfaSelectOption> OpcionesEnvEstado => [new("", "Todos"), new("ENVIADO", "Enviado"), new("ERROR", "Con error")];
+
+    private ReclamoEnvioFila? _envFila;
+    private ReclamoEnvioDetalle? _envDetalle;
+
+    private async Task VerEnvioAsync(ReclamoEnvioFila fila)
+    {
+        _envFila = fila; _envDetalle = null; StateHasChanged();
+        try { _envDetalle = await Servicio.EnvioDetalleAsync(fila.IdEnvio, _cts.Token); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; _envFila = null; }
+    }
+
+    private async Task BuscarEnviosAsync()
+    {
+        if (_cargandoEnv) return;
+        _cargandoEnv = true; _error = string.Empty; StateHasChanged();
+        try
+        {
+            _envios = await Servicio.EnviosAsync(new ReclamoEnvioFiltro
+            {
+                Desde = DateTime.TryParse(_envDesde, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null,
+                Hasta = DateTime.TryParse(_envHasta, CultureInfo.InvariantCulture, DateTimeStyles.None, out var h) ? h : null,
+                Texto = _envTexto, Canal = _envCanal, Estado = _envEstado, IncluirPruebas = _envPruebas
+            }, _cts.Token);
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; _envios ??= []; }
+        finally { _cargandoEnv = false; }
+    }
+
     private IReadOnlyList<ReclamoDiferenciaMinima>? _diferencias;
     private bool _cargandoDif;
     private void CambiarTab(string? v)
     {
         _tab = string.IsNullOrEmpty(v) ? "clientes" : v; UpdateHeader();
         if (_tab == "diferencias") _ = CargarDiferenciasAsync();
+        if (_tab == "enviados") _ = BuscarEnviosAsync();
     }
 
     private async Task CargarDiferenciasAsync()
@@ -348,10 +518,14 @@
     private ReclamoEnvioResultado? _resultadoVista;
     private readonly HashSet<string> _marcados = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ReclamoEnvioResultado> _resultados = [];
+    private string _actual = string.Empty, _envioMensaje = string.Empty;
+    private int _envioTotal;
+    private bool _cancelando;
+    private CancellationTokenSource? _envioCts;
     private PageHeaderConfig? _pageHeaderPublicado;
     private readonly CancellationTokenSource _cts = new();
 
-    private IReadOnlyList<AlfaTabItem> Pestanas => [new("clientes", "Clientes"), new("diferencias", "Diferencias mínimas"), new("mensaje", "Mensaje y configuración")];
+    private IReadOnlyList<AlfaTabItem> Pestanas => [new("clientes", "Clientes"), new("enviados", "Enviados"), new("diferencias", "Diferencias mínimas"), new("mensaje", "Mensaje y configuración")];
     private IReadOnlyList<AlfaSelectOption> OpcionesUnidad
         => [new("", "Todas las unidades"), .. _unidades.Select(u => new AlfaSelectOption(u.Codigo, u.Descripcion.Length > 0 ? $"{u.Codigo} - {u.Descripcion}" : u.Codigo))];
     private IReadOnlyList<AlfaSelectOption> OpcionesTramo
@@ -580,12 +754,16 @@
         finally { _busy = false; }
     }
 
-    private void AbrirEnvio() { _resultados.Clear(); _simular = true; _envioAbierto = true; StateHasChanged(); }
+    private void AbrirEnvio() { _resultados.Clear(); _envioMensaje = string.Empty; _simular = true; _envioAbierto = true; StateHasChanged(); }
+    private void CancelarEnvio() { _cancelando = true; _envioCts?.Cancel(); }
     private void CerrarEnvio() { if (!_busy) _envioAbierto = false; }
 
     private async Task EnviarAsync()
     {
-        _busy = true; _error = string.Empty; _resultados.Clear(); StateHasChanged();
+        _busy = true; _cancelando = false; _error = string.Empty; _resultados.Clear(); _envioMensaje = string.Empty; _actual = string.Empty;
+        _envioTotal = _marcados.Count; StateHasChanged();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _envioCts = cts;
         try
         {
             var sol = new ReclamoEnvioSolicitud
@@ -595,12 +773,24 @@
                 MailPrueba = string.IsNullOrWhiteSpace(_mailPrueba) ? null : _mailPrueba.Trim(),
                 TelefonoPrueba = string.IsNullOrWhiteSpace(_telPrueba) ? null : _telPrueba.Trim()
             };
-            _resultados.AddRange(await Servicio.EnviarAsync(sol, null, _cts.Token));
-            if (!_simular) { _busy = false; await BuscarAsync(); }
+            // Cada resultado se muestra apenas se conoce; se vuelca al hilo de la interfaz para no pisar el render.
+            var progreso = new Progress<ReclamoEnvioResultado>(r => _ = InvokeAsync(() =>
+            {
+                if (r.Estado == "Procesando") _actual = r.Nombre; else _resultados.Add(r);
+                StateHasChanged();
+            }));
+            await Servicio.EnviarAsync(sol, progreso, cts.Token);
+            await Task.Delay(50); // deja que se procesen los últimos avisos pendientes
+            _envioMensaje = _simular ? "Simulación terminada: no se envió nada." : "Envío terminado.";
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (_cts.IsCancellationRequested) return; // se salió de la pantalla
+            _envioMensaje = $"Envío cancelado: se procesaron {_resultados.Select(r => r.Cuenta).Distinct(StringComparer.OrdinalIgnoreCase).Count()} de {_envioTotal}. Lo ya enviado quedó registrado.";
+        }
         catch (InvalidOperationException ex) { _error = ex.Message; }
-        finally { _busy = false; }
+        finally { _busy = false; _cancelando = false; _actual = string.Empty; _envioCts = null; }
+        if (!_simular && _resultados.Any(r => r.Estado == "Enviado")) await BuscarAsync();
     }
 
     private void CambiarPlantilla(string? v)

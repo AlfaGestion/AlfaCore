@@ -469,6 +469,45 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
         return valores;
     }
 
+    // ---------------------------------------------------------------- Historial
+
+    /// <summary>Últimos 500 envíos de la bitácora que cumplan el filtro (más recientes primero). Solo lectura.</summary>
+    public Task<IReadOnlyList<ReclamoEnvioFila>> EnviosAsync(ReclamoEnvioFiltro filtro, CancellationToken ct = default)
+        => Ejecutar<IReadOnlyList<ReclamoEnvioFila>>("Envios", "No se pudo leer el historial de reclamos.", async (cn, _, token) =>
+        {
+            var texto = (filtro.Texto ?? string.Empty).Trim();
+            return (await cn.QueryAsync<ReclamoEnvioFila>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'U') IS NOT NULL
+                    SELECT TOP (500) IdEnvio, FechaHora, LTRIM(RTRIM(Usuario)) Usuario, LTRIM(RTRIM(Cuenta)) Cuenta, LTRIM(RTRIM(Nombre)) Nombre,
+                        Canal, Destino, EsPrueba, Tramo, Saldo, Vencido, Comprobantes, ISNULL(Asunto,'') Asunto, Estado, ISNULL(Detalle,'') Detalle, IdLote, IdConversacion, IdMensaje
+                    FROM dbo.ALFACORE_RECLAMO_SALDO_ENVIO
+                    WHERE (@desde IS NULL OR FechaHora >= @desde) AND (@hasta IS NULL OR FechaHora < DATEADD(day, 1, @hasta))
+                        AND (@canal = '' OR Canal = @canal) AND (@estado = '' OR Estado = @estado) AND (@pruebas = 1 OR EsPrueba = 0)
+                        AND (@texto = '' OR Nombre LIKE @patron ESCAPE '~' OR Cuenta LIKE @patron ESCAPE '~' OR Destino LIKE @patron ESCAPE '~' OR Asunto LIKE @patron ESCAPE '~')
+                    ORDER BY IdEnvio DESC;
+                """, new
+            {
+                desde = filtro.Desde?.Date, hasta = filtro.Hasta?.Date, canal = (filtro.Canal ?? string.Empty).Trim().ToUpperInvariant(),
+                estado = (filtro.Estado ?? string.Empty).Trim().ToUpperInvariant(), pruebas = filtro.IncluirPruebas, texto,
+                patron = "%" + texto.Replace("~", "~~").Replace("%", "~%").Replace("_", "~_").Replace("[", "~[") + "%"
+            }, cancellationToken: token))).AsList();
+        }, ct);
+
+    /// <summary>Lo enviado en un reclamo: cuerpo tal como salió y comprobantes reclamados (los envíos viejos no los tienen).</summary>
+    public Task<ReclamoEnvioDetalle> EnvioDetalleAsync(long idEnvio, CancellationToken ct = default)
+        => Ejecutar("EnvioDetalle", "No se pudo leer el detalle del envío.", async (cn, _, token) =>
+        {
+            var d = new ReclamoEnvioDetalle();
+            if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO_CPTE',N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: token)) == 0)
+                return d;
+            d.Cuerpo = await cn.ExecuteScalarAsync<string?>(new CommandDefinition("SELECT Cuerpo FROM dbo.ALFACORE_RECLAMO_SALDO_ENVIO WHERE IdEnvio=@idEnvio;", new { idEnvio }, cancellationToken: token)) ?? string.Empty;
+            d.Comprobantes = (await cn.QueryAsync<ReclamoComprobante>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(Unidad)) Unidad, LTRIM(RTRIM(Tc)) Tc, LTRIM(RTRIM(Numero)) Numero, ISNULL(Fecha,0) Fecha, Vencimiento, Importe, Saldo, DiasVencido
+                FROM dbo.ALFACORE_RECLAMO_SALDO_ENVIO_CPTE WHERE IdEnvio=@idEnvio ORDER BY IdCpte;
+                """, new { idEnvio }, cancellationToken: token))).AsList();
+            return d;
+        }, ct);
+
     // ---------------------------------------------------------------- Envío
 
     /// <summary>
@@ -506,6 +545,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             var esPrueba = !string.IsNullOrWhiteSpace(sol.MailPrueba) || !string.IsNullOrWhiteSpace(sol.TelefonoPrueba);
             CorreoSalienteService.CuentaCorreo? cuentaMail = null;
             var resultados = new List<ReclamoEnvioResultado>();
+            var lote = Guid.NewGuid();
             void Registrar(ReclamoEnvioResultado r) { resultados.Add(r); progreso?.Report(r); }
 
             foreach (var cuenta in sol.Cuentas.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -517,12 +557,16 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                     Registrar(new() { Cuenta = cuenta, Canal = sol.Canal.ToString(), Estado = "Omitido", Detalle = "Ya no tiene saldo pendiente en tus unidades de negocio." });
                     continue;
                 }
+                // Aviso de avance: "Procesando" no es un resultado, solo le dice a la pantalla qué cliente está en curso.
+                progreso?.Report(new() { Cuenta = cli.Cuenta, Nombre = cli.Nombre, Estado = "Procesando" });
                 var reciente = !sol.IgnorarEnviosRecientes && !esPrueba && cfg.DiasEntreEnvios > 0 && cli.UltimoReclamo is { } ult
                     && (DateTime.Now - ult).TotalDays < cfg.DiasEntreEnvios;
                 // El enlace al portal (crea un token en la base) solo se genera si de verdad se va a mandar el mail.
                 var hayDestinoMail = !string.IsNullOrWhiteSpace(sol.MailPrueba) || mailManual.Length > 0 || cli.TieneEmail;
                 var armado = await ArmarAsync(cn, cfg, cli, detalles.GetValueOrDefault(cli.Cuenta) ?? [], sol.TramoForzado, nombresUnidad,
                     portalBase with { Generar = !sol.SoloSimular && enviarMail && !reciente && hayDestinoMail }, token);
+
+                Traza TrazaDe(string? cuerpo, long? conv = null, long? msg = null) => new(lote, conv, msg, cuerpo, detalles.GetValueOrDefault(cli.Cuenta) ?? []);
 
                 if (enviarMail)
                 {
@@ -541,7 +585,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                             var asunto = esPrueba ? "[PRUEBA] " + armado.Vista.Asunto : armado.Vista.Asunto;
                             await correo.EnviarAsync(cn, cuentaMail, validos, asunto, armado.Vista.CuerpoHtml, [], token);
                             r.Estado = "Enviado"; r.Detalle = $"Tramo {armado.Vista.Tramo}.";
-                            await Bitacora(cn, user, cli, "EMAIL", destino, esPrueba, armado.Vista, "ENVIADO", null, token);
+                            await Bitacora(cn, user, cli, "EMAIL", destino, esPrueba, armado.Vista, "ENVIADO", null, TrazaDe(MascararToken(armado.Vista.CuerpoHtml)), token);
                             await Task.Delay(300, token);
                         }
                     }
@@ -550,7 +594,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                     {
                         r.Estado = "Error"; r.Detalle = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
                         await events.LogErrorAsync("ReclamoSaldos", "EnviarEmail", ex, "No se pudo enviar el reclamo por email.", ct: token);
-                        await Bitacora(cn, user, cli, "EMAIL", r.Destino, esPrueba, armado.Vista, "ERROR", r.Detalle, token);
+                        await Bitacora(cn, user, cli, "EMAIL", r.Destino, esPrueba, armado.Vista, "ERROR", r.Detalle, TrazaDe(MascararToken(armado.Vista.CuerpoHtml)), token);
                     }
                     Registrar(r);
                 }
@@ -576,7 +620,8 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                                 EsMetaRemota = plantilla.EsMetaRemota, UsuarioAccion = user.Nombre, ValoresVariables = [.. valores]
                             }, token);
                             r.Estado = "Enviado"; r.Detalle = $"Tramo {armado.Vista.Tramo}. Estado Meta: {msg.EstadoEnvio}.";
-                            await Bitacora(cn, user, cli, "WHATSAPP", tel, esPrueba, armado.Vista, "ENVIADO", r.Detalle, token);
+                            await Bitacora(cn, user, cli, "WHATSAPP", tel, esPrueba, armado.Vista, "ENVIADO", r.Detalle,
+                                TrazaDe(ReclamoSaldosPlantilla.RellenarPlantilla(plantilla.CuerpoTexto, valores), conv.IdConversacion, msg.IdMensaje), token);
                             await Task.Delay(500, token);
                         }
                     }
@@ -585,7 +630,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                     {
                         r.Estado = "Error"; r.Detalle = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
                         await events.LogErrorAsync("ReclamoSaldos", "EnviarWhatsApp", ex, "No se pudo enviar el reclamo por WhatsApp.", ct: token);
-                        await Bitacora(cn, user, cli, "WHATSAPP", r.Destino, esPrueba, armado.Vista, "ERROR", r.Detalle, token);
+                        await Bitacora(cn, user, cli, "WHATSAPP", r.Destino, esPrueba, armado.Vista, "ERROR", r.Detalle, TrazaDe(null), token);
                     }
                     Registrar(r);
                 }
@@ -593,17 +638,36 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             return resultados;
         }, ct);
 
-    private static Task Bitacora(SqlConnection cn, Usuario user, ReclamoCliente cli, string canal, string destino, bool prueba,
-        ReclamoVistaPrevia vista, string estado, string? detalle, CancellationToken ct)
-        => cn.ExecuteAsync(new CommandDefinition("""
-            INSERT INTO dbo.ALFACORE_RECLAMO_SALDO_ENVIO (Usuario,Cuenta,Nombre,Canal,Destino,EsPrueba,Tramo,Saldo,Vencido,Comprobantes,Asunto,Estado,Detalle)
-            VALUES (@u,@cuenta,@nombre,@canal,@destino,@prueba,@tramo,@saldo,@vencido,@cptes,@asunto,@estado,@detalle);
+    /// <summary>Lo que se guarda para poder reconstruir un envío: lote, enlace con Conversaciones, cuerpo y comprobantes reclamados.</summary>
+    private sealed record Traza(Guid Lote, long? IdConversacion, long? IdMensaje, string? Cuerpo, IReadOnlyList<ReclamoComprobante> Comprobantes);
+
+    // El enlace al portal es una credencial: no se guarda en claro en la bitácora.
+    private static string MascararToken(string html)
+        => System.Text.RegularExpressions.Regex.Replace(html ?? string.Empty, @"token=[A-Za-z0-9_\-]+", "token=***");
+
+    private static async Task Bitacora(SqlConnection cn, Usuario user, ReclamoCliente cli, string canal, string destino, bool prueba,
+        ReclamoVistaPrevia vista, string estado, string? detalle, Traza traza, CancellationToken ct)
+    {
+        var idEnvio = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+            INSERT INTO dbo.ALFACORE_RECLAMO_SALDO_ENVIO (Usuario,Cuenta,Nombre,Canal,Destino,EsPrueba,Tramo,Saldo,Vencido,Comprobantes,Asunto,Estado,Detalle,IdLote,IdConversacion,IdMensaje,Cuerpo)
+            VALUES (@u,@cuenta,@nombre,@canal,@destino,@prueba,@tramo,@saldo,@vencido,@cptes,@asunto,@estado,@detalle,@lote,@conv,@msg,@cuerpo);
+            SELECT CONVERT(bigint, SCOPE_IDENTITY());
             """, new
         {
             u = Trunc(user.Nombre, 60), cuenta = Trunc(cli.Cuenta, 30), nombre = Trunc(cli.Nombre, 150), canal, destino = Trunc(destino, 300), prueba,
             tramo = vista.Tramo, saldo = cli.Saldo, vencido = cli.Vencido, cptes = cli.CantidadComprobantes, asunto = Trunc(vista.Asunto, 300),
-            estado, detalle = Trunc(detalle, 500)
+            estado, detalle = Trunc(detalle, 500), lote = traza.Lote, conv = traza.IdConversacion, msg = traza.IdMensaje, cuerpo = traza.Cuerpo
         }, cancellationToken: ct));
+        if (traza.Comprobantes.Count == 0) return;
+        await cn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO dbo.ALFACORE_RECLAMO_SALDO_ENVIO_CPTE (IdEnvio,Unidad,Tc,Numero,Fecha,Vencimiento,Importe,Saldo,DiasVencido)
+            VALUES (@idEnvio,@unidad,@tc,@numero,@fecha,@vto,@importe,@saldo,@dias);
+            """, traza.Comprobantes.Select(c => new
+        {
+            idEnvio, unidad = Trunc(c.Unidad, 10) ?? string.Empty, tc = Trunc(c.Tc, 10) ?? string.Empty, numero = Trunc(c.Numero, 40) ?? string.Empty,
+            fecha = (DateTime?)c.Fecha, vto = c.Vencimiento, importe = c.Importe, saldo = c.Saldo, dias = c.DiasVencido
+        }).ToList(), cancellationToken: ct));
+    }
 
     private static string? Trunc(string? s, int max) => s is null ? null : s.Length <= max ? s : s[..max];
 }

@@ -132,6 +132,13 @@ public sealed class ReclamoEnvioResultado
     public string Detalle { get; set; } = string.Empty;
 }
 
+/// <summary>Lo que se envió: cuerpo tal como salió y la foto de los comprobantes reclamados.</summary>
+public sealed class ReclamoEnvioDetalle
+{
+    public string Cuerpo { get; set; } = string.Empty;
+    public List<ReclamoComprobante> Comprobantes { get; set; } = [];
+}
+
 public sealed class ReclamoPlantillaWhatsApp
 {
     public long IdPlantilla { get; set; }
@@ -144,4 +151,42 @@ public sealed class ReclamoUnidad
 {
     public string Codigo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
+}
+
+/// <summary>Filtros del historial de reclamos enviados (bitácora ALFACORE_RECLAMO_SALDO_ENVIO).</summary>
+public sealed class ReclamoEnvioFiltro
+{
+    public DateTime? Desde { get; set; }
+    public DateTime? Hasta { get; set; }
+    /// <summary>Busca en cliente, código, destino y asunto.</summary>
+    public string Texto { get; set; } = string.Empty;
+    /// <summary>EMAIL | WHATSAPP | vacío = todos.</summary>
+    public string Canal { get; set; } = string.Empty;
+    /// <summary>ENVIADO | ERROR | vacío = todos.</summary>
+    public string Estado { get; set; } = string.Empty;
+    public bool IncluirPruebas { get; set; } = true;
+}
+
+public sealed class ReclamoEnvioFila
+{
+    public long IdEnvio { get; set; }
+    public DateTime FechaHora { get; set; }
+    public string Usuario { get; set; } = string.Empty;
+    public string Cuenta { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string Canal { get; set; } = string.Empty;
+    public string Destino { get; set; } = string.Empty;
+    public bool EsPrueba { get; set; }
+    public int Tramo { get; set; }
+    public decimal Saldo { get; set; }
+    public decimal Vencido { get; set; }
+    public int Comprobantes { get; set; }
+    public string Asunto { get; set; } = string.Empty;
+    public string Estado { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    /// <summary>Todos los envíos de una misma acción de "Enviar" comparten lote.</summary>
+    public Guid? IdLote { get; set; }
+    /// <summary>WhatsApp: conversación y mensaje en Conversaciones (null en email y en envíos anteriores a la trazabilidad).</summary>
+    public long? IdConversacion { get; set; }
+    public long? IdMensaje { get; set; }
 }
