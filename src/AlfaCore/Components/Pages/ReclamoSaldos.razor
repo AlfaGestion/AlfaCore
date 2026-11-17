@@ -276,7 +276,8 @@
             <section class="reclamo-cfg__bloque">
                 <h3>WhatsApp</h3>
                 <p class="gd-hint">WhatsApp exige una plantilla aprobada por Meta para escribirle a un cliente que no te escribió en las últimas 24 horas. Creá la plantilla en Conversaciones → Plantillas con variables de tipo <em>Nombre del cliente</em>, <em>Detalle de deuda</em> y <em>Forma de pago</em> (en ese orden si no las mapeás).</p>
-                <AlfaSelect Label="Número de WhatsApp que envía" Value="@_cfg.IdNumeroWhatsApp.ToString()" ValueChanged="v => CambiarNumeroAsync(v)" Options="@OpcionesNumero" HelpText="Las plantillas disponibles son las de la cuenta de WhatsApp de este número." />
+                <AlfaSelect Label="Número de WhatsApp que envía" Value="@_cfg.IdNumeroWhatsApp.ToString()" ValueChanged="v => CambiarNumeroAsync(v)" Options="@OpcionesNumero" />
+                <p class="gd-hint">Las plantillas disponibles son las de la cuenta de WhatsApp de este número.</p>
                 <AlfaSelect Label="Plantilla de reclamo" Value="@_cfg.IdPlantillaWhatsApp.ToString()" ValueChanged="v => CambiarPlantilla(v)" Options="@OpcionesPlantilla" Placeholder="Sin plantilla" />
                 @if (_plantillaElegida is { } p)
                 {
