@@ -24,7 +24,11 @@ SET @Definicion = REPLACE(@Definicion, N'CREATE  TRIGGER', N'ALTER TRIGGER');
 
 -- Bases en compatibilidad SQL 2008 (nivel 100) no reconocen TRY_CONVERT: CONVERT con estilo 103
 -- interpreta igual dd/MM/yyyy sin depender del DATEFORMAT de la conexión (2026-10-06).
+-- Tambien se chequea la version del motor: SQL 2008 no tiene TRY_CONVERT aunque la base tenga otro nivel.
 IF (SELECT compatibility_level FROM sys.databases WHERE database_id = DB_ID()) < 110
+   OR CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)) < N'11'
+   OR CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)) LIKE N'9.%'
+   OR CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)) LIKE N'10.%'
     SET @Definicion = REPLACE(@Definicion, N'TRY_CONVERT(', N'CONVERT(');
 
 EXEC sys.sp_executesql @Definicion;
