@@ -541,7 +541,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             sb.AppendLine("- PRECIO SIN CLIENTE IDENTIFICADO: la empresa informa precios solo a clientes identificados y quien escribe todavía no lo está. Si en la conversación te pide precios, no los des ni los inventes y no lo derives por eso (tipo RESUELVE): explicale que para pasarle el precio correcto primero tenés que identificarlo, porque puede variar según su cuenta, y que si ya es cliente te diga su nombre o razón social."
                 + (hayRegistrarCliente
                     ? " Si por lo que dice es su primera compra (o no lo sabés), ofrecele también registrarlo como cliente siguiendo el punto CLIENTE NUEVO: una vez registrado le podés pasar los precios y tomarle el pedido."
-                    : string.Empty)
+                    : " Vos no podés registrar clientes nuevos: no le ofrezcas registrarlo. Si por lo que dice no es cliente, eso lo resuelve alguien del equipo (tipo DERIVA).")
                 + (conLink
                     ? $" Incluí, tal cual, este link real del catálogo para que vea los productos disponibles: {linkCatalogoParaLead!.Trim()} (no lo cambies ni inventes otros links)."
                     : " No menciones el catálogo (no hay un link disponible para compartir)."));
