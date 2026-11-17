@@ -1,0 +1,160 @@
+@* Configuración → Respuestas rápidas: textos que se insertan en el chat escribiendo "::" y el atajo. *@
+@inject AlfaCore.Services.IConversacionesRespuestasRapidasService RespuestasSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+
+<ConversacionesConfigPagina Titulo="Respuestas rápidas"
+                            Descripcion="Textos que usás seguido. En el chat escribí :: y elegí una de la lista (o seguí escribiendo el atajo para filtrar).">
+    <Estado>
+        <AlfaTag Tone="@(_respuestas.Count > 0 ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@_respuestas.Count respuesta(s)</AlfaTag>
+    </Estado>
+    <ChildContent>
+        @if (_feedback is not null)
+        {
+            <AlfaFeedbackPanel Message="@_feedback" OnDismiss="@(() => _feedback = null)" />
+        }
+
+        <ConversacionesConfigTarjeta Titulo="@(_edicion.IdRespuesta > 0 ? $"Editar ::{_edicionAtajoOriginal}" : "Nueva respuesta")" Columnas="1">
+            <AlfaInput Id="respuesta-rapida-atajo"
+                       Label="Atajo"
+                       Placeholder="info"
+                       MaxLength="40"
+                       HelpText="Sin espacios. En el chat se usa escribiendo ::info"
+                       Value="@_edicion.Atajo"
+                       ValueChanged="@((string? v) => _edicion.Atajo = v ?? string.Empty)" />
+            <ConversacionesConfigTexto Id="respuesta-rapida-texto"
+                                       Label="Texto"
+                                       Filas="6"
+                                       MaxLength="4096"
+                                       Placeholder="¡Hola! 😊 Gracias por escribirnos..."
+                                       Value="@_edicion.Texto"
+                                       ValueChanged="@((string? v) => _edicion.Texto = v ?? string.Empty)" />
+            <div class="cfg-actions">
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-check-lg" Loading="@_guardando" Disabled="@_cargando" OnClick="GuardarAsync">
+                    @(_edicion.IdRespuesta > 0 ? "Guardar cambios" : "Agregar respuesta")
+                </AlfaButton>
+                @if (_edicion.IdRespuesta > 0)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_guardando" OnClick="CancelarEdicion">Cancelar</AlfaButton>
+                }
+            </div>
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Respuestas cargadas">
+            @if (_cargando)
+            {
+                <span class="cfg-hint">Cargando...</span>
+            }
+            else if (_respuestas.Count == 0)
+            {
+                <span class="cfg-hint">Todavía no hay respuestas rápidas. Agregá la primera arriba.</span>
+            }
+            else
+            {
+                <ul class="respuestas-rapidas-lista">
+                    @foreach (var respuesta in _respuestas)
+                    {
+                        var item = respuesta;
+                        <li class="respuestas-rapidas-lista__item @(item.IdRespuesta == _edicion.IdRespuesta ? "is-editing" : string.Empty)">
+                            <strong class="respuestas-rapidas-lista__atajo">::@item.Atajo</strong>
+                            <span class="respuestas-rapidas-lista__texto">@item.Texto</span>
+                            <span class="respuestas-rapidas-lista__acciones">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi-pencil" Disabled="@_guardando" OnClick="() => Editar(item)">Editar</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi-trash" Disabled="@_guardando" OnClick="() => PedirEliminar(item)">Eliminar</AlfaButton>
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+        </ConversacionesConfigTarjeta>
+    </ChildContent>
+</ConversacionesConfigPagina>
+
+<AlfaConfirmDialog Open="@(_aEliminar is not null)"
+                   Title="¿Eliminar esta respuesta rápida?"
+                   Message="@($"::{_aEliminar?.Atajo} deja de aparecer en el chat para todos.")"
+                   ConfirmLabel="Eliminar"
+                   CancelLabel="Volver"
+                   LoadingLabel="Eliminando..."
+                   Loading="@_guardando"
+                   OnConfirm="EliminarAsync"
+                   OnCancel="@(() => _aEliminar = null)" />
+
+@code {
+    private List<ConversacionRespuestaRapidaDto> _respuestas = [];
+    private ConversacionRespuestaRapidaDto _edicion = new();
+    private string _edicionAtajoOriginal = string.Empty;
+    private ConversacionRespuestaRapidaDto? _aEliminar;
+    private bool _cargando = true;
+    private bool _guardando;
+    private AppUiMessage? _feedback;
+
+    private string Usuario => AppUserSession.GetCurrentUserName(string.Empty).Trim();
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        var result = await UiOps.RunAsync(() => RespuestasSvc.GetAsync(), "No se pudieron cargar las respuestas rápidas.");
+        if (result.Success)
+            _respuestas = (result.Value ?? []).ToList();
+        else
+            _feedback = result.Feedback;
+        _cargando = false;
+    }
+
+    private void Editar(ConversacionRespuestaRapidaDto item)
+    {
+        _edicion = new ConversacionRespuestaRapidaDto { IdRespuesta = item.IdRespuesta, Atajo = item.Atajo, Texto = item.Texto };
+        _edicionAtajoOriginal = item.Atajo;
+        _feedback = null;
+    }
+
+    private void CancelarEdicion()
+    {
+        _edicion = new();
+        _edicionAtajoOriginal = string.Empty;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _guardando = true;
+        _feedback = null;
+        var esNueva = _edicion.IdRespuesta <= 0;
+        var result = await UiOps.RunAsync(() => RespuestasSvc.GuardarAsync(_edicion, Usuario), "No se pudo guardar la respuesta rápida.");
+        _guardando = false;
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success(esNueva ? "Respuesta agregada" : "Respuesta guardada",
+            $"En el chat escribí ::{result.Value?.Atajo} para usarla.");
+        CancelarEdicion();
+        await CargarAsync();
+    }
+
+    private void PedirEliminar(ConversacionRespuestaRapidaDto item) => _aEliminar = item;
+
+    private async Task EliminarAsync()
+    {
+        if (_aEliminar is not { } item)
+            return;
+
+        _guardando = true;
+        var result = await UiOps.RunAsync(() => RespuestasSvc.EliminarAsync(item.IdRespuesta, Usuario), "No se pudo eliminar la respuesta rápida.");
+        _guardando = false;
+        _aEliminar = null;
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        if (_edicion.IdRespuesta == item.IdRespuesta)
+            CancelarEdicion();
+        await CargarAsync();
+    }
+}

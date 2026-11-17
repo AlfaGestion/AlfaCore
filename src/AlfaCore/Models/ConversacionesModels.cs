@@ -910,6 +910,62 @@ public static class ConversacionPlantillaEstadosLocales
     public const string Sincronizada = "SINCRONIZADA";
 }
 
+/// <summary>Respuesta rápida: se inserta en el chat escribiendo "::" + <see cref="Atajo"/>.</summary>
+public sealed class ConversacionRespuestaRapidaDto
+{
+    public int IdRespuesta { get; set; }
+    public string Atajo { get; set; } = string.Empty;
+    public string Texto { get; set; } = string.Empty;
+}
+
+/// <summary>Reglas compartidas por la pantalla de configuración y el chat (sin acceso a datos).</summary>
+public static class ConversacionRespuestasRapidas
+{
+    public const string Disparador = "::";
+    public const int LargoMaximoAtajo = 40;
+    public const int MaximoSugerencias = 8;
+
+    /// <summary>
+    /// Atajo tal como se guarda: sin los "::" del principio (si el usuario los escribió) y sin
+    /// espacios, porque en el chat el atajo termina donde hay un espacio.
+    /// </summary>
+    public static string NormalizarAtajo(string? atajo)
+    {
+        var value = new string((atajo ?? string.Empty).Where(c => !char.IsWhiteSpace(c)).ToArray()).TrimStart(':');
+        return value.Length > LargoMaximoAtajo ? value[..LargoMaximoAtajo] : value;
+    }
+
+    /// <summary>
+    /// Sugerencias para lo escrito después de "::". Primero las que empiezan con eso, después las
+    /// que lo contienen en el atajo y por último las que lo contienen en el texto. Sin nada
+    /// escrito devuelve todas (hasta el máximo), ordenadas por atajo.
+    /// </summary>
+    public static IReadOnlyList<ConversacionRespuestaRapidaDto> Filtrar(IEnumerable<ConversacionRespuestaRapidaDto> respuestas, string? consulta)
+    {
+        var q = (consulta ?? string.Empty).Trim().TrimStart(':');
+        var lista = respuestas.Where(r => !string.IsNullOrWhiteSpace(r.Atajo)).ToList();
+        if (q.Length == 0)
+            return lista.OrderBy(r => r.Atajo, StringComparer.OrdinalIgnoreCase).Take(MaximoSugerencias).ToList();
+
+        static int Rango(ConversacionRespuestaRapidaDto r, string q)
+        {
+            if (r.Atajo.StartsWith(q, StringComparison.OrdinalIgnoreCase)) return 0;
+            if (r.Atajo.Contains(q, StringComparison.OrdinalIgnoreCase)) return 1;
+            if (r.Texto.Contains(q, StringComparison.OrdinalIgnoreCase)) return 2;
+            return 3;
+        }
+
+        return lista
+            .Select(r => (Respuesta: r, Rango: Rango(r, q)))
+            .Where(x => x.Rango < 3)
+            .OrderBy(x => x.Rango)
+            .ThenBy(x => x.Respuesta.Atajo, StringComparer.OrdinalIgnoreCase)
+            .Take(MaximoSugerencias)
+            .Select(x => x.Respuesta)
+            .ToList();
+    }
+}
+
 public sealed class ConversacionEtiquetaDto
 {
     public int IdEtiqueta { get; set; }

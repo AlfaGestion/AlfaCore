@@ -17,6 +17,7 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IConversacionesEtiquetasService EtiquetasSvc
+@inject AlfaCore.Services.IConversacionesRespuestasRapidasService RespuestasRapidasSvc
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -2295,6 +2296,29 @@
                                                 @onclick="ClearQuotedMessage">
                                             <i class="bi bi-x-lg"></i>
                                         </button>
+                                    </div>
+                                }
+                                @if (_quickReplyQuery is not null && _replyText.Contains(ConversacionRespuestasRapidas.Disparador, StringComparison.Ordinal))
+                                {
+                                    <div class="quick-replies" role="listbox" aria-label="Respuestas rápidas">
+                                        @if (_quickReplySugerencias.Count == 0)
+                                        {
+                                            <div class="quick-replies__empty">@QuickReplyEmptyText</div>
+                                        }
+                                        @for (var i = 0; i < _quickReplySugerencias.Count; i++)
+                                        {
+                                            var sugerencia = _quickReplySugerencias[i];
+                                            var activa = i == _quickReplyIndex;
+                                            <button type="button"
+                                                    role="option"
+                                                    aria-selected="@(activa ? "true" : "false")"
+                                                    class="quick-replies__item @(activa ? "is-active" : string.Empty)"
+                                                    @onmousedown:preventDefault
+                                                    @onclick="() => ApplyQuickReplyAsync(sugerencia)">
+                                                <strong>@sugerencia.Atajo</strong>
+                                                <span>@sugerencia.Texto</span>
+                                            </button>
+                                        }
                                     </div>
                                 }
                                 <textarea id="conv-message"
@@ -8622,8 +8646,136 @@
     private async Task HandleReplyInputAsync(ChangeEventArgs args)
     {
         _replyText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        await UpdateQuickRepliesAsync();
         await NotifyTypingAsync(HasReplyText);
     }
+
+    // ---- Respuestas rápidas ("::atajo") ----------------------------------------------------
+    // La lista se abre al escribir "::" (al principio o después de un espacio) y filtra con lo
+    // que sigue. Flechas para moverse, Enter o Tab para elegir, Escape para cerrar (las teclas
+    // las intercepta conversacionesUi.bindReplyEnter mientras la lista está abierta).
+    private IReadOnlyList<ConversacionRespuestaRapidaDto> _quickReplies = [];
+    private bool _quickRepliesLoaded;
+    private string? _quickReplyQuery;
+    private IReadOnlyList<ConversacionRespuestaRapidaDto> _quickReplySugerencias = [];
+    private int _quickReplyIndex;
+
+    private string QuickReplyEmptyText
+        => _quickReplies.Count == 0
+            ? "Todavía no hay respuestas rápidas. Se cargan en Configuración → Respuestas rápidas."
+            : $"Ninguna respuesta rápida coincide con \"{_quickReplyQuery}\".";
+
+    private async Task UpdateQuickRepliesAsync()
+    {
+        string? query = null;
+        if (_replyText.Contains(ConversacionRespuestasRapidas.Disparador, StringComparison.Ordinal))
+        {
+            try
+            {
+                query = await JS.InvokeAsync<string?>("conversacionesUi.getQuickReplyQuery", _replyTextArea);
+            }
+            catch
+            {
+                query = null;
+            }
+        }
+
+        if (query is null)
+        {
+            await CloseQuickRepliesAsync();
+            return;
+        }
+
+        if (!_quickRepliesLoaded)
+        {
+            try
+            {
+                _quickReplies = await RespuestasRapidasSvc.GetAsync();
+            }
+            catch
+            {
+                _quickReplies = []; // sin respuestas no se rompe el chat; el error ya quedó registrado en AUX_ERR.
+            }
+            _quickRepliesLoaded = true;
+        }
+
+        var cambioConsulta = !string.Equals(query, _quickReplyQuery, StringComparison.Ordinal);
+        _quickReplyQuery = query;
+        _quickReplySugerencias = ConversacionRespuestasRapidas.Filtrar(_quickReplies, query);
+        if (cambioConsulta || _quickReplyIndex >= _quickReplySugerencias.Count)
+            _quickReplyIndex = 0;
+        await SetQuickReplyOpenInJsAsync(_quickReplySugerencias.Count > 0);
+    }
+
+    private async Task CloseQuickRepliesAsync()
+    {
+        if (_quickReplyQuery is null)
+            return;
+        _quickReplyQuery = null;
+        _quickReplySugerencias = [];
+        _quickReplyIndex = 0;
+        await SetQuickReplyOpenInJsAsync(false);
+    }
+
+    private async Task SetQuickReplyOpenInJsAsync(bool open)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setQuickReplyOpen", _replyTextArea, open);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task ApplyQuickReplyAsync(ConversacionRespuestaRapidaDto respuesta)
+    {
+        try
+        {
+            _replyText = await JS.InvokeAsync<string>("conversacionesUi.replaceQuickReplyToken", _replyTextArea, respuesta.Texto);
+        }
+        catch
+        {
+            _replyText = respuesta.Texto;
+            _syncReplyTextAfterRender = true;
+        }
+        await CloseQuickRepliesAsync();
+        await NotifyTypingAsync(HasReplyText);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task QuickReplyKey(string key)
+        => InvokeAsync(async () =>
+        {
+            // La marca de "abierta" en JS puede quedar vieja (p. ej. se mandó el mensaje con el botón):
+            // si ya no hay lista, Enter vuelve a ser "enviar".
+            if (_quickReplyQuery is null || _quickReplySugerencias.Count == 0)
+            {
+                await SetQuickReplyOpenInJsAsync(false);
+                if (key == "Enter")
+                    await SendReplyAsync();
+                return;
+            }
+
+            switch (key)
+            {
+                case "ArrowDown":
+                    _quickReplyIndex = (_quickReplyIndex + 1) % _quickReplySugerencias.Count;
+                    break;
+                case "ArrowUp":
+                    _quickReplyIndex = (_quickReplyIndex - 1 + _quickReplySugerencias.Count) % _quickReplySugerencias.Count;
+                    break;
+                case "Enter":
+                case "Tab":
+                    await ApplyQuickReplyAsync(_quickReplySugerencias[Math.Clamp(_quickReplyIndex, 0, _quickReplySugerencias.Count - 1)]);
+                    return;
+                case "Escape":
+                    await CloseQuickRepliesAsync();
+                    break;
+            }
+            StateHasChanged();
+        });
 
     private async Task PrepararInvitacionPortalAsync()
     {

@@ -720,6 +720,17 @@ window.conversacionesUi = {
         }
 
         const handler = (event) => {
+            // Con la lista de respuestas rápidas abierta (::), las flechas, Enter, Tab y Escape
+            // manejan la lista: Enter elige la respuesta, no manda el mensaje.
+            if (element._conversacionesQuickReplyOpen
+                && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)
+                && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+                event.preventDefault();
+                if (event.isComposing) return;
+                dotNetRef.invokeMethodAsync('QuickReplyKey', event.key).catch(() => {});
+                return;
+            }
+
             if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
                 return;
             }
@@ -1180,6 +1191,50 @@ window.conversacionesUi = {
         }
 
         return true;
+    },
+
+    // Respuestas rápidas: lo escrito después de "::" hasta el cursor (null si no se está escribiendo un atajo).
+    // El "::" tiene que estar al principio o después de un espacio, para no dispararse con un horario "10::30".
+    _quickReplyMatch: function (element) {
+        if (!element) return null;
+        const value = element.value || '';
+        const caret = Number.isInteger(element.selectionStart) ? element.selectionStart : value.length;
+        const before = value.slice(0, caret);
+        const match = /(^|\s)::(\S*)$/.exec(before);
+        if (!match) return null;
+        return { start: match.index + match[1].length, caret: caret, query: match[2] };
+    },
+
+    getQuickReplyQuery: function (element) {
+        const match = this._quickReplyMatch(element);
+        return match ? match.query : null;
+    },
+
+    setQuickReplyOpen: function (element, open) {
+        if (element) element._conversacionesQuickReplyOpen = !!open;
+    },
+
+    replaceQuickReplyToken: function (element, text) {
+        if (!element) return text || '';
+        const value = element.value || '';
+        const match = this._quickReplyMatch(element);
+        const insert = text || '';
+        const start = match ? match.start : (Number.isInteger(element.selectionStart) ? element.selectionStart : value.length);
+        const end = match ? match.caret : start;
+        element.value = `${value.slice(0, start)}${insert}${value.slice(end)}`;
+        element._conversacionesQuickReplyOpen = false;
+        const nextPosition = start + insert.length;
+        try {
+            element.setSelectionRange(nextPosition, nextPosition);
+        } catch {
+        }
+        this.autoResizeTextarea(element, 44, 120);
+        try {
+            element.focus({ preventScroll: true });
+        } catch {
+            element.focus();
+        }
+        return element.value;
     },
 
     insertTextAtCursor: function (element, text) {

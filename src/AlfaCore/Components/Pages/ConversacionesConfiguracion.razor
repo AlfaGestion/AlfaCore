@@ -639,6 +639,11 @@
                                               OnIrASeccion="@((string seccion) => SelectSecondaryTab("asistente-ia", seccion))" />
     }
 
+    @if (_activePrimaryTab == "respuestas-rapidas")
+    {
+        <ConversacionesConfiguracionRespuestasRapidas />
+    }
+
     @if (_activePrimaryTab == "informes")
     {
         <ConversacionesConfiguracionAutomatizacion Config="_automatizacionesConfig"
@@ -1253,6 +1258,7 @@
             new("sla", "SLA"),
             new("encuesta", "Encuesta de satisfacción")
         ]),
+        new("respuestas-rapidas", "Respuestas rápidas", []),
         new("informes", "Informes", []),
         new("operacion-accesos", "Operación y accesos",
         [
@@ -6201,6 +6207,7 @@
             "asistente-ia" => _automatizacionesConfig.BotActivo ? "Asistente activo" : "Asistente apagado",
             "automatizacion" => $"{CountActiveAutomations()} automatización(es) activa(s)",
             "informes" => "Informe mensual por cliente",
+            "respuestas-rapidas" => "Textos guardados para el chat",
             "operacion-accesos" => $"{_administradores.Count} administrador(es)",
             "soporte" => HasWebhookToken ? "Webhook SaaS configurado" : "Webhook Token no configurado",
             _ => string.Empty
@@ -6213,6 +6220,7 @@
             "automatizacion" => $"{_reglas.Count} regla(s) cargada(s) · SLA: {(_automatizacionesConfig.SlaActivo ? "Activo" : "Inactivo")}",
             "asistente-ia" => $"Personalidad: {(!string.IsNullOrWhiteSpace(_automatizacionesConfig.AsistenteComportamiento) ? "cargada" : "pendiente")} · AlfaKnowledge: {(_alfaKnowledgeConfig.IsConfigured ? "conectado" : "sin conectar")}",
             "informes" => string.IsNullOrWhiteSpace(_automatizacionesConfig.InformeInstrucciones) ? "Estilo por defecto" : "Estilo personalizado",
+            "respuestas-rapidas" => "En el chat se usan escribiendo ::",
             "operacion-accesos" => $"{_numeros.Count(x => x.Usuarios.Count > 0)} número(s) con usuarios asignados",
             "soporte" => "Estado calculado con la configuración actualmente cargada",
             _ => string.Empty

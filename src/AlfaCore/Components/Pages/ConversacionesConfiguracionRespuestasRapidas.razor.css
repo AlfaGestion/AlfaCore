@@ -1,0 +1,46 @@
+.respuestas-rapidas-lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.respuestas-rapidas-lista__item {
+    display: grid;
+    grid-template-columns: minmax(90px, 160px) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--alfa-border);
+    border-radius: 8px;
+}
+
+.respuestas-rapidas-lista__item.is-editing {
+    border-color: var(--alfa-accent);
+}
+
+.respuestas-rapidas-lista__atajo {
+    color: var(--alfa-accent);
+    overflow-wrap: anywhere;
+}
+
+.respuestas-rapidas-lista__texto {
+    color: var(--alfa-text-secondary);
+    white-space: pre-line;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.respuestas-rapidas-lista__acciones {
+    display: flex;
+    gap: 4px;
+}
+
+@media (max-width: 640px) {
+    .respuestas-rapidas-lista__item {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
