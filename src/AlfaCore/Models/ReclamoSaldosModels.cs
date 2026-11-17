@@ -189,4 +189,16 @@ public sealed class ReclamoEnvioFila
     /// <summary>WhatsApp: conversación y mensaje en Conversaciones (null en email y en envíos anteriores a la trazabilidad).</summary>
     public long? IdConversacion { get; set; }
     public long? IdMensaje { get; set; }
+
+    // ---- Resultado del reclamo (se calcula al consultar, no se guarda) ----
+    /// <summary>WhatsApp: ENVIADO_META | ENTREGADO | LEIDO | ERROR_ENVIO (vacío si no aplica o no se encuentra).</summary>
+    public string EstadoMensaje { get; set; } = string.Empty;
+    /// <summary>Primera respuesta del cliente en la conversación después del envío (WhatsApp).</summary>
+    public DateTime? Respondio { get; set; }
+    /// <summary>Cuándo el cliente abrió el enlace al portal del mail (si el mensaje lo llevaba).</summary>
+    public DateTime? AbrioPortal { get; set; }
+    /// <summary>Cobranzas registradas para el cliente desde el envío.</summary>
+    public decimal CobradoDesdeEnvio { get; set; }
+    /// <summary>Saldo actual de la cuenta (para compararlo con el saldo reclamado).</summary>
+    public decimal? SaldoActual { get; set; }
 }

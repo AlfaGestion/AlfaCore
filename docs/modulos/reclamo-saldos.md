@@ -47,7 +47,10 @@ Historial de la bitácora (`ALFACORE_RECLAMO_SALDO_ENVIO`): fecha, cliente, cana
 motivo si falló) y usuario. Filtros por fecha, texto, canal, estado y envíos de prueba; últimos 500. Las simulaciones no se
 registran. "Ver enviado" muestra el texto tal como salió y la foto de los comprobantes reclamados; los WhatsApp tienen un enlace
 a su conversación en Conversaciones. Cada acción de "Enviar" comparte un lote. Todo esto se guarda desde el script
-`2026-11-17-051` (los envíos anteriores no lo tienen); el token del enlace al portal se guarda enmascarado. No lee respuestas: las de WhatsApp están en Conversaciones y las de email llegan a la casilla "responder a".
+`2026-11-17-051` (los envíos anteriores no lo tienen); el token del enlace al portal se guarda enmascarado. Columna **Seguimiento** (calculada al consultar, no se guarda): estado del WhatsApp (enviado a Meta / entregado / leído / falló),
+si el cliente **respondió** en la conversación, si **abrió el enlace al portal** del mail (se asocia el acceso del mismo
+cliente creado minutos antes del envío), lo **cobrado** al cliente desde el envío (`VE_COBRANZAS_REALIZADAS`) y su saldo de hoy contra el reclamado.
+"Cobró" es por cliente, no por comprobante: no distingue si pagó justo lo reclamado. No lee respuestas: las de WhatsApp están en Conversaciones y las de email llegan a la casilla "responder a".
 
 ## Forma de pago y cambio de email
 - `<FORMADEPAGO>` sale primero de "Formas de pago" de la unidad de negocio del último comprobante pendiente del cliente

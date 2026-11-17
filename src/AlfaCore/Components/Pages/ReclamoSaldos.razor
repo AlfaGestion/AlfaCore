@@ -166,7 +166,7 @@
             {
                 <div class="reclamo-page__scroll">
                     <table class="reclamo-page__tabla">
-                        <thead><tr><th>Fecha</th><th>Cliente</th><th>Canal</th><th>Destino</th><th>Tramo</th><th class="reclamo-page__num">Saldo</th><th class="reclamo-page__num">Vencido</th><th>Asunto</th><th>Estado</th><th>Usuario</th><th></th></tr></thead>
+                        <thead><tr><th>Fecha</th><th>Cliente</th><th>Canal</th><th>Destino</th><th>Tramo</th><th class="reclamo-page__num">Saldo</th><th class="reclamo-page__num">Vencido</th><th>Asunto</th><th>Estado</th><th>Seguimiento</th><th>Usuario</th><th></th></tr></thead>
                         <tbody>
                             @foreach (var e in _envios)
                             {
@@ -180,6 +180,16 @@
                                     <td class="reclamo-page__num">@Dinero(e.Vencido)</td>
                                     <td>@e.Asunto</td>
                                     <td class="@(e.Estado == "ERROR" ? "reclamo-page__vencido" : "reclamo-page__ok")" title="@e.Detalle">@(e.Estado == "ERROR" ? "Error" : "Enviado")@if (e.Estado == "ERROR" && e.Detalle.Length > 0) { <small>@e.Detalle</small> }</td>
+                                    <td class="reclamo-page__seguimiento">
+                                        @if (e.Estado == "ENVIADO")
+                                        {
+                                            @if (e.EstadoMensaje.Length > 0) { <span class="reclamo-seg @(e.EstadoMensaje == "ERROR_ENVIO" ? "reclamo-seg--mal" : "reclamo-seg--ok")" title="Estado del mensaje en WhatsApp"><i class="bi bi-whatsapp"></i> @EstadoMensajeTexto(e.EstadoMensaje)</span> }
+                                            @if (e.Respondio is { } rsp) { <span class="reclamo-seg reclamo-seg--ok" title="Respuesta del cliente en la conversación"><i class="bi bi-reply"></i> Respondió @rsp.ToString("dd/MM HH:mm")</span> }
+                                            @if (e.AbrioPortal is { } ap) { <span class="reclamo-seg reclamo-seg--ok" title="Abrió el enlace al portal del mail"><i class="bi bi-box-arrow-up-right"></i> Abrió el portal @ap.ToString("dd/MM HH:mm")</span> }
+                                            @if (e.CobradoDesdeEnvio > 0) { <span class="reclamo-seg reclamo-seg--ok" title="Cobranzas registradas para el cliente desde el envío"><i class="bi bi-cash-coin"></i> Cobró @Dinero(e.CobradoDesdeEnvio)</span> }
+                                            @if (e.SaldoActual is { } sa) { <small>Saldo hoy @Dinero(sa) (reclamado @Dinero(e.Saldo))</small> }
+                                        }
+                                    </td>
                                     <td>@e.Usuario</td>
                                     <td class="reclamo-page__acciones">
                                         <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="_ => VerEnvioAsync(e)">Ver enviado</AlfaButton>
@@ -449,6 +459,11 @@
     private string _envDesde = DateTime.Today.AddDays(-30).ToString("yyyy-MM-dd"), _envHasta = string.Empty, _envTexto = string.Empty, _envCanal = string.Empty, _envEstado = string.Empty;
     private static IReadOnlyList<AlfaSelectOption> OpcionesEnvCanal => [new("", "Todos"), new("EMAIL", "Email"), new("WHATSAPP", "WhatsApp")];
     private static IReadOnlyList<AlfaSelectOption> OpcionesEnvEstado => [new("", "Todos"), new("ENVIADO", "Enviado"), new("ERROR", "Con error")];
+
+    private static string EstadoMensajeTexto(string estado) => estado switch
+    {
+        "LEIDO" => "Leído", "ENTREGADO" => "Entregado", "ENVIADO_META" => "Enviado a Meta", "ERROR_ENVIO" => "Falló en Meta", _ => estado
+    };
 
     private ReclamoEnvioFila? _envFila;
     private ReclamoEnvioDetalle? _envDetalle;

@@ -59,3 +59,7 @@
 .reclamo-page__acciones { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
 .reclamo-page__enlace { font-size: 13px; color: var(--alfa-accent, #2f7bff); text-decoration: none; }
 .reclamo-page__enlace:hover { text-decoration: underline; }
+.reclamo-page__seguimiento { display: grid; gap: 4px; min-width: 190px; }
+.reclamo-seg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 8px; border-radius: 999px; width: fit-content; }
+.reclamo-seg--ok { background: color-mix(in srgb, var(--alfa-success, #3fb950) 18%, transparent); color: var(--alfa-success, #3fb950); }
+.reclamo-seg--mal { background: color-mix(in srgb, var(--alfa-danger, #eb5759) 18%, transparent); color: var(--alfa-danger, #eb5759); }

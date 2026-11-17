@@ -476,7 +476,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
         => Ejecutar<IReadOnlyList<ReclamoEnvioFila>>("Envios", "No se pudo leer el historial de reclamos.", async (cn, _, token) =>
         {
             var texto = (filtro.Texto ?? string.Empty).Trim();
-            return (await cn.QueryAsync<ReclamoEnvioFila>(new CommandDefinition("""
+            var filas = (await cn.QueryAsync<ReclamoEnvioFila>(new CommandDefinition("""
                 IF OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'U') IS NOT NULL
                     SELECT TOP (500) IdEnvio, FechaHora, LTRIM(RTRIM(Usuario)) Usuario, LTRIM(RTRIM(Cuenta)) Cuenta, LTRIM(RTRIM(Nombre)) Nombre,
                         Canal, Destino, EsPrueba, Tramo, Saldo, Vencido, Comprobantes, ISNULL(Asunto,'') Asunto, Estado, ISNULL(Detalle,'') Detalle, IdLote, IdConversacion, IdMensaje
@@ -491,7 +491,78 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                 estado = (filtro.Estado ?? string.Empty).Trim().ToUpperInvariant(), pruebas = filtro.IncluirPruebas, texto,
                 patron = "%" + texto.Replace("~", "~~").Replace("%", "~%").Replace("_", "~_").Replace("[", "~[") + "%"
             }, cancellationToken: token))).AsList();
+            await CompletarResultadosAsync(cn, filas, token);
+            return filas;
         }, ct);
+
+    private sealed record MensajeRow(long IdMensaje, string Estado);
+    private sealed record EntranteRow(long IdConversacion, DateTime FechaHora);
+    private sealed record TokenRow(string CodigoCliente, DateTime Creacion, DateTime Uso);
+    private sealed record CobroRow(string Cuenta, DateTime Grabacion, decimal Importe);
+    private sealed record SaldoRow(string Cuenta, decimal Saldo);
+
+    // Señales de seguimiento de cada reclamo. Cada una se arma con su propia consulta y solo si la tabla existe
+    // (hay bases sin Conversaciones). Nada se guarda: se calcula al consultar, con los datos de ese momento.
+    private static async Task CompletarResultadosAsync(SqlConnection cn, List<ReclamoEnvioFila> filas, CancellationToken ct)
+    {
+        var reales = filas.Where(f => f.Estado == "ENVIADO").ToList();
+        if (reales.Count == 0) return;
+        var desde = reales.Min(f => f.FechaHora).AddMinutes(-15);
+
+        var msgIds = reales.Where(f => f.IdMensaje is not null).Select(f => f.IdMensaje!.Value).Distinct().ToList();
+        if (msgIds.Count > 0)
+        {
+            var estados = (await cn.QueryAsync<MensajeRow>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.CONV_MENSAJES', N'U') IS NOT NULL
+                    SELECT IdMensaje, ISNULL(EstadoEnvio, N'') Estado FROM dbo.CONV_MENSAJES WHERE IdMensaje IN @ids;
+                """, new { ids = msgIds }, cancellationToken: ct))).ToDictionary(x => x.IdMensaje, x => x.Estado);
+            foreach (var f in reales.Where(f => f.IdMensaje is not null))
+                if (estados.TryGetValue(f.IdMensaje!.Value, out var e)) f.EstadoMensaje = e;
+
+            var convs = reales.Where(f => f.IdConversacion is not null).Select(f => f.IdConversacion!.Value).Distinct().ToList();
+            var entrantes = (await cn.QueryAsync<EntranteRow>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.CONV_MENSAJES', N'U') IS NOT NULL
+                    SELECT IdConversacion, FechaHora FROM dbo.CONV_MENSAJES
+                    WHERE Direction = N'ENTRANTE' AND IdConversacion IN @convs AND FechaHora >= @desde;
+                """, new { convs, desde }, cancellationToken: ct))).ToList();
+            foreach (var f in reales.Where(f => f.IdConversacion is not null))
+            {
+                var r = entrantes.Where(x => x.IdConversacion == f.IdConversacion && x.FechaHora > f.FechaHora).OrderBy(x => x.FechaHora).FirstOrDefault();
+                if (r is not null) f.Respondio = r.FechaHora;
+            }
+        }
+
+        var cuentas = reales.Select(f => f.Cuenta).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // El enlace al portal se crea justo antes de mandar el mail: se asocia el acceso del mismo cliente creado en esos minutos.
+        var tokens = (await cn.QueryAsync<TokenRow>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN', N'U') IS NOT NULL
+                SELECT LTRIM(RTRIM(CodigoCliente)) CodigoCliente, FechaHora_Creacion Creacion, FechaHora_Uso Uso
+                FROM dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN
+                WHERE LTRIM(RTRIM(CodigoCliente)) IN @cuentas AND FechaHora_Creacion >= @desde AND FechaHora_Uso IS NOT NULL;
+            """, new { cuentas, desde }, cancellationToken: ct))).ToList();
+        foreach (var f in reales.Where(f => f.Canal == "EMAIL"))
+        {
+            var t = tokens.Where(x => x.CodigoCliente.Equals(f.Cuenta, StringComparison.OrdinalIgnoreCase)
+                    && x.Creacion >= f.FechaHora.AddMinutes(-15) && x.Creacion <= f.FechaHora.AddMinutes(1)).OrderBy(x => x.Uso).FirstOrDefault();
+            if (t is not null) f.AbrioPortal = t.Uso;
+        }
+
+        var cobros = (await cn.QueryAsync<CobroRow>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.VE_COBRANZAS_REALIZADAS', N'V') IS NOT NULL
+                SELECT LTRIM(RTRIM(CUENTA)) Cuenta, FechaHora_Grabacion Grabacion, CONVERT(decimal(18,2), ISNULL(IMPORTE,0)) Importe
+                FROM dbo.VE_COBRANZAS_REALIZADAS WHERE LTRIM(RTRIM(CUENTA)) IN @cuentas AND FechaHora_Grabacion >= @desde;
+            """, new { cuentas, desde }, cancellationToken: ct))).ToList();
+        var saldos = (await cn.QueryAsync<SaldoRow>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.VE_SALDOSCTA', N'V') IS NOT NULL
+                SELECT LTRIM(RTRIM(CUENTA)) Cuenta, CONVERT(decimal(18,2), SALDO) Saldo FROM dbo.VE_SALDOSCTA WHERE LTRIM(RTRIM(CUENTA)) IN @cuentas;
+            """, new { cuentas }, cancellationToken: ct))).ToDictionary(x => x.Cuenta, x => x.Saldo, StringComparer.OrdinalIgnoreCase);
+        foreach (var f in reales)
+        {
+            f.CobradoDesdeEnvio = cobros.Where(c => c.Cuenta.Equals(f.Cuenta, StringComparison.OrdinalIgnoreCase) && c.Grabacion >= f.FechaHora).Sum(c => c.Importe);
+            if (saldos.TryGetValue(f.Cuenta, out var s)) f.SaldoActual = s;
+        }
+    }
 
     /// <summary>Lo enviado en un reclamo: cuerpo tal como salió y comprobantes reclamados (los envíos viejos no los tienen).</summary>
     public Task<ReclamoEnvioDetalle> EnvioDetalleAsync(long idEnvio, CancellationToken ct = default)
