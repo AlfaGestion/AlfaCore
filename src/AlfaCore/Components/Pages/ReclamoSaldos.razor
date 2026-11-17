@@ -200,7 +200,7 @@
 
             <section class="reclamo-cfg__bloque">
                 <h3>Forma de pago</h3>
-                <p class="gd-hint">Se inserta en <code>&lt;FORMADEPAGO&gt;</code>. Para una forma distinta por unidad de negocio, agregá en Configuración la clave <code>RECLAMO-SALDOS-FORMA-PAGO-&lt;código de unidad&gt;</code>.</p>
+                <p class="gd-hint">Texto general para <code>&lt;FORMADEPAGO&gt;</code>. Se usa solo si la unidad de negocio del último comprobante del cliente no tiene "Formas de pago" cargadas en Archivos → Unidades de negocio (esas tienen prioridad).</p>
                 <textarea class="reclamo-cfg__texto" rows="4" value="@_cfg.FormaPago" @onchange="e => _cfg.FormaPago = e.Value?.ToString() ?? string.Empty"></textarea>
             </section>
 
@@ -236,13 +236,18 @@
     <ChildContent>
     @if (_vista is { } v)
     {
+        <AlfaInput Label="Para (podés cambiar el email; varios separados con ;)" Value="@_mailVista" ValueChanged="v => _mailVista = v ?? string.Empty" Disabled="@_busy"
+                   Placeholder="cliente@empresa.com" HelpText="Cambia solo este envío: no modifica los datos del cliente." />
         <dl class="reclamo-vista__datos">
-            <dt>Para</dt><dd>@(v.Destinatarios.Length > 0 ? v.Destinatarios : "— sin email —")</dd>
             <dt>Asunto</dt><dd>@v.Asunto</dd>
         </dl>
         @foreach (var a in v.Advertencias)
         {
             <p class="reclamo-vista__aviso"><i class="bi bi-exclamation-triangle"></i> @a</p>
+        }
+        @if (_resultadoVista is { } rv)
+        {
+            <p class="@(rv.Estado == "Error" ? "reclamo-page__vencido" : "reclamo-page__ok")"><strong>@rv.Estado:</strong> @rv.Detalle @(rv.Destino.Length > 0 ? "→ " + rv.Destino : string.Empty)</p>
         }
         @* Iframe aislado: el correo usa sus propios colores (fondo blanco) y no hereda el tema oscuro de la aplicación. *@
         <iframe class="reclamo-vista__cuerpo" sandbox title="Vista previa del email" srcdoc="@ReclamoSaldosPlantilla.DocumentoVistaPrevia(v.CuerpoHtml)"></iframe>
@@ -254,7 +259,9 @@
     }
     </ChildContent>
     <Footer>
-        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="_ => _vista = null">Cerrar</AlfaButton>
+        <AlfaCheckbox Value="@_simularVista" ValueChanged="v => _simularVista = v == true" Disabled="@_busy">Solo simular (no envía nada)</AlfaCheckbox>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_busy" OnClick="_ => _vista = null">Cerrar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Disabled="@(_busy || string.IsNullOrWhiteSpace(_mailVista))" OnClick="_ => EnviarVistaAsync()">@(_simularVista ? "Simular envío" : "Enviar email")</AlfaButton>
     </Footer>
 </AlfaDialog>
 
@@ -336,6 +343,9 @@
     private IReadOnlyList<ReclamoPlantillaWhatsApp> _plantillas = [];
     private ReclamoConfig? _cfg;
     private ReclamoVistaPrevia? _vista;
+    private string _mailVista = string.Empty;
+    private bool _simularVista = true;
+    private ReclamoEnvioResultado? _resultadoVista;
     private readonly HashSet<string> _marcados = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ReclamoEnvioResultado> _resultados = [];
     private PageHeaderConfig? _pageHeaderPublicado;
@@ -541,9 +551,32 @@
     private async Task VerAsync(ReclamoCliente c)
     {
         _busy = true; _error = string.Empty; StateHasChanged();
-        try { _vista = await Servicio.VistaPreviaAsync(c.Cuenta, 0, _cts.Token); }
+        try
+        {
+            _vista = await Servicio.VistaPreviaAsync(c.Cuenta, 0, _cts.Token);
+            _mailVista = _vista.Destinatarios; _simularVista = true; _resultadoVista = null;
+        }
         catch (OperationCanceledException) { }
         catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // Envío individual desde "Ver mensaje": al email que se escribió en el cuadro (real salvo que esté tildado "solo simular").
+    private async Task EnviarVistaAsync()
+    {
+        if (_vista is null) return;
+        _busy = true; _error = string.Empty; _resultadoVista = null; StateHasChanged();
+        try
+        {
+            var res = await Servicio.EnviarAsync(new ReclamoEnvioSolicitud
+            {
+                Cuentas = [_vista.Cuenta], Canal = ReclamoCanal.Email, SoloSimular = _simularVista, MailDestino = _mailVista.Trim(), IgnorarEnviosRecientes = true
+            }, null, _cts.Token);
+            _resultadoVista = res.FirstOrDefault();
+            if (!_simularVista && _resultadoVista?.Estado == "Enviado") { _busy = false; await BuscarAsync(); }
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _resultadoVista = new ReclamoEnvioResultado { Estado = "Error", Detalle = ex.Message }; }
         finally { _busy = false; }
     }
 

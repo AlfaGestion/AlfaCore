@@ -21,7 +21,7 @@ public static class ReclamoSaldosPlantilla
     [
         ("<NOMBRE>", "Razón social del cliente."),
         ("<DETALLE>", "Tabla con cada comprobante pendiente (email) o resumen en una línea (WhatsApp)."),
-        ("<FORMADEPAGO>", "Forma de pago configurada para la unidad de negocio del cliente."),
+        ("<FORMADEPAGO>", "Formas de pago de la unidad de negocio (Archivos → Unidades de negocio); si no tiene, el texto general de este módulo."),
         ("<SALDO>", "Saldo total de la cuenta corriente."),
         ("<VENCIDO>", "Importe de los comprobantes ya vencidos."),
         ("<CANTIDAD>", "Cantidad de comprobantes pendientes."),

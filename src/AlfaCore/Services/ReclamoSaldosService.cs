@@ -318,28 +318,16 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
 
     private sealed record Armado(ReclamoVistaPrevia Vista, string Texto, string WhatsappDetalle, string FormaPago);
 
-    // La forma de pago es la de la unidad de negocio del ÚLTIMO comprobante pendiente. Orden: clave por unidad
-    // (RECLAMO-SALDOS-FORMA-PAGO-<unidad>), columna de V_TA_UnidadNegocio indicada en RECLAMO-SALDOS-FORMA-PAGO-COLUMNA,
-    // y por último el texto general.
+    // La forma de pago es la de la unidad de negocio del ÚLTIMO comprobante pendiente, tal como se carga en
+    // Archivos → Unidades de negocio ("Formas de pago", clave FORMADEPAGO_UN_<unidad> de TA_CONFIGURACION, la misma que
+    // usa el mail de facturación). Si esa unidad no la tiene, se usa el texto general de este módulo.
     private async Task<string> FormaPagoAsync(SqlConnection cn, ReclamoConfig cfg, IReadOnlyList<ReclamoComprobante> cptes, CancellationToken ct)
     {
-        var unidad = cptes.OrderByDescending(c => c.Fecha).Select(c => c.Unidad).FirstOrDefault() ?? string.Empty;
+        var unidad = (cptes.OrderByDescending(c => c.Fecha).Select(c => c.Unidad).FirstOrDefault() ?? string.Empty).Trim();
         if (unidad.Length > 0)
         {
-            var porClave = (await CorreoSalienteService.LeerConfigAsync(cn, $"{Prefijo}FORMA-PAGO-{unidad}", ct)).Trim();
-            if (porClave.Length > 0) return porClave;
-            var columna = (await CorreoSalienteService.LeerConfigAsync(cn, $"{Prefijo}FORMA-PAGO-COLUMNA", ct)).Trim();
-            if (columna.Length > 0)
-            {
-                // El nombre de columna viene de configuración: solo se usa si existe realmente en la tabla (y entre corchetes).
-                var texto = await cn.QueryFirstOrDefaultAsync<string>(new CommandDefinition("""
-                    DECLARE @col sysname = (SELECT TOP 1 name FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.V_TA_UnidadNegocio') AND name = @columna);
-                    IF @col IS NOT NULL
-                        EXEC sp_executesql N'SELECT TOP 1 CONVERT(nvarchar(max), ' + QUOTENAME(@col) + N') FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(Codigo)) = @u',
-                            N'@u nvarchar(4)', @u = @unidad;
-                    """, new { columna, unidad }, cancellationToken: ct));
-                if (!string.IsNullOrWhiteSpace(texto)) return texto.Trim();
-            }
+            var deUnidad = (await CorreoSalienteService.LeerConfigAsync(cn, UnidadesNegocioService.Claves(unidad)["FormaDePago"], ct)).Trim();
+            if (deUnidad.Length > 0) return deUnidad;
         }
         return cfg.FormaPago.Trim();
     }
@@ -498,6 +486,15 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                 throw new InvalidOperationException("Elegí la plantilla de WhatsApp en la configuración del reclamo.");
             if (!string.IsNullOrWhiteSpace(sol.MailPrueba) && !CorreoSalienteService.EsMailValido(sol.MailPrueba))
                 throw new InvalidOperationException("El email de prueba no es válido.");
+            // Destino elegido a mano para este envío (desde "Ver mensaje"): es un envío real, no de prueba.
+            var mailManual = string.Empty;
+            if (!string.IsNullOrWhiteSpace(sol.MailDestino))
+            {
+                var (ok, malos) = CorreoSalienteService.SepararMails(sol.MailDestino);
+                if (ok.Count == 0 || malos.Count > 0)
+                    throw new InvalidOperationException("El email indicado no es válido" + (malos.Count > 0 ? ": " + string.Join(", ", malos) : ".") );
+                mailManual = string.Join("; ", ok);
+            }
             var plantilla = enviarWa && cfg.IdPlantillaWhatsApp > 0 ? await conversaciones.GetTemplateAsync(cfg.IdPlantillaWhatsApp, token) : null;
             if (enviarWa && !sol.SoloSimular && plantilla is null)
                 throw new InvalidOperationException("La plantilla de WhatsApp configurada ya no existe.");
@@ -523,7 +520,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                 var reciente = !sol.IgnorarEnviosRecientes && !esPrueba && cfg.DiasEntreEnvios > 0 && cli.UltimoReclamo is { } ult
                     && (DateTime.Now - ult).TotalDays < cfg.DiasEntreEnvios;
                 // El enlace al portal (crea un token en la base) solo se genera si de verdad se va a mandar el mail.
-                var hayDestinoMail = !string.IsNullOrWhiteSpace(sol.MailPrueba) || cli.TieneEmail;
+                var hayDestinoMail = !string.IsNullOrWhiteSpace(sol.MailPrueba) || mailManual.Length > 0 || cli.TieneEmail;
                 var armado = await ArmarAsync(cn, cfg, cli, detalles.GetValueOrDefault(cli.Cuenta) ?? [], sol.TramoForzado, nombresUnidad,
                     portalBase with { Generar = !sol.SoloSimular && enviarMail && !reciente && hayDestinoMail }, token);
 
@@ -532,7 +529,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                     var r = new ReclamoEnvioResultado { Cuenta = cli.Cuenta, Nombre = cli.Nombre, Canal = "Email" };
                     try
                     {
-                        var destino = !string.IsNullOrWhiteSpace(sol.MailPrueba) ? sol.MailPrueba!.Trim() : cli.Emails;
+                        var destino = !string.IsNullOrWhiteSpace(sol.MailPrueba) ? sol.MailPrueba!.Trim() : mailManual.Length > 0 ? mailManual : cli.Emails;
                         r.Destino = destino;
                         if (reciente) { r.Estado = "Omitido"; r.Detalle = $"Recibió un reclamo el {cli.UltimoReclamo:dd/MM/yyyy} (hace menos de {cfg.DiasEntreEnvios} días)."; }
                         else if (destino.Length == 0) { r.Estado = "Omitido"; r.Detalle = "Sin email."; }

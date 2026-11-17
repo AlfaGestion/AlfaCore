@@ -100,6 +100,8 @@ public sealed class ReclamoEnvioSolicitud
     public bool IgnorarEnviosRecientes { get; set; }
     /// <summary>Si viene, todos los mails van a esta dirección (envío de prueba): el cliente real no recibe nada.</summary>
     public string? MailPrueba { get; set; }
+    /// <summary>Si viene, el email va a esta(s) dirección(es) en vez de a las del cliente (envío real, queda en la bitácora). Se usa desde "Ver mensaje".</summary>
+    public string? MailDestino { get; set; }
     /// <summary>Si viene, todos los WhatsApp van a este teléfono (envío de prueba).</summary>
     public string? TelefonoPrueba { get; set; }
     /// <summary>Fuerza un tramo (1-3) en vez de elegirlo por días de atraso. 0 = automático.</summary>

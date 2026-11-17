@@ -42,9 +42,16 @@ con fondo blanco, para que se vea como lo recibe el cliente y no herede el tema 
   - Requiere la URL pública del sistema (Conversaciones → Configuración); si falta, la vista previa avisa y `<PORTAL>` va vacío.
   - No aplica a WhatsApp (las variables de plantilla las define Meta).
 
+## Forma de pago y cambio de email
+- `<FORMADEPAGO>` sale primero de "Formas de pago" de la unidad de negocio del último comprobante pendiente del cliente
+  (Archivos → Unidades de negocio, clave `FORMADEPAGO_UN_<unidad>`, la misma del mail de facturación). Si está vacía, usa el
+  texto general de la pestaña de configuración.
+- En "Ver mensaje" el email de destino es editable y hay un botón para enviar solo ese mensaje (con "Solo simular" tildado
+  por defecto). El cambio vale para ese envío; no modifica los datos del cliente.
+
 ## Configuración (`TA_CONFIGURACION`, grupo `COBRANZAS`, prefijo `RECLAMO-SALDOS-`)
 `DIAS-HASTA1`, `DIAS-HASTA2`, `ASUNTO1..3`, `MENSAJE1..3` (largos en `ValorAux`), `FORMA-PAGO`
-(respaldo: `CONV_COBRANZA_FORMA_PAGO`), `FORMA-PAGO-<unidad>` (por unidad de negocio), `SALDO-MINIMO`,
+(texto general; respaldo: `CONV_COBRANZA_FORMA_PAGO`), `SALDO-MINIMO`,
 `DIAS-ENTRE-ENVIOS`, `WA-PLANTILLA` (id de plantilla). Se editan en la pestaña "Mensaje y configuración".
 
 ## Email
