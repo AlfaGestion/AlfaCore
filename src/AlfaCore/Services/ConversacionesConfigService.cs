@@ -1033,6 +1033,8 @@ public sealed class ConversacionesConfigService(
                 AsistenteLeeImagenes = ReadValue(values, "CONV_ASISTENTE_LEE_IMAGENES", string.Empty) == "1",
                 AsistentePortalAccesoDirecto = ReadValue(values, "CONV_ASISTENTE_PORTAL_ACCESO_DIRECTO", string.Empty) == "1",
                 AsistenteHerramientaTomarPedidos = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS", string.Empty) == "1",
+                AsistenteHerramientaAltaClientes = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_ALTA_CLIENTES", string.Empty) == "1",
+                AsistenteIdentificaPorTelefono = ReadValue(values, "CONV_ASISTENTE_IDENTIFICA_POR_TELEFONO", string.Empty) == "1",
                 AsistenteConfirmaIdentidad = ReadValue(values, "CONV_ASISTENTE_CONFIRMA_IDENTIDAD", string.Empty, "1") != "0",
                 CatalogoMuestraPrecioConsumidor = CatalogoPrecioConsumidorSetting.EstaActivo(ReadValue(values, CatalogoPrecioConsumidorSetting.Clave, string.Empty)),
                 InformeInstrucciones = ReadValue(values, "CONV_INFORME_INSTRUCCIONES", string.Empty, ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones),
@@ -1168,6 +1170,8 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_ASISTENTE_LEE_IMAGENES", config.AsistenteLeeImagenes ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_PORTAL_ACCESO_DIRECTO", config.AsistentePortalAccesoDirecto ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS", config.AsistenteHerramientaTomarPedidos ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_HERRAMIENTA_ALTA_CLIENTES", config.AsistenteHerramientaAltaClientes ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_IDENTIFICA_POR_TELEFONO", config.AsistenteIdentificaPorTelefono ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_CONFIRMA_IDENTIDAD", config.AsistenteConfirmaIdentidad ? "1" : "0"));
             items.Add((CatalogoPrecioConsumidorSetting.Clave, CatalogoPrecioConsumidorSetting.Serializar(config.CatalogoMuestraPrecioConsumidor)));
         }

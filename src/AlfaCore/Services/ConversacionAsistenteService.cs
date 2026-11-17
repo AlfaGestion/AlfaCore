@@ -46,6 +46,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var hayPrecioEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "consultar_precio", StringComparison.Ordinal)) ?? false;
         var hayPortalEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_portal", StringComparison.Ordinal)) ?? false;
         var hayPrepararPedido = herramientas?.Any(h => string.Equals(h.Nombre, ConversacionAsistenteHerramientasService.ToolPrepararPedido, StringComparison.Ordinal)) ?? false;
+        var hayRegistrarCliente = herramientas?.Any(h => string.Equals(h.Nombre, ConversacionAsistenteHerramientasService.ToolRegistrarCliente, StringComparison.Ordinal)) ?? false;
         // La IA decide qué herramienta usar (2026-10-28). La única que se fuerza es consultar_precio,
         // y sólo como red de seguridad: si la respuesta trae un monto que no salió de ninguna herramienta,
         // ni de la información del negocio, ni de la charla.
@@ -54,7 +55,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var reintentoPorDerivarSinBuscar = false;
         var seUsoAlgunaHerramienta = false;
         string? herramientaForzadaSiguienteRonda = null;
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido, hayRegistrarCliente);
 
         textoConRespaldo.AppendLine(systemPrompt);
         foreach (var m in historial)
@@ -445,7 +446,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
         bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null,
-        bool hayPortalEntreHerramientas = false, bool hayPrepararPedido = false)
+        bool hayPortalEntreHerramientas = false, bool hayPrepararPedido = false, bool hayRegistrarCliente = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -507,6 +508,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Escribí texto plano, sin ningún formato Markdown: nada de **negritas**, # títulos ni [texto](link). Los links van como la URL completa: en WhatsApp ese formato no se ve.");
         if (hayPrepararPedido)
             sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. Si ya dijo qué artículo y cuántos (\"quiero 10 pilas AA\", \"mandame 5 AAA y 3 AA\"), llamá preparar_pedido directamente: no le preguntes antes \"¿querés que arme el pedido?\", el resumen ya le pide la confirmación. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
+        else if (hayRegistrarCliente)
+            sb.AppendLine("- CLIENTE NUEVO O NO IDENTIFICADO: quien escribe todavía no está identificado como cliente. Si quiere hacer un pedido o que lo registren, pedile en un solo mensaje nombre y apellido, DNI, calle y número, localidad y alguna referencia para encontrar la casa. Apenas te dé algún dato, llamá registrar_cliente con lo que tengas (sin inventar nada): la herramienta busca si ya es cliente y te dice qué falta o qué responder. Si ya dijo qué quiere pedir, anotalo y retomalo cuando quede registrado. Nunca digas que quedó registrado: se registra recién cuando responde que los datos están bien.");
         else
             sb.AppendLine("- No ofrezcas armar ni tomar el pedido por este chat: si quiere comprar, indicale cómo hacerlo según la información del negocio (local, catálogo o portal).");
         if (hayPortalEntreHerramientas)

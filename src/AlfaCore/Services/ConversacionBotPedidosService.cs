@@ -89,24 +89,69 @@ public sealed class ConversacionBotPedidosService(
                 + "\nRespondé tipo ACLARA con UNA pregunta para resolverlo (qué opción, qué cantidad, o si quiere otro artículo). No digas que el pedido está hecho.";
 
         var total = lineas.Sum(l => l.Cantidad * l.Precio);
+        string direccionEntrega;
         await using (var cn = new SqlConnection(ConnectionString))
         {
             await cn.OpenAsync(ct);
+            // Dirección pedida en el chat o, si no dijo otra, la de su cuenta (antes del 2026-11-17 no se guardaba).
+            direccionEntrega = LeerDireccionEntrega(argumentosJson) is { Length: > 0 } pedida
+                ? pedida
+                : await LeerDireccionClienteAsync(cn, cuenta.Codigo, ct);
+            var conDireccion = await TieneColumnaDireccionAsync(cn, ct);
             await cn.ExecuteAsync(new CommandDefinition(
-                """
+                $"""
                 UPDATE dbo.CONV_BOT_PEDIDOS SET Estado = N'REEMPLAZADO', FechaEstado = GETDATE()
                 WHERE IdConversacion = @IdConversacion AND Estado = N'PENDIENTE';
-                INSERT INTO dbo.CONV_BOT_PEDIDOS (IdConversacion, ClienteCodigo, IdInsertCatalogo, LineasJson, Total)
-                VALUES (@IdConversacion, @Cliente, @IdInsert, @Lineas, @Total);
+                INSERT INTO dbo.CONV_BOT_PEDIDOS (IdConversacion, ClienteCodigo, IdInsertCatalogo, LineasJson, Total{(conDireccion ? ", DireccionEntrega" : string.Empty)})
+                VALUES (@IdConversacion, @Cliente, @IdInsert, @Lineas, @Total{(conDireccion ? ", @Direccion" : string.Empty)});
                 """,
-                new { IdConversacion = idConversacion, Cliente = cuenta.Codigo.Trim(), IdInsert = catalogo.IdInsert, Lineas = JsonSerializer.Serialize(lineas), Total = total },
+                new
+                {
+                    IdConversacion = idConversacion, Cliente = cuenta.Codigo.Trim(), IdInsert = catalogo.IdInsert,
+                    Lineas = JsonSerializer.Serialize(lineas), Total = total,
+                    Direccion = direccionEntrega.Length == 0 ? null : (direccionEntrega.Length > 200 ? direccionEntrega[..200] : direccionEntrega)
+                },
                 cancellationToken: ct));
         }
 
-        return FormatearResumen(lineas, total)
-            + "\nRespondé tipo ACLARA mostrándole este resumen y preguntándole si lo confirma: que responda SÍ para registrarlo o NO para cancelarlo. "
+        return FormatearResumen(lineas, total, direccionEntrega)
+            + "\nRespondé tipo ACLARA mostrándole este resumen (con la dirección de entrega) y preguntándole si lo confirma: que responda SÍ para registrarlo o NO para cancelarlo. "
+            + "Si la dirección no es la correcta, que te diga dónde entregarlo. "
             + "NO digas que el pedido está registrado: se graba recién cuando el cliente confirma.";
     }
+
+    internal static string LeerDireccionEntrega(string? argumentosJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentosJson))
+            return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(argumentosJson);
+            return doc.RootElement.TryGetProperty("direccion_entrega", out var d) && d.ValueKind == JsonValueKind.String
+                ? Regex.Replace((d.GetString() ?? string.Empty).Trim(), @"\s+", " ")
+                : string.Empty;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static async Task<string> LeerDireccionClienteAsync(SqlConnection cn, string codigoCliente, CancellationToken ct)
+    {
+        var fila = await cn.QueryFirstOrDefaultAsync<(string? Calle, string? Numero, string? Localidad)>(new CommandDefinition(
+            """
+            SELECT TOP (1) LTRIM(RTRIM(CALLE)), LTRIM(RTRIM(NUMERO)), LTRIM(RTRIM(LOCALIDAD))
+            FROM dbo.VT_CLIENTES
+            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
+            """,
+            new { Codigo = codigoCliente }, cancellationToken: ct));
+        return ConversacionBotClientesService.DireccionTexto(fila.Calle, fila.Numero, fila.Localidad);
+    }
+
+    private static async Task<bool> TieneColumnaDireccionAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT CASE WHEN COL_LENGTH('dbo.CONV_BOT_PEDIDOS', 'DireccionEntrega') IS NULL THEN 0 ELSE 1 END;", cancellationToken: ct)) == 1;
 
     public async Task<bool> HayPendienteAsync(long idConversacion, string codigoCliente, CancellationToken ct = default)
         => await LeerPendienteAsync(idConversacion, codigoCliente, ct) is not null;
@@ -117,7 +162,7 @@ public sealed class ConversacionBotPedidosService(
         if (pendiente is null)
             return "No tengo un pedido pendiente para confirmar. Decime qué artículos y cuántos querés y te lo armo.";
 
-        var (idBorrador, idInsert, lineas) = pendiente.Value;
+        var (idBorrador, idInsert, lineas, direccionEntrega) = pendiente.Value;
         try
         {
             var resultado = await catalogosService.ConfirmarPedidoCarritoAsync(new CatalogoPedidoConfirmarRequestDto
@@ -126,7 +171,9 @@ public sealed class ConversacionBotPedidosService(
                 CodigoCliente = cuenta.Codigo.Trim(),
                 IdBase = sessionService.GetActiveSession()?.BaseId,
                 Lineas = lineas.Select(l => new CatalogoPedidoLineaSolicitudDto { IdArticulo = l.IdArticulo, Cantidad = l.Cantidad }).ToList(),
-                Observaciones = $"Pedido por chat (asistente) - Conversación #{idConversacion}"
+                Observaciones = string.IsNullOrWhiteSpace(direccionEntrega)
+                    ? $"Pedido por chat (asistente) - Conversación #{idConversacion}"
+                    : $"Pedido por chat (asistente) - Conversación #{idConversacion} - Entregar en: {direccionEntrega.Trim()}"
             }, ct);
 
             await MarcarAsync(idBorrador, "CONFIRMADO", resultado.IdComprobanteTexto, null, ct);
@@ -203,13 +250,15 @@ public sealed class ConversacionBotPedidosService(
         return exactas.Count > 0 && exactas.Count < coinciden.Count ? exactas : coinciden;
     }
 
-    internal static string FormatearResumen(IReadOnlyList<LineaBorrador> lineas, decimal total)
+    internal static string FormatearResumen(IReadOnlyList<LineaBorrador> lineas, decimal total, string? direccionEntrega = null)
     {
         var cultura = CultureInfo.GetCultureInfo("es-AR");
         var sb = new StringBuilder("Pedido armado (todavía SIN registrar):\n");
         foreach (var l in lineas)
             sb.AppendLine($"- {l.Cantidad.ToString("0.##", cultura)} x {l.Descripcion} (código {l.IdArticulo}) a $ {l.Precio.ToString("N2", cultura)} = $ {(l.Cantidad * l.Precio).ToString("N2", cultura)}");
         sb.Append($"Total: $ {total.ToString("N2", cultura)} (precios de su cuenta).");
+        if (!string.IsNullOrWhiteSpace(direccionEntrega))
+            sb.Append($"\nEntrega en: {direccionEntrega.Trim()}");
         return sb.ToString();
     }
 
@@ -237,16 +286,17 @@ public sealed class ConversacionBotPedidosService(
         return items;
     }
 
-    private async Task<(int IdBorrador, int IdInsert, List<LineaBorrador> Lineas)?> LeerPendienteAsync(long idConversacion, string codigoCliente, CancellationToken ct)
+    private async Task<(int IdBorrador, int IdInsert, List<LineaBorrador> Lineas, string? DireccionEntrega)?> LeerPendienteAsync(long idConversacion, string codigoCliente, CancellationToken ct)
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
         if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(N'dbo.CONV_BOT_PEDIDOS', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: ct)) == 0)
             return null;
 
+        var conDireccion = await TieneColumnaDireccionAsync(cn, ct);
         var fila = await cn.QueryFirstOrDefaultAsync<BorradorRow>(new CommandDefinition(
-            """
-            SELECT TOP (1) IdBorrador, IdInsertCatalogo, LineasJson
+            $"""
+            SELECT TOP (1) IdBorrador, IdInsertCatalogo, LineasJson, {(conDireccion ? "DireccionEntrega" : "CAST(NULL AS nvarchar(200))")} AS DireccionEntrega
             FROM dbo.CONV_BOT_PEDIDOS
             WHERE IdConversacion = @IdConversacion
               AND Estado = N'PENDIENTE'
@@ -260,7 +310,7 @@ public sealed class ConversacionBotPedidosService(
             return null;
 
         var lineas = JsonSerializer.Deserialize<List<LineaBorrador>>(fila.LineasJson) ?? [];
-        return lineas.Count == 0 ? null : (fila.IdBorrador, fila.IdInsertCatalogo, lineas);
+        return lineas.Count == 0 ? null : (fila.IdBorrador, fila.IdInsertCatalogo, lineas, fila.DireccionEntrega);
     }
 
     private sealed class BorradorRow
@@ -268,6 +318,7 @@ public sealed class ConversacionBotPedidosService(
         public int IdBorrador { get; set; }
         public int IdInsertCatalogo { get; set; }
         public string LineasJson { get; set; } = "[]";
+        public string? DireccionEntrega { get; set; }
     }
 
     private async Task MarcarAsync(int idBorrador, string estado, string? idComprobante, string? error, CancellationToken ct)

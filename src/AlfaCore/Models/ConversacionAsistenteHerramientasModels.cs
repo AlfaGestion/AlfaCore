@@ -23,4 +23,12 @@ public sealed class ConversacionAsistenteHerramientaDefinicionDto
 public sealed record ConversacionCuentaVinculadaDto(string Codigo, CuentaComercialTipo Tipo, string RazonSocial)
 {
     public bool EsAmbigua { get; init; }
+    /// <summary>Reconocida por el teléfono cargado del Cliente (no por un vínculo guardado en la conversación).</summary>
+    public bool PorTelefono { get; init; }
 }
+
+/// <summary>Resultado de la tool registrar_cliente: el texto para el modelo y, si corresponde, una nota para el equipo.</summary>
+public sealed record ConversacionBotAltaPreparada(string TextoParaModelo, string? NotaInterna = null, ConversacionCuentaVinculadaDto? ClienteVinculado = null);
+
+/// <summary>Resultado de confirmar el alta: el texto para el contacto y el Cliente creado (null si falló).</summary>
+public sealed record ConversacionBotAltaConfirmada(string Respuesta, ConversacionCuentaVinculadaDto? Cliente = null, string? NotaInterna = null);

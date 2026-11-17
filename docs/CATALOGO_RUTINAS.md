@@ -541,7 +541,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ConversacionBotPedidosService.cs`
 - Propósito: pedidos desde el chat del asistente: arma un borrador con artículos del catálogo web (`PrepararAsync`, tool `preparar_pedido`) y lo graba como Nota de Pedido solo cuando el cliente confirma (`ConfirmarAsync`) o lo descarta (`CancelarAsync`).
 - Datos que usa: `CONV_BOT_PEDIDOS` (script `2026-10-27-005__conversaciones_bot_pedidos.sql`), `IInterfacesCatalogosService.GetCatalogoPublicoAsync` y `ConfirmarPedidoCarritoAsync` (mismo circuito y validaciones que el carrito web).
-- Observaciones: solo Cliente identificado y no ambiguo; la IA nunca confirma: `ConversacionesService` confirma/cancela con la respuesta literal del cliente (`EsConfirmacion`/`EsCancelacion`) contra el borrador vigente (12 h). Se activa con `CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS`.
+- Observaciones: solo Cliente identificado y no ambiguo; la IA nunca confirma: `ConversacionesService` confirma/cancela con la respuesta literal del cliente (`EsConfirmacion`/`EsCancelacion`) contra el borrador vigente (12 h). Se activa con `CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS`. Desde 2026-11-17 guarda la dirección de entrega (`CONV_BOT_PEDIDOS.DireccionEntrega`: la que pidió en el chat o la de su cuenta), la muestra en el resumen y la copia a las observaciones de la Nota de Pedido.
+
+### ConversacionBotClientesService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionBotClientesService.cs`
+- Propósito: alta de clientes desde el chat del asistente (tool `registrar_cliente`) y reconocimiento por teléfono. `PrepararAsync` busca si ya es cliente (mismo DNI, mismo teléfono, o mismo nombre y misma calle y altura); si es uno solo vincula la conversación, si hay dudas no crea nada y deja una nota, y si no existe guarda un borrador para que confirme. `ConfirmarAsync` lo da de alta con `ICuentasComercialesService.SaveAsync`. `BuscarPorTelefonoAsync` devuelve el único cliente con el teléfono del chat.
+- Datos que usa: `CONV_BOT_CLIENTES` (script `2026-11-17-052__conversaciones_bot_alta_clientes.sql`), `VT_CLIENTES`, `CONV_CONVERSACIONES.ClienteCodigo`, `TA_CONDIVA`/`TA_TIPODOCUMENTO`, `TA_CONFIGURACION` (`CONV_ASISTENTE_HERRAMIENTA_ALTA_CLIENTES`, `CONV_ASISTENTE_IDENTIFICA_POR_TELEFONO`, `CONV_ASISTENTE_ALTA_CLIENTE_MODELO`).
+- Observaciones: la IA nunca da de alta sola: el "sí" literal contra el borrador vigente (12 h) lo decide `ConversacionesService`. Los valores comerciales del alta (IVA, provincia, país, lista, condición, vendedor, clase) salen del cliente modelo de `CONV_ASISTENTE_ALTA_CLIENTE_MODELO` o, sin él, de los más usados por los clientes activos; el IVA por defecto es Consumidor Final y sin DNI el documento queda en 0. Las coincidencias puras están en métodos `internal static` (`Evaluar`, `TelefonoCoincide`, `NombreCoincide`, `DireccionCoincide`) con tests en `ConversacionBotClientesTests`.
 
 ### ConversacionesAdjuntosAlmacen
 

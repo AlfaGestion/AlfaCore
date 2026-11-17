@@ -1449,6 +1449,24 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public void Tools_RegistrarCliente_SoloSinCuentaVinculadaConLaOpcionPrendida()
+    {
+        var service = CreateToolsService();
+        var config = ToolsConfig();
+        var cliente = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+        var proveedor = new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno");
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(config, null), h => h.Nombre == "registrar_cliente");
+
+        config.AsistenteHerramientaAltaClientes = true;
+        Assert.Contains(service.ObtenerHerramientasDisponibles(config, null), h => h.Nombre == "registrar_cliente");
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(config, cliente), h => h.Nombre == "registrar_cliente");
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(config, proveedor), h => h.Nombre == "registrar_cliente");
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(config, ambigua), h => h.Nombre == "registrar_cliente");
+    }
+
+    [Fact]
     public void Tools_TomarPedidos_SoloParaClienteIdentificadoConLaOpcionPrendida()
     {
         var service = CreateToolsService();

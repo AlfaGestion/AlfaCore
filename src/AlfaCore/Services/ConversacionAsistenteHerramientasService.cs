@@ -41,6 +41,8 @@ public sealed class ConversacionAsistenteHerramientasService(
     internal const string ToolGenerarLinkPortal = "generar_link_portal";
     private const string ToolGenerarLinkCatalogoPublico = "generar_link_catalogo_publico";
     internal const string ToolPrepararPedido = "preparar_pedido";
+    // La ejecuta ConversacionesService (vincula la conversación y deja notas): acá sólo se ofrece.
+    internal const string ToolRegistrarCliente = "registrar_cliente";
 
     // Defensa en profundidad para identidad ambigua: aunque ObtenerHerramientasDisponibles ya no
     // ofrece estas tools cuando EsAmbigua, este set corta también acá -- por si el modelo alucina un
@@ -391,9 +393,22 @@ public sealed class ConversacionAsistenteHerramientasService(
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
                 Nombre = ToolPrepararPedido,
-                Descripcion = "Arma un pedido (Nota de Pedido) con los artículos y cantidades que pide el cliente identificado y le muestra el resumen con precios. NO lo registra: se graba solo si después el cliente responde que confirma. Si pide cambiar algo, volvé a llamarla con el pedido completo.",
+                Descripcion = "Arma un pedido (Nota de Pedido) con los artículos y cantidades que pide el cliente identificado y le muestra el resumen con precios y la dirección de entrega (por defecto la de su cuenta). NO lo registra: se graba solo si después el cliente responde que confirma. Si pide cambiar algo (artículos o dirección), volvé a llamarla con el pedido completo.",
                 ParametrosJsonSchema = """
-                    {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"articulo":{"type":"string","description":"Código o términos cortos del artículo (tipo, marca, medida), en singular. Ej.: 'pila duracell AA'."},"cantidad":{"type":"number","description":"Cantidad pedida."}},"required":["articulo","cantidad"]}}},"required":["items"]}
+                    {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"articulo":{"type":"string","description":"Código o términos cortos del artículo (tipo, marca, medida), en singular. Ej.: 'pila duracell AA'."},"cantidad":{"type":"number","description":"Cantidad pedida."}},"required":["articulo","cantidad"]}},"direccion_entrega":{"type":"string","description":"Solo si el cliente pidió que se lo entreguen en otra dirección distinta de la de su cuenta: calle, número y localidad. Si no lo dijo, no lo mandes."}},"required":["items"]}
+                    """
+            });
+        }
+
+        // Quien escribe no tiene cuenta vinculada (ni ambigua ni proveedor): se lo puede registrar como Cliente.
+        if (cuenta is null && config.AsistenteHerramientaAltaClientes)
+        {
+            herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
+            {
+                Nombre = ToolRegistrarCliente,
+                Descripcion = "Registra como cliente a quien escribe (todavía no está identificado). Usala cuando quiera hacer un pedido o pida que lo registren, una vez que te dio nombre y apellido, calle, número y localidad (el DNI ayuda a encontrarlo si ya es cliente). Primero busca si ya es cliente; si no, le muestra los datos y se registra solo si confirma. No inventes datos que no te dio.",
+                ParametrosJsonSchema = """
+                    {"type":"object","properties":{"nombre_apellido":{"type":"string","description":"Nombre y apellido tal como lo dijo."},"dni":{"type":"string","description":"DNI, solo números (opcional)."},"calle":{"type":"string","description":"Calle o barrio/paraje."},"numero":{"type":"string","description":"Número de la casa (vacío si no tiene)."},"localidad":{"type":"string","description":"Localidad (ciudad o pueblo)."},"referencia":{"type":"string","description":"Referencia para encontrar la casa (opcional)."}},"required":["nombre_apellido","calle","localidad"]}
                     """
             });
         }
@@ -448,6 +463,7 @@ public sealed class ConversacionAsistenteHerramientasService(
                 ToolPrepararPedido => cuenta is null
                     ? "No se pudo identificar al cliente para tomar el pedido."
                     : await botPedidosService.PrepararAsync(idConversacion, cuenta, argumentosJson, ct),
+                ToolRegistrarCliente => "No se pudo registrar al contacto desde acá. Respondé tipo DERIVA: alguien del equipo lo registra.",
                 _ => "Herramienta desconocida."
             };
         }

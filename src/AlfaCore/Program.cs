@@ -563,6 +563,7 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddScoped<IConversacionBotPedidosService, ConversacionBotPedidosService>();
+        builder.Services.AddScoped<IConversacionBotClientesService, ConversacionBotClientesService>();
         builder.Services.AddScoped<IConversacionAsistenteConocimientoService, ConversacionAsistenteConocimientoService>();
         builder.Services.AddScoped<IConversacionAsistenteCorreccionesService, ConversacionAsistenteCorreccionesService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();

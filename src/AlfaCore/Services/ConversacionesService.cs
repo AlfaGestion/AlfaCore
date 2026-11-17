@@ -39,7 +39,8 @@ public sealed partial class ConversacionesService(
     IIaConsumoService? iaConsumo = null,
     IServiceProvider? serviceProvider = null,
     IConversacionBotPedidosService? botPedidosService = null,
-    IWhatsAppCoexistenceConnectionStore? coexistenceConnectionStore = null) : IConversacionesService
+    IWhatsAppCoexistenceConnectionStore? coexistenceConnectionStore = null,
+    IConversacionBotClientesService? botClientesService = null) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -9696,6 +9697,11 @@ public sealed partial class ConversacionesService(
                 var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
+                // Sin vínculo guardado: el único cliente con ese teléfono cargado (si la empresa lo habilitó).
+                // Con "Confirmar identidad" activo se le pregunta antes del primer dato privado, y al confirmar
+                // queda vinculado a la conversación.
+                if (cuentaVinculada is null && config.AsistenteIdentificaPorTelefono && botClientesService is not null)
+                    cuentaVinculada = await botClientesService.BuscarPorTelefonoAsync(idConversacion, token).ConfigureAwait(false);
 
                 // Confirmación de identidad: antes del primer dato privado del día (saldo, pedidos, portal,
                 // pedido nuevo) se pregunta si escribe por la cuenta vinculada. Si dice que no, ese día se lo
@@ -9721,6 +9727,8 @@ public sealed partial class ConversacionesService(
                         else if (preguntada && EsRespuestaIdentidadSi(texto))
                         {
                             await AddInternalEventCoreAsync(idConversacion, NotaIdentidadConfirmada(cuentaAConfirmar), null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                            if (cuentaAConfirmar.PorTelefono)
+                                await VincularClienteReconocidoAsync(idConversacion, cuentaAConfirmar, token).ConfigureAwait(false);
                             identidadRecienConfirmada = true;
                             // El "sí" no trae la consulta: se responde lo que había pedido antes de la pregunta.
                             var consultaOriginal = ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
@@ -9769,6 +9777,29 @@ public sealed partial class ConversacionesService(
                     await AddInternalEventCoreAsync(idConversacion, $"🛒 Pedido por chat: {respuestaPedidoChat}", null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                 }
 
+                // Alta de cliente por chat: igual que el pedido, la graba el "sí" literal contra el borrador
+                // que armó registrar_cliente, nunca el modelo.
+                if (respuestaPedidoChat is null && config.AsistenteHerramientaAltaClientes && botClientesService is not null
+                    && cuentaVinculada is null
+                    && (ConversacionBotPedidosService.EsConfirmacion(texto) || ConversacionBotPedidosService.EsCancelacion(texto))
+                    && await botClientesService.HayPendienteAsync(idConversacion, token).ConfigureAwait(false))
+                {
+                    if (ConversacionBotPedidosService.EsConfirmacion(texto))
+                    {
+                        var alta = await botClientesService.ConfirmarAsync(idConversacion, token).ConfigureAwait(false);
+                        respuestaPedidoChat = alta.Respuesta;
+                        if (!string.IsNullOrWhiteSpace(alta.NotaInterna))
+                            await AddInternalEventCoreAsync(idConversacion, alta.NotaInterna, null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                        // Recién registrado con sus datos: no se le vuelve a preguntar hoy si es él.
+                        if (alta.Cliente is not null)
+                            await AddInternalEventCoreAsync(idConversacion, NotaIdentidadConfirmada(alta.Cliente), null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        respuestaPedidoChat = await botClientesService.CancelarAsync(idConversacion, token).ConfigureAwait(false);
+                    }
+                }
+
                 // Un saludo/cierre no hereda las herramientas del mensaje anterior: con tools ofrecidas
                 // gpt-4o-mini tiende a derivar en vez de responder lo social.
                 var mensajePrevioCliente = EsMensajeSocial(texto)
@@ -9793,6 +9824,17 @@ public sealed partial class ConversacionesService(
                                 await AddInternalEventCoreAsync(idConversacion, NotaIdentidadPreguntada(cuentaVinculada), null, null, "AlfaCore", "BOT", ctHerramienta).ConfigureAwait(false);
                             identidadPreguntadaAhora = true;
                             return "Dato privado: antes de darlo hay que confirmar quién escribe. No des ningún dato de la cuenta; el servidor le hace la pregunta.";
+                        }
+                        if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolRegistrarCliente && botClientesService is not null)
+                        {
+                            var alta = await botClientesService.PrepararAsync(idConversacion, argumentosJson, ctHerramienta).ConfigureAwait(false);
+                            if (!string.IsNullOrWhiteSpace(alta.NotaInterna))
+                                await AddInternalEventCoreAsync(idConversacion, alta.NotaInterna, null, null, "AlfaCore", "BOT", ctHerramienta).ConfigureAwait(false);
+                            if (alta.ClienteVinculado is not null)
+                                await AddInternalEventCoreAsync(idConversacion, NotaIdentidadConfirmada(alta.ClienteVinculado), null, null, "AlfaCore", "BOT", ctHerramienta).ConfigureAwait(false);
+                            // Pedir lo que falta o mostrar los datos para confirmar no es "otra aclaración" (no deriva).
+                            pedidoPreparadoAhora = true;
+                            return alta.TextoParaModelo;
                         }
                         var resultadoHerramienta = await asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta).ConfigureAwait(false);
                         if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolPrepararPedido)
@@ -15500,6 +15542,27 @@ public sealed partial class ConversacionesService(
                 ? null
                 : new ConversacionCuentaVinculadaDto(proveedor.Codigo, CuentaComercialTipo.Proveedor, proveedor.RazonSocial);
         }
+    }
+
+    /// <summary>
+    /// El contacto confirmó ser el cliente reconocido por teléfono: se guarda el vínculo en la conversación
+    /// (solo si no tenía uno) para que el equipo lo vea y no dependa más del teléfono cargado.
+    /// </summary>
+    private async Task VincularClienteReconocidoAsync(long idConversacion, ConversacionCuentaVinculadaDto cuenta, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(
+            """
+            UPDATE dbo.CONV_CONVERSACIONES SET ClienteCodigo = @Codigo
+            WHERE IdConversacion = @IdConversacion AND ISNULL(LTRIM(RTRIM(ClienteCodigo)), N'') = N'';
+            """, cn);
+        cmd.Parameters.AddWithValue("@Codigo", cuenta.Codigo.Trim());
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        if (await cmd.ExecuteNonQueryAsync(ct) > 0)
+            await AddInternalEventCoreAsync(idConversacion,
+                $"📞 Conversación vinculada al cliente {cuenta.Codigo.Trim()} - {cuenta.RazonSocial.Trim()}: el teléfono coincide con el cargado y el contacto confirmó que es él.",
+                null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
     }
 
     private async Task<ConversationStateSummary> GetConversationStateAsync(long idConversacion, CancellationToken ct)

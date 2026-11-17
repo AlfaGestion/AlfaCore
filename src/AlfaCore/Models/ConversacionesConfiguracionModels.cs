@@ -490,6 +490,13 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool AsistentePortalAccesoDirecto { get; set; }
     /// <summary>Arma Notas de Pedido desde el chat con artículos del catálogo web; se graban solo si el cliente confirma.</summary>
     public bool AsistenteHerramientaTomarPedidos { get; set; }
+    /// <summary>
+    /// Da de alta como Cliente a quien escribe sin cuenta vinculada (nombre, DNI y dirección pedidos por chat),
+    /// se graba solo si el contacto confirma. Si parece un cliente existente no crea otro: lo vincula o deriva.
+    /// </summary>
+    public bool AsistenteHerramientaAltaClientes { get; set; }
+    /// <summary>Sin cuenta vinculada, reconoce al Cliente cuyo teléfono cargado coincide con el del chat (uno solo).</summary>
+    public bool AsistenteIdentificaPorTelefono { get; set; }
     /// <summary>Antes de dar datos privados (saldo, pedidos, portal, pedido nuevo) pregunta una vez por día si escribe por la cuenta vinculada.</summary>
     public bool AsistenteConfirmaIdentidad { get; set; } = true;
     /// <summary>

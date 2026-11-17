@@ -230,6 +230,31 @@ Detalle técnico completo (configuración, endpoint consumido, autenticación) e
 - **Atento a la conversación activa**: mientras está abierto, se regenera solo al cambiar de conversación seleccionada y cada vez que llega un mensaje nuevo del cliente durante el polling automático (`AutoRefreshAsync`), sin que el técnico tenga que tocar "Regenerar" a mano.
 - Acciones disponibles: **Usar esta respuesta** (vuelca el texto al compositor y registra `isHelpful=true`), **Regenerar** (vuelve a pedir la sugerencia) y **Descartar** (registra `isHelpful=false` y cierra el panel).
 
+## Asistente vendedor: alta de clientes y dirección de entrega (2026-11-17)
+
+Configuración → Asistente IA → Herramientas suma dos opciones, pensadas para que el bot tome pedidos de
+punta a punta (primer caso: un reparto de agua):
+
+- **Reconocer clientes por teléfono** (`CONV_ASISTENTE_IDENTIFICA_POR_TELEFONO`): si el chat no está vinculado
+  a un cliente y el número coincide con el teléfono cargado de **un solo** cliente activo, lo atiende como ese
+  cliente. Con *Confirmar identidad* activo, antes del primer dato privado le pregunta si es él; al confirmar,
+  la conversación queda vinculada (`CONV_CONVERSACIONES.ClienteCodigo`) con una nota 📞.
+- **Dar de alta clientes** (`CONV_ASISTENTE_HERRAMIENTA_ALTA_CLIENTES`): a quien escribe sin cuenta le pide
+  nombre y apellido, DNI, calle y número, localidad y una referencia (tool `registrar_cliente`). Antes de
+  proponer el alta busca si ya es cliente:
+  - mismo DNI, mismo teléfono, o mismo nombre **y** misma calle y altura, y uno solo → vincula la conversación
+    a ese cliente (nota 👤 para revisar), sin crear otro;
+  - coincidencias dudosas o varias → no crea nada, deriva y deja una nota 👤 con los posibles clientes;
+  - sin coincidencias → le muestra los datos y lo da de alta **solo si responde "sí"** (como los pedidos). Queda
+    una nota 🆕 para revisar zona o día de reparto y lista de precios.
+  Los valores comerciales salen del cliente modelo `CONV_ASISTENTE_ALTA_CLIENTE_MODELO` (opcional) o de los más
+  usados por los clientes activos.
+- **Dirección de entrega** en *Tomar pedidos*: el resumen del pedido muestra "Entrega en: …" (la dirección de la
+  cuenta, o la que el cliente pidió en el chat) y queda en las observaciones de la Nota de Pedido.
+
+Borradores en `CONV_BOT_CLIENTES` y `CONV_BOT_PEDIDOS.DireccionEntrega` (script
+`2026-11-17-052__conversaciones_bot_alta_clientes.sql`). Código: `ConversacionBotClientesService`.
+
 ## Issues pendientes
 
 ### Issue 8. Completar flujo de envío WhatsApp
