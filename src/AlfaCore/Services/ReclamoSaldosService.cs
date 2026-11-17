@@ -151,13 +151,48 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
         => Ejecutar<IReadOnlyList<ReclamoPlantillaWhatsApp>>("Plantillas", "No se pudieron leer las plantillas de WhatsApp.", async (_, _, token) =>
         {
             var lista = await conversaciones.GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED" }, token);
-            return lista.Where(p => p.Activa && string.Equals(p.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            var candidatas = lista.Where(p => p.Activa && string.Equals(p.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase)).ToList();
+            // Solo las que existen en la cuenta de WhatsApp del número que envía (se consulta a Meta, con caché corto).
+            var validas = new List<ConversacionPlantillaDto>();
+            foreach (var p in candidatas)
+                if (await PlantillaEnCuentaAsync(p.IdPlantilla, true, token) != false) validas.Add(p);
+            return validas
                 .Select(p => new ReclamoPlantillaWhatsApp
                 {
                     IdPlantilla = p.IdPlantilla, Nombre = p.NombreVisible.Length > 0 ? p.NombreVisible : p.NombreMeta, Cuerpo = p.CuerpoTexto,
                     Variables = ReclamoSaldosPlantilla.ContarVariablesPlantilla(p.CuerpoTexto)
                 }).OrderBy(p => p.Nombre).ToList();
         }, ct);
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Base, long Plantilla), (bool Existe, DateTime Hasta)> _cachePlantillas = new();
+
+    /// <summary>
+    /// ¿Existe la plantilla en la cuenta de WhatsApp (WABA) del número que envía? Se le pregunta a Meta (SyncTemplateStatusAsync).
+    /// true = existe, false = Meta confirma que no, null = no se pudo saber (red, credenciales): en ese caso no se bloquea nada.
+    /// </summary>
+    private async Task<bool?> PlantillaEnCuentaAsync(long idPlantilla, bool usarCache, CancellationToken ct)
+    {
+        var clave = (sessions.GetActiveSession()?.BaseId ?? 0, idPlantilla);
+        if (usarCache && _cachePlantillas.TryGetValue(clave, out var c) && c.Hasta > DateTime.UtcNow) return c.Existe;
+        try
+        {
+            await conversaciones.SyncTemplateStatusAsync(idPlantilla, null, ct);
+            _cachePlantillas[clave] = (true, DateTime.UtcNow.AddMinutes(10));
+            return true;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            var texto = ex.InnerException?.Message ?? ex.Message;
+            if (texto.Contains("No se encontro la plantilla en Meta", StringComparison.OrdinalIgnoreCase)
+                || texto.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
+            {
+                _cachePlantillas[clave] = (false, DateTime.UtcNow.AddMinutes(10));
+                return false;
+            }
+            return null;
+        }
+    }
 
     public Task<IReadOnlyList<ReclamoCliente>> BuscarAsync(ReclamoFiltro filtro, CancellationToken ct = default)
         => Ejecutar<IReadOnlyList<ReclamoCliente>>("Buscar", "No se pudieron consultar los saldos de clientes.",
@@ -687,6 +722,9 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             var plantilla = enviarWa && cfg.IdPlantillaWhatsApp > 0 ? await conversaciones.GetTemplateAsync(cfg.IdPlantillaWhatsApp, token) : null;
             if (enviarWa && !sol.SoloSimular && plantilla is null)
                 throw new InvalidOperationException("La plantilla de WhatsApp configurada ya no existe.");
+            // Antes de tocar nada: la plantilla tiene que existir en la cuenta de WhatsApp del número que envía.
+            if (enviarWa && !sol.SoloSimular && plantilla is not null && await PlantillaEnCuentaAsync(plantilla.IdPlantilla, false, token) == false)
+                throw new InvalidOperationException($"La plantilla \"{plantilla.NombreVisible}\" no existe en la cuenta de WhatsApp del número que envía. Elegí otra en Mensaje y configuración o creala en esa cuenta de Meta.");
 
             var clientes = await BuscarInternoAsync(cn, user, sol.Cuentas, token);
             var detalles = await DetallesAsync(cn, clientes.Select(c => c.Cuenta).ToList(), user, string.Empty, token);
@@ -778,7 +816,10 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex)
                     {
-                        r.Estado = "Error"; r.Detalle = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
+                        // ExecuteLoggedAsync envuelve la causa real en AppUserFacingException: mostrarla junto con el código de incidente.
+                        var detalleWa = ex is AppUserFacingException { InnerException: { } causa } uf
+                            ? $"{causa.Message} (incidente {uf.ErrorCode})" : ex.Message;
+                        r.Estado = "Error"; r.Detalle = detalleWa.Length > 300 ? detalleWa[..300] : detalleWa;
                         await events.LogErrorAsync("ReclamoSaldos", "EnviarWhatsApp", ex, "No se pudo enviar el reclamo por WhatsApp.", ct: token);
                         await Bitacora(cn, user, cli, "WHATSAPP", r.Destino, esPrueba, armado.Vista, "ERROR", r.Detalle, TrazaDe(null), token);
                     }
