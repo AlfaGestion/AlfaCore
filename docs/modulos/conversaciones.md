@@ -253,7 +253,7 @@ punta a punta (primer caso: un reparto de agua):
   cuenta, o la que el cliente pidió en el chat) y queda en las observaciones de la Nota de Pedido.
 
 Borradores en `CONV_BOT_CLIENTES` y `CONV_BOT_PEDIDOS.DireccionEntrega` (script
-`2026-11-17-052__conversaciones_bot_alta_clientes.sql`). Código: `ConversacionBotClientesService`.
+`2026-11-17-053__conversaciones_bot_alta_clientes.sql`). Código: `ConversacionBotClientesService`.
 
 ## Issues pendientes
 
