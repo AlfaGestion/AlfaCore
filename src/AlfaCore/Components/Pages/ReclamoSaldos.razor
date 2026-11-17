@@ -121,7 +121,8 @@
                                     <td>@if (c.TieneEmail) { <span title="@c.Emails"><i class="bi bi-check-circle-fill reclamo-page__ok"></i> @Primero(c.Emails)</span> } else { <span class="reclamo-page__falta">Sin email</span> }</td>
                                     <td>@if (c.TieneWhatsapp) { <span title="@c.Whatsapp"><i class="bi bi-check-circle-fill reclamo-page__ok"></i> @c.Whatsapp</span> } else { <span class="reclamo-page__falta">—</span> }</td>
                                     <td>@if (c.UltimoReclamo is { } u) { <span>@u.ToString("dd/MM/yy HH:mm") <small>@c.UltimoCanal</small></span> } else { <span class="reclamo-page__falta">Nunca</span> }</td>
-                                    <td><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => VerAsync(c)">Ver mensaje</AlfaButton></td>
+                                    <td class="reclamo-page__acciones"><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => VerAsync(c)">Ver mensaje</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-clock-history" OnClick="_ => VerHistorialAsync(c.Cuenta, c.Nombre)">Historial</AlfaButton></td>
                                 </tr>
                             }
                         </tbody>
@@ -193,6 +194,7 @@
                                     <td>@e.Usuario</td>
                                     <td class="reclamo-page__acciones">
                                         <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="_ => VerEnvioAsync(e)">Ver enviado</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-clock-history" OnClick="_ => VerHistorialAsync(e.Cuenta, e.Nombre)">Historial</AlfaButton>
                                         @if (e.IdConversacion is { } conv)
                                         {
                                             <a class="reclamo-page__enlace" href="@($"{RouteContext.BuildRoute("/conversaciones")}?id={conv}")" title="Abrir la conversación en Conversaciones"><i class="bi bi-chat-dots"></i> Conversación</a>
@@ -332,6 +334,44 @@
     </Footer>
 </AlfaDialog>
 
+<AlfaDialog Open="@(_histCuenta is not null)" Title="@(_histCuenta is null ? string.Empty : $"Historial de {_histNombre}")" Eyebrow="Reclamos, respuestas y cobranzas"
+            Size="AlfaDialogSize.Lg" OnClose="() => { _histCuenta = null; _historial = null; }">
+    <ChildContent>
+    @if (_historial is null)
+    {
+        <p role="status" class="gd-hint">Armando el historial…</p>
+    }
+    else if (_historial.Count == 0)
+    {
+        <p class="gd-hint">Este cliente no tiene reclamos registrados en los últimos 12 meses.</p>
+    }
+    else
+    {
+        var reclamos = _historial.Count(e => e.Tipo == "RECLAMO" && !e.Error);
+        var cobrado = _historial.Where(e => e.Tipo == "COBRANZA").Sum(e => e.Importe ?? 0);
+        <p class="gd-hint">@reclamos reclamo(s) enviado(s) · @_historial.Count(e => e.Tipo == "RESPUESTA") respuesta(s) del cliente · @_historial.Count(e => e.Tipo == "PORTAL") ingreso(s) al portal · cobrado desde el primer reclamo @Dinero(cobrado)</p>
+        <ol class="reclamo-tiempo">
+            @foreach (var ev in _historial)
+            {
+                <li class="reclamo-tiempo__item reclamo-tiempo__item--@ev.Tipo.ToLowerInvariant() @(ev.Error ? "is-error" : string.Empty)">
+                    <span class="reclamo-tiempo__icono"><i class="bi @IconoEvento(ev.Tipo)"></i></span>
+                    <div class="reclamo-tiempo__cuerpo">
+                        <div class="reclamo-tiempo__titulo"><strong>@ev.Titulo</strong>@if (ev.Importe is { } im && ev.Tipo != "RECLAMO") { <span class="reclamo-page__ok"> @Dinero(im)</span> }</div>
+                        @if (ev.Detalle.Length > 0) { <div class="reclamo-tiempo__detalle">@ev.Detalle</div> }
+                        <small>@ev.Fecha.ToString("dd/MM/yyyy HH:mm")
+                            @if (ev.IdConversacion is { } cv) { <text> · </text><a class="reclamo-page__enlace" href="@($"{RouteContext.BuildRoute("/conversaciones")}?id={cv}")">Abrir conversación</a> }
+                        </small>
+                    </div>
+                </li>
+            }
+        </ol>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="_ => { _histCuenta = null; _historial = null; }">Cerrar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
 <AlfaDialog Open="@(_envFila is not null)" Title="@(_envFila is null ? string.Empty : $"Reclamo a {_envFila.Nombre}")" Eyebrow="@(_envFila is null ? null : $"{(_envFila.Canal == "WHATSAPP" ? "WhatsApp" : "Email")} · {_envFila.FechaHora:dd/MM/yyyy HH:mm}")"
             Size="AlfaDialogSize.Lg" OnClose="() => { _envFila = null; _envDetalle = null; }">
     <ChildContent>
@@ -464,6 +504,23 @@
     {
         "LEIDO" => "Leído", "ENTREGADO" => "Entregado", "ENVIADO_META" => "Enviado a Meta", "ERROR_ENVIO" => "Falló en Meta", _ => estado
     };
+
+    private string? _histCuenta;
+    private string _histNombre = string.Empty;
+    private IReadOnlyList<ReclamoEvento>? _historial;
+
+    private static string IconoEvento(string tipo) => tipo switch
+    {
+        "RECLAMO" => "bi-send", "RESPUESTA" => "bi-reply", "MENSAJE" => "bi-chat-left-text", "PORTAL" => "bi-box-arrow-up-right", "COBRANZA" => "bi-cash-coin", _ => "bi-dot"
+    };
+
+    private async Task VerHistorialAsync(string cuenta, string nombre)
+    {
+        _histCuenta = cuenta; _histNombre = nombre; _historial = null; StateHasChanged();
+        try { _historial = await Servicio.LineaTiempoAsync(cuenta, _cts.Token); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; _histCuenta = null; }
+    }
 
     private ReclamoEnvioFila? _envFila;
     private ReclamoEnvioDetalle? _envDetalle;

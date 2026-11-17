@@ -579,6 +579,85 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             return d;
         }, ct);
 
+    // ---------------------------------------------------------------- Línea de tiempo del cliente
+
+    private sealed record EventoEnvio(long IdEnvio, DateTime FechaHora, string Canal, string Destino, bool EsPrueba, int Tramo, decimal Saldo, string Asunto, string Estado, string Detalle);
+    private sealed record EventoMensaje(long IdMensaje, long IdConversacion, DateTime FechaHora, string Direction, string Texto);
+    private sealed record EventoCobro(DateTime Fecha, string Tc, string Comprobante, decimal Importe, string Detalle);
+    private sealed record EventoPortal(DateTime Uso);
+
+    /// <summary>
+    /// Todo lo que pasó con un cliente desde su primer reclamo (hasta 12 meses atrás): reclamos enviados, mensajes de las conversaciones
+    /// de WhatsApp asociadas (respuestas del cliente y del equipo), accesos al portal y cobranzas. Más reciente primero. Solo lectura.
+    /// </summary>
+    public Task<IReadOnlyList<ReclamoEvento>> LineaTiempoAsync(string cuenta, CancellationToken ct = default)
+        => Ejecutar<IReadOnlyList<ReclamoEvento>>("LineaTiempo", "No se pudo armar el historial del cliente.", async (cn, _, token) =>
+        {
+            cuenta = (cuenta ?? string.Empty).Trim();
+            var eventos = new List<ReclamoEvento>();
+            var desde = DateTime.Now.AddMonths(-12);
+            var envios = (await cn.QueryAsync<EventoEnvio>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'U') IS NOT NULL
+                    SELECT IdEnvio, FechaHora, Canal, Destino, EsPrueba, CONVERT(int, Tramo) Tramo, Saldo, ISNULL(Asunto,'') Asunto, Estado, ISNULL(Detalle,'') Detalle
+                    FROM dbo.ALFACORE_RECLAMO_SALDO_ENVIO WHERE LTRIM(RTRIM(Cuenta)) = @cuenta AND FechaHora >= @desde ORDER BY FechaHora DESC;
+                """, new { cuenta, desde }, cancellationToken: token))).ToList();
+            // Con la trazabilidad (script 2026-11-17-051) se lee también la conversación y el mensaje de cada WhatsApp.
+            var conv = (await cn.QueryAsync<(long IdEnvio, long? IdConversacion, long? IdMensaje)>(new CommandDefinition("""
+                IF COL_LENGTH(N'dbo.ALFACORE_RECLAMO_SALDO_ENVIO', N'IdConversacion') IS NOT NULL
+                    EXEC sys.sp_executesql N'SELECT IdEnvio, IdConversacion, IdMensaje FROM dbo.ALFACORE_RECLAMO_SALDO_ENVIO WHERE LTRIM(RTRIM(Cuenta)) = @cuenta AND FechaHora >= @desde',
+                        N'@cuenta nvarchar(30), @desde datetime', @cuenta = @cuenta, @desde = @desde;
+                """, new { cuenta, desde }, cancellationToken: token))).ToDictionary(x => x.IdEnvio);
+            foreach (var e in envios)
+            {
+                var (c, m) = conv.TryGetValue(e.IdEnvio, out var x) ? (x.IdConversacion, x.IdMensaje) : (null, null);
+                var canal = e.Canal == "WHATSAPP" ? "WhatsApp" : "Email";
+                eventos.Add(new ReclamoEvento
+                {
+                    Fecha = e.FechaHora, Tipo = "RECLAMO", Error = e.Estado == "ERROR", IdConversacion = c, Importe = e.Saldo,
+                    Titulo = e.Estado == "ERROR" ? $"Reclamo por {canal} con error" : $"Reclamo por {canal} (tramo {e.Tramo}){(e.EsPrueba ? " · prueba" : string.Empty)}",
+                    Detalle = e.Estado == "ERROR" ? e.Detalle : $"A {e.Destino}{(e.Asunto.Length > 0 ? " · " + e.Asunto : string.Empty)}. Saldo reclamado."
+                });
+            }
+            var primero = envios.Where(e => !e.EsPrueba && e.Estado == "ENVIADO").Select(e => (DateTime?)e.FechaHora).DefaultIfEmpty(null).Min();
+            if (primero is null) return eventos;
+
+            var convIds = conv.Values.Where(v => v.IdConversacion is not null).Select(v => v.IdConversacion!.Value).Distinct().ToList();
+            var propios = conv.Values.Where(v => v.IdMensaje is not null).Select(v => v.IdMensaje!.Value).ToHashSet();
+            if (convIds.Count > 0)
+            {
+                var mensajes = await cn.QueryAsync<EventoMensaje>(new CommandDefinition("""
+                    IF OBJECT_ID(N'dbo.CONV_MENSAJES', N'U') IS NOT NULL
+                        SELECT TOP (60) IdMensaje, IdConversacion, FechaHora, Direction, ISNULL(CONVERT(nvarchar(500), Texto), N'') Texto FROM dbo.CONV_MENSAJES
+                        WHERE IdConversacion IN @convIds AND FechaHora >= @primero AND Direction IN (N'ENTRANTE', N'SALIENTE') ORDER BY FechaHora DESC;
+                    """, new { convIds, primero }, cancellationToken: token));
+                foreach (var m in mensajes.Where(m => !propios.Contains(m.IdMensaje)))
+                    eventos.Add(new ReclamoEvento
+                    {
+                        Fecha = m.FechaHora, IdConversacion = m.IdConversacion, Tipo = m.Direction == "ENTRANTE" ? "RESPUESTA" : "MENSAJE",
+                        Titulo = m.Direction == "ENTRANTE" ? "El cliente respondió por WhatsApp" : "Mensaje del equipo por WhatsApp", Detalle = m.Texto
+                    });
+            }
+
+            var portal = await cn.QueryAsync<EventoPortal>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN', N'U') IS NOT NULL
+                    SELECT FechaHora_Uso Uso FROM dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN
+                    WHERE LTRIM(RTRIM(CodigoCliente)) = @cuenta AND FechaHora_Uso IS NOT NULL AND FechaHora_Uso >= @primero;
+                """, new { cuenta, primero }, cancellationToken: token));
+            eventos.AddRange(portal.Select(p => new ReclamoEvento { Fecha = p.Uso, Tipo = "PORTAL", Titulo = "Entró al portal de clientes" }));
+
+            var cobros = await cn.QueryAsync<EventoCobro>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.VE_COBRANZAS_REALIZADAS', N'V') IS NOT NULL
+                    SELECT FechaHora_Grabacion Fecha, ISNULL(LTRIM(RTRIM(TC)),'') Tc, ISNULL(idcomprobante,'') Comprobante,
+                        CONVERT(decimal(18,2), ISNULL(IMPORTE,0)) Importe, ISNULL(LTRIM(RTRIM(DETALLE)),'') Detalle
+                    FROM dbo.VE_COBRANZAS_REALIZADAS WHERE LTRIM(RTRIM(CUENTA)) = @cuenta AND FechaHora_Grabacion >= @primero;
+                """, new { cuenta, primero }, cancellationToken: token));
+            eventos.AddRange(cobros.Select(c => new ReclamoEvento
+            {
+                Fecha = c.Fecha, Tipo = "COBRANZA", Importe = c.Importe, Titulo = $"Cobranza registrada {c.Tc} {c.Comprobante}".Trim(), Detalle = c.Detalle
+            }));
+            return eventos.OrderByDescending(e => e.Fecha).ToList();
+        }, ct);
+
     // ---------------------------------------------------------------- Envío
 
     /// <summary>

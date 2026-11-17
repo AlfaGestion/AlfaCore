@@ -202,3 +202,16 @@ public sealed class ReclamoEnvioFila
     /// <summary>Saldo actual de la cuenta (para compararlo con el saldo reclamado).</summary>
     public decimal? SaldoActual { get; set; }
 }
+
+/// <summary>Un hecho en la línea de tiempo de un cliente: reclamo, respuesta, acceso al portal o cobranza.</summary>
+public sealed class ReclamoEvento
+{
+    public DateTime Fecha { get; set; }
+    /// <summary>RECLAMO | RESPUESTA | MENSAJE | PORTAL | COBRANZA</summary>
+    public string Tipo { get; set; } = string.Empty;
+    public string Titulo { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public decimal? Importe { get; set; }
+    public bool Error { get; set; }
+    public long? IdConversacion { get; set; }
+}

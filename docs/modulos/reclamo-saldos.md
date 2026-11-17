@@ -52,6 +52,12 @@ si el cliente **respondió** en la conversación, si **abrió el enlace al porta
 cliente creado minutos antes del envío), lo **cobrado** al cliente desde el envío (`VE_COBRANZAS_REALIZADAS`) y su saldo de hoy contra el reclamado.
 "Cobró" es por cliente, no por comprobante: no distingue si pagó justo lo reclamado. No lee respuestas: las de WhatsApp están en Conversaciones y las de email llegan a la casilla "responder a".
 
+## Historial del cliente (línea de tiempo)
+Botón **Historial** en Clientes y en Enviados: reclamos enviados (también los con error y las pruebas, marcados), mensajes de las
+conversaciones de WhatsApp asociadas (respuestas del cliente y mensajes del equipo, con enlace a la conversación), ingresos al
+portal y cobranzas registradas desde el primer reclamo real. Hasta 12 meses, más reciente primero; solo lectura. Los mensajes
+y cobranzas se muestran solo si el cliente tiene al menos un reclamo real enviado.
+
 ## Forma de pago y cambio de email
 - `<FORMADEPAGO>` sale primero de "Formas de pago" de la unidad de negocio del último comprobante pendiente del cliente
   (Archivos → Unidades de negocio, clave `FORMADEPAGO_UN_<unidad>`, la misma del mail de facturación). Si está vacía, usa el
