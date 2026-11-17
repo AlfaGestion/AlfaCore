@@ -167,6 +167,16 @@ public interface IWhatsAppEmbeddedSignupOrchestrator
         => Task.FromResult(false);
 
     /// <summary>
+    /// "Cancelar" desde el cartel "Configuración en curso": abandona un onboarding STARTED cuya
+    /// ventana de Meta se cerró, se minimizó o terminó en "cancel" sin avisarle a AlfaCore (si no,
+    /// la base queda bloqueada hasta que vence a los 30 minutos). Sólo cancela si Meta todavía NO
+    /// autorizó (mismo UPDATE atómico que HandleCancellationAsync): nunca pisa una autorización en
+    /// curso ni toca ownership/Vault/Meta. Devuelve true si la base quedó liberada.
+    /// </summary>
+    Task<bool> CancelStartedConfigurationAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+        => Task.FromResult(false);
+
+    /// <summary>
     /// "Volver a conectar con Meta" después de agotar los reintentos manuales: el onboarding viejo
     /// (FAILED_RETRYABLE) pasa a FAILED_FINAL -- preservado como historial, nunca DELETE -- para que
     /// deje de aparecer en la lista de conexiones pendientes. NO inicia el Embedded Signup nuevo: eso

@@ -291,9 +291,7 @@
                     }
                     else if (EmbeddedSignupCta.IsBlockedByActiveOnboarding)
                     {
-                        <div class="wa-business-inline-actions">
-                            <AlfaTag Tone="AlfaTagTone.Accent">Configuración en curso</AlfaTag>
-                        </div>
+                        @OnboardingInProgressPanel
                     }
                 }
                 else if (EmbeddedSignupCta.ShowPrimaryAction)
@@ -306,9 +304,7 @@
                 }
                 else if (EmbeddedSignupCta.IsBlockedByActiveOnboarding)
                 {
-                    <div class="wa-business-inline-actions">
-                        <AlfaTag Tone="AlfaTagTone.Accent">Configuración en curso</AlfaTag>
-                    </div>
+                    @OnboardingInProgressPanel
                 }
                 }
             </aside>
@@ -1018,6 +1014,18 @@
                        ErrorMessage="@_cancelActionRequiredError"
                        OnConfirm="ConfirmCancelActionRequiredConfigurationAsync"
                        OnCancel="CloseCancelActionRequiredDialog" />
+
+    <AlfaConfirmDialog Open="@(_cancelStartedOnboardingId is not null)"
+                       Title="¿Cancelar la conexión en curso?"
+                       Message="Después vas a poder conectar WhatsApp de nuevo."
+                       SecondaryMessage="No elimina nada en Meta. Si la ventana de Meta sigue abierta, cerrala."
+                       ConfirmLabel="Cancelar conexión"
+                       CancelLabel="Volver"
+                       LoadingLabel="Cancelando..."
+                       Loading="@_cancelStartedBusy"
+                       ErrorMessage="@_cancelStartedError"
+                       OnConfirm="ConfirmCancelStartedConfigurationAsync"
+                       OnCancel="CloseCancelStartedDialog" />
 </section>
 
 @code {
@@ -2200,6 +2208,107 @@
         if (idBase > 0)
             await RefreshWhatsAppConnectionsAsync(idBase);
         await InvokeAsync(StateHasChanged);
+    }
+
+    // Cartel "Configuración en curso". Mientras la ventana de Meta está abierta (STARTED) se puede
+    // cancelar: si se cerró, se minimizó o terminó en "cancel", la base quedaba bloqueada 30 minutos.
+    // Una vez que Meta autorizó, AlfaCore sigue solo y no se ofrece cancelar.
+    private bool OnboardingWaitingForMeta
+        => _embeddedSignupStatus is { Status: AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Started };
+
+    private RenderFragment OnboardingInProgressPanel => @<div class="wa-business-block wa-embedded-status is-processing wa-onboarding-in-progress">
+        <div class="wa-business-block__header">
+            <div>
+                <h3><i class="bi bi-hourglass-split"></i> Configuración de WhatsApp en curso</h3>
+            </div>
+        </div>
+        @if (OnboardingWaitingForMeta)
+        {
+            <p>Se abrió la ventana de Meta para conectar WhatsApp. Terminá los pasos en esa ventana (fijate que no haya quedado minimizada).</p>
+            <p>Si la cerraste o no terminó bien, cancelá y volvé a conectar.</p>
+            <div class="wa-business-inline-actions">
+                <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                            Icon="bi bi-x-circle"
+                            Disabled="@_cancelStartedBusy"
+                            OnClick="RequestCancelStartedConfigurationAsync">Cancelar</AlfaButton>
+            </div>
+        }
+        else
+        {
+            <p>Meta ya autorizó la conexión y AlfaCore está terminando de configurarla. Puede demorar unos minutos; no hace falta hacer nada.</p>
+        }
+    </div>;
+
+    private Guid? _cancelStartedOnboardingId;
+    private bool _cancelStartedBusy;
+    private string _cancelStartedError = string.Empty;
+
+    private Task RequestCancelStartedConfigurationAsync()
+    {
+        if (_embeddedSignupStatus is not { Status: AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Started } status)
+            return Task.CompletedTask;
+
+        _cancelStartedOnboardingId = status.IdOnboarding;
+        _cancelStartedError = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task CloseCancelStartedDialog()
+    {
+        if (_cancelStartedBusy)
+            return Task.CompletedTask;
+
+        _cancelStartedOnboardingId = null;
+        _cancelStartedError = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConfirmCancelStartedConfigurationAsync()
+    {
+        if (_cancelStartedOnboardingId is not Guid id)
+            return;
+
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        if (idBase <= 0)
+            return;
+
+        _cancelStartedBusy = true;
+        _cancelStartedError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
+            var cancelled = await EmbeddedSignup.CancelStartedConfigurationAsync(id, idBase, _lifetimeCts.Token);
+            if (cancelled)
+            {
+                _cancelStartedOnboardingId = null;
+                CancelEmbeddedSignupAuthorizationWatchdog();
+                _embeddedSignupBusy = false;
+                await RefreshWhatsAppConnectionsAsync(idBase);
+            }
+            else
+            {
+                // Meta respondió justo antes: la conexión siguió su curso, no se canceló nada.
+                _cancelStartedError = "No se canceló porque Meta ya respondió y la conexión está avanzando. Esperá unos minutos.";
+                await RefreshWhatsAppConnectionsAsync(idBase);
+            }
+        }
+        catch (Exception ex)
+        {
+            await AppEvents.LogErrorAsync(
+                "ConversacionesConfiguracion",
+                "CancelStartedConfiguration",
+                ex,
+                "No se pudo cancelar la configuración de WhatsApp en curso.",
+                new { IdOnboarding = id, IdBase = idBase });
+            _cancelStartedError = "No se pudo cancelar. Intentá de nuevo.";
+        }
+        finally
+        {
+            _cancelStartedBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private Task RequestCancelActionRequiredConfigurationAsync()

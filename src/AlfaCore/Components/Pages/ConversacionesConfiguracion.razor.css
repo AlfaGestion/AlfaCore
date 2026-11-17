@@ -911,6 +911,12 @@
 .wa-embedded-status.is-warning { border-inline-start-color: var(--alfa-warning); }
 .wa-embedded-status.is-error { border-inline-start-color: var(--alfa-danger); }
 
+/* Cartel "Configuración de WhatsApp en curso" en la lista (antes era un tag chico). */
+.wa-onboarding-in-progress { margin-top: 12px; }
+.wa-onboarding-in-progress .wa-business-block__header { margin-bottom: 8px; }
+.wa-onboarding-in-progress h3 { display: flex; align-items: center; gap: 8px; font-size: 1rem; color: var(--alfa-accent); }
+.wa-onboarding-in-progress p { margin: 0 0 6px; color: var(--alfa-text-secondary); line-height: 1.45; }
+
 .wa-embedded-status__progress {
     display: flex;
     align-items: center;

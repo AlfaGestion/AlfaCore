@@ -205,6 +205,19 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         return await store.CancelActionRequiredAsync(idOnboarding, idBase, ct);
     }
 
+    public async Task<bool> CancelStartedConfigurationAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+    {
+        EnsureFeatureEnabled();
+        if (idOnboarding == Guid.Empty || idBase <= 0) return false;
+        var item = await store.GetAsync(idOnboarding, ct);
+        if (item is null || item.IdBase != idBase || item.Status != WhatsAppEmbeddedOnboardingStatus.Started)
+            return false;
+        if (await store.CancelStartedIfNotConsumedAsync(idOnboarding, idBase, item.StateHash, DateTime.UtcNow, ct))
+            return true;
+        // Si justo venció, la misma salida es pasarlo a EXPIRED (también libera la base).
+        return await store.ExpireStaleStartedAsync(idOnboarding, idBase, ct);
+    }
+
     public async Task<bool> SupersedeForReconnectAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
     {
         EnsureFeatureEnabled();

@@ -62,6 +62,70 @@ public sealed class WhatsAppEmbeddedSignupCancelActionRequiredTests
             new NoopErrorLogger(),
             Options.Create(BuildOptions()));
 
+    // "Cancelar" del cartel "Configuración en curso" (ventana de Meta cerrada/minimizada, caso
+    // La Vertiente 17/11/2026): libera la base sin esperar los 30 minutos.
+    [Fact]
+    public async Task Started_OwnBase_CancelsAndFreesTheBase()
+    {
+        var store = new CancelableStore();
+        var item = SeedItem(Base4264, WhatsAppEmbeddedOnboardingStatus.Started);
+        store.Seed(item);
+
+        var cancelled = await BuildOrchestrator(store).CancelStartedConfigurationAsync(item.IdOnboarding, Base4264);
+
+        Assert.True(cancelled);
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Cancelled, item.Status);
+        Assert.False(WhatsAppEmbeddedSignupCtaPolicy.IsActiveInProgress(item.Status));
+    }
+
+    [Fact]
+    public async Task Started_AlreadyExpired_EndsExpired()
+    {
+        var store = new CancelableStore();
+        var item = SeedItem(Base4264, WhatsAppEmbeddedOnboardingStatus.Started);
+        item.ExpiresAtUtc = DateTime.UtcNow.AddMinutes(-1);
+        store.Seed(item);
+
+        Assert.True(await BuildOrchestrator(store).CancelStartedConfigurationAsync(item.IdOnboarding, Base4264));
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Expired, item.Status);
+    }
+
+    [Fact]
+    public async Task Started_StateAlreadyConsumedByMeta_IsNotCancelled()
+    {
+        var store = new CancelableStore();
+        var item = SeedItem(Base4264, WhatsAppEmbeddedOnboardingStatus.Started);
+        item.StateConsumedAtUtc = DateTime.UtcNow;
+        store.Seed(item);
+
+        Assert.False(await BuildOrchestrator(store).CancelStartedConfigurationAsync(item.IdOnboarding, Base4264));
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Started, item.Status);
+    }
+
+    [Theory]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Authorized)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.SubscribingWabas)]
+    public async Task AfterMetaAuthorized_CannotBeCancelledFromTheBanner(WhatsAppEmbeddedOnboardingStatus status)
+    {
+        var store = new CancelableStore();
+        var item = SeedItem(Base4264, status);
+        store.Seed(item);
+
+        Assert.False(await BuildOrchestrator(store).CancelStartedConfigurationAsync(item.IdOnboarding, Base4264));
+        Assert.Equal(status, item.Status);
+    }
+
+    [Fact]
+    public async Task Started_OtherBase_IsNotCancelled()
+    {
+        var store = new CancelableStore();
+        var item = SeedItem(Base4264, WhatsAppEmbeddedOnboardingStatus.Started);
+        store.Seed(item);
+
+        Assert.False(await BuildOrchestrator(store).CancelStartedConfigurationAsync(item.IdOnboarding, OtherBase));
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Started, item.Status);
+    }
+
     [Fact]
     public async Task ActionRequired_OwnBase_TransitionsToCancelled()
     {
@@ -232,6 +296,28 @@ public sealed class WhatsAppEmbeddedSignupCancelActionRequiredTests
                 return Task.FromResult(false);
             item.Status = WhatsAppEmbeddedOnboardingStatus.Cancelled;
             item.CurrentStep = "CANCELLED";
+            return Task.FromResult(true);
+        }
+
+        // Mismo guard que el UPDATE real: STARTED, state sin consumir, mismo hash y sin vencer.
+        public Task<bool> CancelStartedIfNotConsumedAsync(Guid id, int idBase, string expectedStateHash, DateTime nowUtc, CancellationToken ct = default)
+        {
+            if (!_items.TryGetValue(id, out var item) || item.IdBase != idBase || item.Status != WhatsAppEmbeddedOnboardingStatus.Started
+                || item.StateConsumedAtUtc is not null || item.StateHash != expectedStateHash || item.ExpiresAtUtc <= nowUtc)
+                return Task.FromResult(false);
+            item.Status = WhatsAppEmbeddedOnboardingStatus.Cancelled;
+            item.CurrentStep = "CANCELLED";
+            item.StateConsumedAtUtc = nowUtc;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> ExpireStaleStartedAsync(Guid id, int idBase, CancellationToken ct = default)
+        {
+            if (!_items.TryGetValue(id, out var item) || item.IdBase != idBase || item.Status != WhatsAppEmbeddedOnboardingStatus.Started
+                || item.StateConsumedAtUtc is not null || item.ExpiresAtUtc > DateTime.UtcNow)
+                return Task.FromResult(false);
+            item.Status = WhatsAppEmbeddedOnboardingStatus.Expired;
+            item.CurrentStep = "EXPIRED";
             return Task.FromResult(true);
         }
     }
