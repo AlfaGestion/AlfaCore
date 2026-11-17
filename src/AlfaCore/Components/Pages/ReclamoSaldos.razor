@@ -276,6 +276,7 @@
             <section class="reclamo-cfg__bloque">
                 <h3>WhatsApp</h3>
                 <p class="gd-hint">WhatsApp exige una plantilla aprobada por Meta para escribirle a un cliente que no te escribió en las últimas 24 horas. Creá la plantilla en Conversaciones → Plantillas con variables de tipo <em>Nombre del cliente</em>, <em>Detalle de deuda</em> y <em>Forma de pago</em> (en ese orden si no las mapeás).</p>
+                <AlfaSelect Label="Número de WhatsApp que envía" Value="@_cfg.IdNumeroWhatsApp.ToString()" ValueChanged="v => CambiarNumeroAsync(v)" Options="@OpcionesNumero" HelpText="Las plantillas disponibles son las de la cuenta de WhatsApp de este número." />
                 <AlfaSelect Label="Plantilla de reclamo" Value="@_cfg.IdPlantillaWhatsApp.ToString()" ValueChanged="v => CambiarPlantilla(v)" Options="@OpcionesPlantilla" Placeholder="Sin plantilla" />
                 @if (_plantillaElegida is { } p)
                 {
@@ -583,6 +584,7 @@
     private IReadOnlyList<ReclamoCliente>? _clientes;
     private IReadOnlyList<ReclamoUnidad> _unidades = [];
     private IReadOnlyList<ReclamoPlantillaWhatsApp> _plantillas = [];
+    private IReadOnlyList<ReclamoNumeroWhatsApp> _numeros = [];
     private ReclamoConfig? _cfg;
     private ReclamoVistaPrevia? _vista;
     private string _mailVista = string.Empty;
@@ -604,6 +606,8 @@
         => [new("", "Todos los tramos"), new("1", "Tramo 1"), new("2", "Tramo 2"), new("3", "Tramo 3")];
     private IReadOnlyList<AlfaSelectOption> OpcionesCanal
         => [new("Email", "Email"), new("WhatsApp", "WhatsApp (plantilla)"), new("Ambos", "Email y WhatsApp")];
+    private IReadOnlyList<AlfaSelectOption> OpcionesNumero
+        => [new("0", _numeros.Count == 1 ? _numeros[0].Nombre : "Predeterminado de Conversaciones"), .. _numeros.Where(_ => _numeros.Count > 1).Select(n => new AlfaSelectOption(n.IdNumero.ToString(), n.Nombre))];
     private IReadOnlyList<AlfaSelectOption> OpcionesPlantilla
         => [new("0", "Sin plantilla"), .. _plantillas.Select(p => new AlfaSelectOption(p.IdPlantilla.ToString(), p.Nombre))];
     private ReclamoPlantillaWhatsApp? _plantillaElegida => _cfg is null ? null : _plantillas.FirstOrDefault(p => p.IdPlantilla == _cfg.IdPlantillaWhatsApp);
@@ -694,7 +698,8 @@
             _unidades = await Servicio.UnidadesAsync(_cts.Token);
             _cfg = await Servicio.ConfigAsync(_cts.Token);
             _saldoMin = _cfg.SaldoMinimo.ToString(CultureInfo.InvariantCulture);
-            _plantillas = await Servicio.PlantillasWhatsAppAsync(_cts.Token);
+            _numeros = await Servicio.NumerosWhatsAppAsync(_cts.Token);
+            _plantillas = await Servicio.PlantillasWhatsAppAsync(_cfg.IdNumeroWhatsApp, _cts.Token);
         }
         catch (OperationCanceledException) { return; }
         catch (InvalidOperationException ex) { _error = ex.Message; }
@@ -863,6 +868,19 @@
         catch (InvalidOperationException ex) { _error = ex.Message; }
         finally { _busy = false; _cancelando = false; _actual = string.Empty; _envioCts = null; }
         if (!_simular && _resultados.Any(r => r.Estado == "Enviado")) await BuscarAsync();
+    }
+
+    private async Task CambiarNumeroAsync(string? v)
+    {
+        if (_cfg is null) return;
+        _cfg.IdNumeroWhatsApp = int.TryParse(v, out var id) && id > 0 ? id : 0;
+        try
+        {
+            _plantillas = await Servicio.PlantillasWhatsAppAsync(_cfg.IdNumeroWhatsApp, _cts.Token);
+            if (_cfg.IdPlantillaWhatsApp > 0 && _plantillas.All(p => p.IdPlantilla != _cfg.IdPlantillaWhatsApp)) _cfg.IdPlantillaWhatsApp = 0;
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
     }
 
     private void CambiarPlantilla(string? v)

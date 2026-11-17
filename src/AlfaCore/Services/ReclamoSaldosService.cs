@@ -74,7 +74,8 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             Tolerancia = decimal.TryParse(V("TOLERANCIA"), NumberStyles.Number, CultureInfo.InvariantCulture, out var tl) && tl >= 0 ? tl : 1m,
             DiasEntreEnvios = I("DIAS-ENTRE-ENVIOS", 7),
             PortalDias = Math.Max(1, I("PORTAL-DIAS", 15)),
-            IdPlantillaWhatsApp = long.TryParse(V("WA-PLANTILLA"), out var pl) ? pl : 0
+            IdPlantillaWhatsApp = long.TryParse(V("WA-PLANTILLA"), out var pl) ? pl : 0,
+            IdNumeroWhatsApp = int.TryParse(V("WA-NUMERO"), out var nu) && nu > 0 ? nu : 0
         };
         foreach (var t in cfg.Tramos) { t.Asunto = V($"ASUNTO{t.Numero}"); t.Mensaje = V($"MENSAJE{t.Numero}"); }
         return cfg;
@@ -93,6 +94,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             await Set(cn, "DIAS-ENTRE-ENVIOS", Math.Max(0, cfg.DiasEntreEnvios).ToString(CultureInfo.InvariantCulture), token);
             await Set(cn, "PORTAL-DIAS", Math.Clamp(cfg.PortalDias, 1, 90).ToString(CultureInfo.InvariantCulture), token);
             await Set(cn, "WA-PLANTILLA", cfg.IdPlantillaWhatsApp > 0 ? cfg.IdPlantillaWhatsApp.ToString(CultureInfo.InvariantCulture) : string.Empty, token);
+            await Set(cn, "WA-NUMERO", cfg.IdNumeroWhatsApp > 0 ? cfg.IdNumeroWhatsApp.ToString(CultureInfo.InvariantCulture) : string.Empty, token);
             foreach (var t in cfg.Tramos)
             {
                 await Set(cn, $"ASUNTO{t.Numero}", t.Asunto ?? string.Empty, token);
@@ -147,16 +149,31 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                 FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(Codigo))<>'' AND (@admin=1 OR LTRIM(RTRIM(Codigo))=@unidad) ORDER BY Codigo;
                 """, new { admin = user.Admin, unidad = user.Unidad }, cancellationToken: token))).AsList(), ct);
 
-    public Task<IReadOnlyList<ReclamoPlantillaWhatsApp>> PlantillasWhatsAppAsync(CancellationToken ct = default)
+    /// <summary>Números de WhatsApp activos de Conversaciones (los que pueden enviar plantillas).</summary>
+    public Task<IReadOnlyList<ReclamoNumeroWhatsApp>> NumerosWhatsAppAsync(CancellationToken ct = default)
+        => Ejecutar<IReadOnlyList<ReclamoNumeroWhatsApp>>("Numeros", "No se pudieron leer los números de WhatsApp.", async (_, _, token) =>
+            (await conversacionesConfig.GetWhatsAppNumerosAsync(token)).Where(n => n.Activo && !string.IsNullOrWhiteSpace(n.PhoneNumberId))
+                .Select(n => new ReclamoNumeroWhatsApp(n.IdNumero, n.Nombre.Length > 0 ? n.Nombre : n.PhoneNumberId)).ToList(), ct);
+
+    /// <summary>
+    /// Número desde el que se envía: el configurado si sigue activo; si no hay configurado y existe uno solo, ese; si hay varios sin elegir, null
+    /// (Conversaciones usa su número predeterminado).
+    /// </summary>
+    private async Task<int?> NumeroEfectivoAsync(int configurado, CancellationToken ct)
+    {
+        var numeros = await conversacionesConfig.GetWhatsAppNumerosAsync(ct);
+        var activos = numeros.Where(n => n.Activo && !string.IsNullOrWhiteSpace(n.PhoneNumberId)).ToList();
+        if (configurado > 0 && activos.Any(n => n.IdNumero == configurado)) return configurado;
+        return activos.Count == 1 ? activos[0].IdNumero : null;
+    }
+
+    /// <summary>Plantillas aprobadas de la cuenta de WhatsApp (WABA) del número que envía: no se ofrece una que ese número no puede usar.</summary>
+    public Task<IReadOnlyList<ReclamoPlantillaWhatsApp>> PlantillasWhatsAppAsync(int idNumero, CancellationToken ct = default)
         => Ejecutar<IReadOnlyList<ReclamoPlantillaWhatsApp>>("Plantillas", "No se pudieron leer las plantillas de WhatsApp.", async (_, _, token) =>
         {
-            var lista = await conversaciones.GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED" }, token);
-            var candidatas = lista.Where(p => p.Activa && string.Equals(p.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase)).ToList();
-            // Solo las que existen en la cuenta de WhatsApp del número que envía (se consulta a Meta, con caché corto).
-            var validas = new List<ConversacionPlantillaDto>();
-            foreach (var p in candidatas)
-                if (await PlantillaEnCuentaAsync(p.IdPlantilla, true, token) != false) validas.Add(p);
-            return validas
+            var numero = await NumeroEfectivoAsync(idNumero, token);
+            var lista = await conversaciones.GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED", IdNumeroWhatsApp = numero }, token);
+            return lista.Where(p => p.Activa && string.Equals(p.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
                 .Select(p => new ReclamoPlantillaWhatsApp
                 {
                     IdPlantilla = p.IdPlantilla, Nombre = p.NombreVisible.Length > 0 ? p.NombreVisible : p.NombreMeta, Cuerpo = p.CuerpoTexto,
@@ -164,33 +181,19 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                 }).OrderBy(p => p.Nombre).ToList();
         }, ct);
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Base, long Plantilla), (bool Existe, DateTime Hasta)> _cachePlantillas = new();
-
     /// <summary>
-    /// ¿Existe la plantilla en la cuenta de WhatsApp (WABA) del número que envía? Se le pregunta a Meta (SyncTemplateStatusAsync).
+    /// ¿Existe la plantilla en la cuenta de WhatsApp del número que envía? Se le pregunta a Meta (SyncTemplateStatusAsync).
     /// true = existe, false = Meta confirma que no, null = no se pudo saber (red, credenciales): en ese caso no se bloquea nada.
     /// </summary>
-    private async Task<bool?> PlantillaEnCuentaAsync(long idPlantilla, bool usarCache, CancellationToken ct)
+    private async Task<bool?> PlantillaEnCuentaAsync(long idPlantilla, int? idNumero, CancellationToken ct)
     {
-        var clave = (sessions.GetActiveSession()?.BaseId ?? 0, idPlantilla);
-        if (usarCache && _cachePlantillas.TryGetValue(clave, out var c) && c.Hasta > DateTime.UtcNow) return c.Existe;
-        try
-        {
-            await conversaciones.SyncTemplateStatusAsync(idPlantilla, null, ct);
-            _cachePlantillas[clave] = (true, DateTime.UtcNow.AddMinutes(10));
-            return true;
-        }
+        try { await conversaciones.SyncTemplateStatusAsync(idPlantilla, idNumero, ct); return true; }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             var texto = ex.InnerException?.Message ?? ex.Message;
-            if (texto.Contains("No se encontro la plantilla en Meta", StringComparison.OrdinalIgnoreCase)
-                || texto.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
-            {
-                _cachePlantillas[clave] = (false, DateTime.UtcNow.AddMinutes(10));
-                return false;
-            }
-            return null;
+            return texto.Contains("No se encontro la plantilla en Meta", StringComparison.OrdinalIgnoreCase)
+                || texto.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ? false : null;
         }
     }
 
@@ -723,7 +726,8 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             if (enviarWa && !sol.SoloSimular && plantilla is null)
                 throw new InvalidOperationException("La plantilla de WhatsApp configurada ya no existe.");
             // Antes de tocar nada: la plantilla tiene que existir en la cuenta de WhatsApp del número que envía.
-            if (enviarWa && !sol.SoloSimular && plantilla is not null && await PlantillaEnCuentaAsync(plantilla.IdPlantilla, false, token) == false)
+            var numeroWa = enviarWa ? await NumeroEfectivoAsync(cfg.IdNumeroWhatsApp, token) : null;
+            if (enviarWa && !sol.SoloSimular && plantilla is not null && await PlantillaEnCuentaAsync(plantilla.IdPlantilla, numeroWa, token) == false)
                 throw new InvalidOperationException($"La plantilla \"{plantilla.NombreVisible}\" no existe en la cuenta de WhatsApp del número que envía. Elegí otra en Mensaje y configuración o creala en esa cuenta de Meta.");
 
             var clientes = await BuscarInternoAsync(cn, user, sol.Cuentas, token);
@@ -801,7 +805,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                         {
                             var valores = ValoresWhatsApp(plantilla!, cli, armado.WhatsappDetalle, armado.FormaPago);
                             var conv = await conversaciones.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
-                            { TelefonoWhatsApp = tel, UsuarioAccion = user.Nombre }, token);
+                            { TelefonoWhatsApp = tel, IdNumeroWhatsApp = numeroWa, UsuarioAccion = user.Nombre }, token);
                             var msg = await conversaciones.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
                             {
                                 IdConversacion = conv.IdConversacion, IdPlantilla = plantilla!.IdPlantilla, NombreMeta = plantilla.NombreMeta, Idioma = plantilla.Idioma,

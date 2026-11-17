@@ -84,6 +84,8 @@ public sealed class ReclamoConfig
     public decimal Tolerancia { get; set; } = 1m;
     public int DiasEntreEnvios { get; set; } = 7;
     public long IdPlantillaWhatsApp { get; set; }
+    /// <summary>Número de WhatsApp (CONV, IdNumero) desde el que se envía. 0 = el único activo, o el predeterminado de Conversaciones.</summary>
+    public int IdNumeroWhatsApp { get; set; }
     /// <summary>Días de vigencia del enlace de <c>&lt;PORTAL&gt;</c> (acceso al Portal Cliente sin usuario ni clave).</summary>
     public int PortalDias { get; set; } = 15;
 }
@@ -138,6 +140,8 @@ public sealed class ReclamoEnvioDetalle
     public string Cuerpo { get; set; } = string.Empty;
     public List<ReclamoComprobante> Comprobantes { get; set; } = [];
 }
+
+public sealed record ReclamoNumeroWhatsApp(int IdNumero, string Nombre);
 
 public sealed class ReclamoPlantillaWhatsApp
 {

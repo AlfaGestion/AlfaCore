@@ -42,6 +42,11 @@ con fondo blanco, para que se vea como lo recibe el cliente y no herede el tema 
   - Requiere la URL pública del sistema (Conversaciones → Configuración); si falta, la vista previa avisa y `<PORTAL>` va vacío.
   - No aplica a WhatsApp (las variables de plantilla las define Meta).
 
+## Número de WhatsApp y plantillas
+En "Mensaje y configuración" se elige el **número de WhatsApp que envía** (clave `RECLAMO-SALDOS-WA-NUMERO`; con un solo número activo se usa ese).
+El desplegable de plantillas muestra solo las aprobadas de la cuenta (WABA) de ese número, y el envío crea la conversación con ese número.
+Antes de un envío real se consulta a Meta que la plantilla exista en esa cuenta; si no, se corta con un aviso claro.
+
 ## Pestaña Enviados
 Historial de la bitácora (`ALFACORE_RECLAMO_SALDO_ENVIO`): fecha, cliente, canal, destino, tramo, saldo, asunto, estado (con el
 motivo si falló) y usuario. Filtros por fecha, texto, canal, estado y envíos de prueba; últimos 500. Las simulaciones no se
