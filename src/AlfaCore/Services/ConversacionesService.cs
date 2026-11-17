@@ -9651,31 +9651,13 @@ public sealed partial class ConversacionesService(
                     }
                 }
 
-                // Chat web (visitante anónimo): el asistente pide una vez el WhatsApp y la razón social.
-                // Si ya los pidió y este mensaje los trae, se guardan en la conversación y se agradece.
+                // Chat web (visitante anónimo): la IA le pide, cuando es natural en la charla, un WhatsApp y
+                // cómo se llama, y los guarda con guardar_contacto_web. Antes iba una pregunta fija pegada a la
+                // respuesta y el siguiente mensaje se leía con expresiones: "2944000002, no tengo empresa"
+                // quedaba guardado como razón social "no tengo" (Las Vertientes, 2026-11-17).
                 var pedirDatosWeb = string.Equals(canalBot, "WEBCHAT", StringComparison.OrdinalIgnoreCase)
                     && config.BotWebPideDatos
                     && !await VisitanteWebIdentificadoAsync(idConversacion, token).ConfigureAwait(false);
-                if (pedirDatosWeb && await ExisteNotaInternaAsync(idConversacion, NotaBotPidioDatosWeb, token).ConfigureAwait(false))
-                {
-                    pedirDatosWeb = false;
-                    if (TryParseDatosVisitanteWeb(texto, out var telefonoVisitante, out var razonSocialVisitante))
-                    {
-                        await GuardarDatosVisitanteWebAsync(idConversacion, telefonoVisitante, razonSocialVisitante, token).ConfigureAwait(false);
-                        await SendMessageAsync(new ConversacionSendMessageRequest
-                        {
-                            IdConversacion = idConversacion,
-                            Texto = string.IsNullOrWhiteSpace(razonSocialVisitante)
-                                ? "¡Gracias! Ya registré tu número. ¿En qué más te puedo ayudar?"
-                                : $"¡Gracias, {razonSocialVisitante}! Ya registré tus datos. ¿En qué más te puedo ayudar?",
-                            MessageType = "TEXT",
-                            UsuarioAccion = "AlfaCore",
-                            SistemaAccion = "BOT"
-                        }, token).ConfigureAwait(false);
-                        return;
-                    }
-                }
-
 
                 var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
 
@@ -9805,8 +9787,11 @@ public sealed partial class ConversacionesService(
                 var mensajePrevioCliente = EsMensajeSocial(texto)
                     ? null
                     : ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
-                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada);
-                var precioRequiereIdentificacion = PrecioRequiereIdentificacion(config, cuentaVinculada, texto, mensajePrevioCliente);
+                IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada);
+                if (pedirDatosWeb)
+                    herramientas = [.. herramientas, HerramientaGuardarContactoWeb];
+                var precioRequiereIdentificacion = PrecioRequiereIdentificacion(config, cuentaVinculada);
+                var ofreceAltaCliente = herramientas.Any(h => h.Nombre == ConversacionAsistenteHerramientasService.ToolRegistrarCliente);
                 // Si el bot ya repreguntó (ACLARA) y el cliente contesta, ese mensaje completa la
                 // consulta anterior: se fuerza consultar_precio también en el seguimiento ("AA").
                 var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
@@ -9814,6 +9799,7 @@ public sealed partial class ConversacionesService(
                 // El resumen de un pedido armado/actualizado ahora no es "otra aclaración": "agregale 2 aaa"
                 // con el pedido pendiente salía como contención + ticket (batería 4264, 2026-10-28).
                 var pedidoPreparadoAhora = false;
+                var altaClienteEnCursoAhora = false;
                 string? pedidosEncontrados = null;
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? async (nombreHerramienta, argumentosJson, ctHerramienta) =>
@@ -9825,8 +9811,18 @@ public sealed partial class ConversacionesService(
                             identidadPreguntadaAhora = true;
                             return "Dato privado: antes de darlo hay que confirmar quién escribe. No des ningún dato de la cuenta; el servidor le hace la pregunta.";
                         }
+                        if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolGuardarContactoWeb)
+                        {
+                            if (!pedirDatosWeb)
+                                return "No hace falta: ya tenemos sus datos de contacto.";
+                            if (!TryLeerContactoWeb(argumentosJson, out var telefonoWeb, out var nombreWeb))
+                                return "El número no parece un teléfono válido (tiene que tener entre 8 y 15 dígitos). Pedíselo de nuevo, sin insistir si no lo quiere dar.";
+                            await GuardarDatosVisitanteWebAsync(idConversacion, telefonoWeb, nombreWeb, ctHerramienta).ConfigureAwait(false);
+                            return "Guardado. Agradecele en pocas palabras y seguí con lo que necesitaba.";
+                        }
                         if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolRegistrarCliente && botClientesService is not null)
                         {
+                            altaClienteEnCursoAhora = true;
                             var alta = await botClientesService.PrepararAsync(idConversacion, argumentosJson, ctHerramienta).ConfigureAwait(false);
                             if (!string.IsNullOrWhiteSpace(alta.NotaInterna))
                                 await AddInternalEventCoreAsync(idConversacion, alta.NotaInterna, null, null, "AlfaCore", "BOT", ctHerramienta).ConfigureAwait(false);
@@ -9971,9 +9967,11 @@ public sealed partial class ConversacionesService(
                     // identificar, se responde con el texto acordado en vez de la contención.
                     // Además, si el modelo resolvió pero omitió el link (o lo cambió/inventó otro),
                     // se garantiza el link real en la respuesta.
-                    if (precioRequiereIdentificacion)
+                    // Se aplica solo cuando la IA, leyendo la conversación, dijo que pide precio
+                    // ("pide_precio"), y nunca mientras está registrando al cliente nuevo.
+                    if (precioRequiereIdentificacion && result?.PidePrecio == true && !altaClienteEnCursoAhora)
                     {
-                        var (respuestaLead, usoPlantilla) = AsegurarRespuestaPrecioLead(result, linkCatalogoParaLead);
+                        var (respuestaLead, usoPlantilla) = AsegurarRespuestaPrecioLead(result, linkCatalogoParaLead, ofreceAltaCliente);
                         result = respuestaLead;
                     }
                 }
@@ -10206,9 +10204,6 @@ public sealed partial class ConversacionesService(
                         respuesta = $"{respuesta}\n\nRegistramos tu consulta con el número de ticket #{numero.ToString(CultureInfo.InvariantCulture)}.";
                 }
 
-                if (pedirDatosWeb)
-                    respuesta = $"{respuesta}\n\n{PedidoDatosVisitanteWeb}";
-
                 if (await UltimoEntranteEsEncuestaAsync(idConversacion, token).ConfigureAwait(false))
                     return;
 
@@ -10225,13 +10220,6 @@ public sealed partial class ConversacionesService(
                 {
                     await AddInternalEventCoreAsync(idConversacion,
                         $"🎫 El asistente no encontró respuesta y generó el ticket #{numeroNota.ToString(CultureInfo.InvariantCulture)} con la consulta.",
-                        null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
-                }
-
-                if (pedirDatosWeb)
-                {
-                    // Marca persistida: el pedido se hace una sola vez por conversación.
-                    await AddInternalEventCoreAsync(idConversacion, NotaBotPidioDatosWeb,
                         null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                 }
 
@@ -10857,23 +10845,16 @@ public sealed partial class ConversacionesService(
     }
 
     /// <summary>
-    /// Contacto sin identificar (lead o identidad ambigua) que pide un precio, cuando la empresa sí
-    /// usa la herramienta de precios pero NO informa precios a consumidores finales/leads. En ese caso
-    /// la respuesta correcta es pedir que se identifique (no "no tengo el precio" ni derivar).
+    /// Contacto sin identificar (lead o identidad ambigua) cuando la empresa usa la herramienta de
+    /// precios pero NO informa precios a leads. Es la política que se le pasa a la IA; si el mensaje es
+    /// una consulta de precio lo decide ella leyendo la conversación ("pide_precio").
     /// </summary>
     internal static bool PrecioRequiereIdentificacion(
         ConversacionAutomatizacionesConfigDto config,
-        ConversacionCuentaVinculadaDto? cuenta,
-        string texto,
-        string? mensajePrevioCliente)
-    {
-        var sinIdentificar = cuenta is null || cuenta.EsAmbigua;
-        return sinIdentificar
-            && config.AsistenteHerramientaPrecios
-            && !config.CatalogoMuestraPrecioConsumidor
-            && (ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(texto)
-                || ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente));
-    }
+        ConversacionCuentaVinculadaDto? cuenta)
+        => (cuenta is null || cuenta.EsAmbigua)
+           && config.AsistenteHerramientaPrecios
+           && !config.CatalogoMuestraPrecioConsumidor;
 
     internal const string ContencionDerivaEstandar = "Le paso tu consulta a alguien del equipo y te responde por acá a la brevedad.";
 
@@ -10911,9 +10892,7 @@ public sealed partial class ConversacionesService(
     internal const string NotaModuloAutomatizacionesInactivo = "🤖⛔ El asistente no respondió: el módulo Automatizaciones no está activo para esta empresa (Administrar → Módulos). Requiere que un operador lo tome.";
 
     /// <summary>Ya se dejó hoy esta nota interna en la conversación (evita repetirla en cada mensaje).</summary>
-    internal const string NotaBotPidioDatosWeb = "🤖🪪 El asistente le pidió al visitante del chat web su WhatsApp y la razón social.";
 
-    internal const string PedidoDatosVisitanteWeb = "Para darte una atención más completa, ¿me pasás tu número de WhatsApp y la razón social de tu empresa?";
 
     private async Task<bool> ExisteNotaInternaAsync(long idConversacion, string nota, CancellationToken ct)
     {
@@ -10956,46 +10935,36 @@ public sealed partial class ConversacionesService(
         return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0, CultureInfo.InvariantCulture) == 1;
     }
 
-    private static readonly Regex TelefonoVisitanteRegex = new(@"\+?\d[\d\s\-\.\(\)]{6,22}\d", RegexOptions.Compiled);
+    internal static readonly ConversacionAsistenteHerramientaDefinicionDto HerramientaGuardarContactoWeb = new()
+    {
+        Nombre = ConversacionAsistenteHerramientasService.ToolGuardarContactoWeb,
+        Descripcion = "Guarda el número de WhatsApp y el nombre que dio el visitante del chat web, para poder contactarlo. Usala solo con datos que te dio él; no inventes ninguno.",
+        ParametrosJsonSchema = """
+            {"type":"object","properties":{"telefono":{"type":"string","description":"Número de WhatsApp tal como lo dio, con código de área."},"nombre":{"type":"string","description":"Cómo se llama, o el nombre de su empresa si escribe por una. Vacío si no lo dijo."}},"required":["telefono"]}
+            """
+    };
 
-    private static readonly Regex ConectoresExtremoRegex = new(@"(?i)^(y|e|mi|es|de|con)\b\s*|\s*\b(y|e|mi|es|de|con)$", RegexOptions.Compiled);
-
-    private static readonly Regex EtiquetasDatosVisitanteRegex = new(
-        @"(?i)\b(mi\s+)?(n[uú]mero|nro\.?|tel[eé]fono|tel\.?|celular|cel\.?)(\s+de)?(\s+(whats?app|wpp|wsp))?(\s+es)?\b|\b(mi\s+)?(whats?app|wpp|wsp)(\s+es)?\b|\b(la\s+|mi\s+)?raz[oó]n\s+social(\s+es)?\b|\b(la\s+|mi\s+)?empresa(\s+es)?\b|\bsoy\b",
-        RegexOptions.Compiled);
-
-    /// <summary>
-    /// Extrae del mensaje del visitante un teléfono (8 a 15 dígitos) y la razón social (el resto del
-    /// texto sin el número ni las etiquetas tipo "mi WhatsApp es", "razón social"). Sin teléfono = false.
-    /// </summary>
-    internal static bool TryParseDatosVisitanteWeb(string? texto, out string telefono, out string razonSocial)
+    /// <summary>Lee los argumentos de guardar_contacto_web: teléfono de 8 a 15 dígitos y nombre (opcional).</summary>
+    internal static bool TryLeerContactoWeb(string? argumentosJson, out string telefono, out string nombre)
     {
         telefono = string.Empty;
-        razonSocial = string.Empty;
-        var valor = (texto ?? string.Empty).Trim();
-        var match = TelefonoVisitanteRegex.Match(valor);
-        if (!match.Success)
-            return false;
-
-        var digitos = new string(match.Value.Where(char.IsDigit).ToArray());
-        if (digitos.Length is < 8 or > 15)
-            return false;
-
-        telefono = digitos;
-        var resto = valor.Remove(match.Index, match.Length);
-        resto = EtiquetasDatosVisitanteRegex.Replace(resto, " ");
-        resto = Regex.Replace(resto, @"\s+", " ");
-        // Conectores que quedan sueltos en los extremos al sacar el número y las etiquetas ("... y mi").
-        string anterior;
-        do
+        nombre = string.Empty;
+        try
         {
-            anterior = resto;
-            resto = resto.Trim(' ', ',', ';', ':', '-', '.', '/', '|', '(', ')');
-            resto = ConectoresExtremoRegex.Replace(resto, string.Empty);
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentosJson) ? "{}" : argumentosJson);
+            var root = doc.RootElement;
+            var tel = root.TryGetProperty("telefono", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? string.Empty : string.Empty;
+            nombre = (root.TryGetProperty("nombre", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() ?? string.Empty : string.Empty).Trim();
+            telefono = new string(tel.Where(char.IsDigit).ToArray());
         }
-        while (resto != anterior);
-        razonSocial = resto.Length > 120 ? resto[..120].Trim() : resto;
-        return true;
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        if (nombre.Length > 120)
+            nombre = nombre[..120].Trim();
+        return telefono.Length is >= 8 and <= 15;
     }
 
     /// <summary>
@@ -11029,7 +10998,7 @@ public sealed partial class ConversacionesService(
 
         var partes = new List<string> { $"WhatsApp {telefono}" };
         if (!string.IsNullOrWhiteSpace(razonSocial))
-            partes.Add($"razón social {razonSocial}");
+            partes.Add($"nombre {razonSocial}");
         if (!string.IsNullOrWhiteSpace(contacto.ClientCode))
             partes.Add($"vinculado al cliente {contacto.ClientCode}");
         await AddInternalEventCoreAsync(idConversacion,
@@ -11169,9 +11138,11 @@ public sealed partial class ConversacionesService(
         }
     }
 
-    internal static string ConstruirRespuestaPrecioRequiereIdentificacion(string? linkCatalogo)
+    internal static string ConstruirRespuestaPrecioRequiereIdentificacion(string? linkCatalogo, bool ofreceAlta = false)
     {
         var respuesta = "Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta.\n\nSi ya sos cliente, decime tu nombre o razón social y seguimos.";
+        if (ofreceAlta)
+            respuesta += " Si es tu primera compra, pasame tu nombre y apellido, DNI y dirección (calle, número y localidad) y te registro.";
         return string.IsNullOrWhiteSpace(linkCatalogo)
             ? respuesta
             : $"{respuesta}\n\n{TextoLinkCatalogoLead}{linkCatalogo.Trim()}";
@@ -11214,14 +11185,15 @@ public sealed partial class ConversacionesService(
     /// </summary>
     internal static (ConversacionAsistenteRespuesta Respuesta, bool UsoPlantilla) AsegurarRespuestaPrecioLead(
         ConversacionAsistenteRespuesta? result,
-        string? linkCatalogo)
+        string? linkCatalogo,
+        bool ofreceAlta = false)
     {
         var link = string.IsNullOrWhiteSpace(linkCatalogo) ? null : linkCatalogo.Trim();
         var plantilla = new ConversacionAsistenteRespuesta
         {
             Tipo = "RESUELVE",
             PuedeResponder = true,
-            Respuesta = ConstruirRespuestaPrecioRequiereIdentificacion(link)
+            Respuesta = ConstruirRespuestaPrecioRequiereIdentificacion(link, ofreceAlta)
         };
 
         if (EsRespuestaNoResuelta(result))

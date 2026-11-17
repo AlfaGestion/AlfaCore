@@ -51,22 +51,32 @@ public sealed class ConversacionesBotCanalesTests
         Assert.Equal("WHATSAPP,WEBCHAT", ConversacionesConfigService.FormatBotCanales(["whatsapp", "WEBCHAT", "otro"]));
     }
 
+    // Chat web (2026-11-17): los datos los interpreta la IA y llegan por guardar_contacto_web; el
+    // servidor solo valida el teléfono. Antes "2944000002, no tengo empresa" quedaba como razón social "no tengo".
     [Theory]
-    [InlineData("Mi WhatsApp es 11 5555-1234, razón social Ferretería Gómez SRL", "1155551234", "Ferretería Gómez SRL")]
-    [InlineData("+54 9 11 2345 6789 - Distribuidora Norte", "5491123456789", "Distribuidora Norte")]
-    [InlineData("1123456789", "1123456789", "")]
-    [InlineData("La empresa es Panadería La Plata y mi celular 2214567890", "2214567890", "Panadería La Plata")]
-    public void DatosVisitante_ExtraeTelefonoYRazonSocial(string texto, string telefono, string razon)
+    [InlineData("{\"telefono\":\"+54 9 294 400-0002\",\"nombre\":\"Juana Pérez\"}", "5492944000002", "Juana Pérez")]
+    [InlineData("{\"telefono\":\"2944000002\"}", "2944000002", "")]
+    [InlineData("{\"telefono\":\"11 5555-1234\",\"nombre\":\"  Ferretería Gómez SRL \"}", "1155551234", "Ferretería Gómez SRL")]
+    public void ContactoWeb_LeeTelefonoYNombreQueInterpretoLaIa(string argumentos, string telefono, string nombre)
     {
-        Assert.True(ConversacionesService.TryParseDatosVisitanteWeb(texto, out var tel, out var razonSocial));
+        Assert.True(ConversacionesService.TryLeerContactoWeb(argumentos, out var tel, out var nom));
         Assert.Equal(telefono, tel);
-        Assert.Equal(razon, razonSocial);
+        Assert.Equal(nombre, nom);
     }
 
     [Theory]
-    [InlineData("Quiero saber el precio del producto 123")]
-    [InlineData("Hola, ¿tienen envíos?")]
+    [InlineData("{\"telefono\":\"123\"}")]
+    [InlineData("{\"nombre\":\"Juana\"}")]
+    [InlineData("no es json")]
     [InlineData("")]
-    public void DatosVisitante_SinTelefono_NoLosToma(string texto)
-        => Assert.False(ConversacionesService.TryParseDatosVisitanteWeb(texto, out _, out _));
+    public void ContactoWeb_SinTelefonoValido_NoSeGuarda(string argumentos)
+        => Assert.False(ConversacionesService.TryLeerContactoWeb(argumentos, out _, out _));
+
+    [Fact]
+    public void ContactoWeb_LaHerramientaNoPideRazonSocialObligatoria()
+    {
+        var herramienta = ConversacionesService.HerramientaGuardarContactoWeb;
+        Assert.Equal("guardar_contacto_web", herramienta.Nombre);
+        Assert.Contains("\"required\":[\"telefono\"]", herramienta.ParametrosJsonSchema);
+    }
 }

@@ -1311,16 +1311,6 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Equal(ConversacionAsistenteHerramientasService.MaxOpcionesPrecio, result.Split('\n').Count(l => l.StartsWith("- ", StringComparison.Ordinal)));
     }
 
-    [Theory]
-    [InlineData("¿Cuánto salen las pilas?", true)]
-    [InlineData("precio de la pila AA", true)]
-    [InlineData("¿Los precios incluyen IVA?", false)]
-    [InlineData("tienen lista de precios?", false)]
-    [InlineData("aumentaron los precios?", false)]
-    [InlineData("hola", false)]
-    public void MensajePidePrecioArticulo_ExcluyePreguntasGenerales(string mensaje, bool esperado)
-        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensaje));
-
     // Caso real Base4264 (2026-10-26): "Quiero 10 pilas duracell AA" no habilitaba herramientas y el
     // modelo contestó "No vendemos pilas Duracell" con el artículo cargado.
     [Theory]
@@ -1719,39 +1709,39 @@ public sealed class ConversacionesAutomationPipelineTests
         }
     }
 
-    [Theory]
-    [InlineData("Que precio tienen las pilas AAA", true)]
-    [InlineData("¿Cuánto salen las pilas?", true)]
-    [InlineData("a cuánto están?", true)]
-    [InlineData("me pasás el valor?", true)]
-    [InlineData("cotización de pilas", true)]
-    [InlineData("hola", false)]
-    [InlineData("tienen catálogo?", false)]
-    [InlineData("quiero comprar pilas", false)]
-    [InlineData("cuánto debo?", false)]
-    [InlineData("qué pilas preciosas", false)]
-    public void MensajePidePrecio_DetectaIntencionExplicita(string mensaje, bool esperado)
-        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecio(mensaje));
-
-    // Caso real Base4264 (2026-09-30): contacto sin identificar + "Que precio tienen las pilas AAA" con
-    // precios a leads OFF → el bot respondía "No tengo el precio en este momento..." y derivaba.
+    // Es la política de la empresa que se le pasa a la IA (2026-11-17): ya no depende de palabras del
+    // mensaje; si es una consulta de precio lo decide la IA ("pide_precio").
     [Fact]
     public void PrecioRequiereIdentificacion_SoloParaSinIdentificarConPreciosLeadsOff()
     {
-        const string precio = "Que precio tienen las pilas AAA";
         var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
         var proveedor = new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno");
         var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
 
-        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, precio, null));
-        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), ambigua, precio, null));
-        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, "y las AAA?", "cuánto salen las pilas?"));
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null));
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), ambigua));
 
-        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: true), null, precio, null));
-        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), cliente, precio, null));
-        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), proveedor, precio, null));
-        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precios: false, precioConsumidor: false), null, precio, null));
-        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, "tienen catálogo?", null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: true), null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), cliente));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), proveedor));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precios: false, precioConsumidor: false), null));
+    }
+
+    // Las Vertientes (2026-11-17): un interesado nuevo preguntaba precios y la respuesta fija solo decía
+    // "si ya sos cliente, decime tu nombre": nunca le ofrecía registrarse aunque el alta estuviera activa.
+    [Fact]
+    public void RespuestaPrecioRequiereIdentificacion_ConAltaActiva_OfreceRegistrarse()
+    {
+        var conAlta = ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(null, ofreceAlta: true);
+        var sinAlta = ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(null);
+
+        Assert.Contains("te registro", conAlta);
+        Assert.DoesNotContain("te registro", sinAlta);
+
+        var modelo = new ConversacionAsistenteRespuesta { Tipo = "DERIVA", PuedeResponder = false, Respuesta = "Un asesor te contesta." };
+        var (respuesta, plantilla) = ConversacionesService.AsegurarRespuestaPrecioLead(modelo, null, ofreceAlta: true);
+        Assert.True(plantilla);
+        Assert.Contains("te registro", respuesta.Respuesta);
     }
 
     [Fact]
@@ -1936,6 +1926,84 @@ public sealed class ConversacionesAutomationPipelineTests
             using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
             var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
             Assert.Equal(requiere, system.Contains("PRECIO SIN CLIENTE IDENTIFICADO", StringComparison.Ordinal));
+            Assert.Equal(requiere, system.Contains("\"pide_precio\"", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    // Las Vertientes (2026-11-17): con el alta activa, la política de precios le indica a la IA que
+    // ofrezca registrar al interesado nuevo, y si pide precio lo decide la IA (pide_precio), no palabras.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Assistant_PrecioSinIdentificar_ConAlta_OfreceRegistroYLeePidePrecio(bool pidePrecio)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var valor = pidePrecio ? "true" : "false";
+            var handler = new QueueHttpHandler(
+                "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"tipo\\\":\\\"RESUELVE\\\",\\\"puede_responder\\\":true,\\\"pide_precio\\\":" + valor + ",\\\"respuesta\\\":\\\"ok\\\"}\"}}]}");
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var registrar = new ConversacionAsistenteHerramientaDefinicionDto
+            {
+                Nombre = ConversacionAsistenteHerramientasService.ToolRegistrarCliente,
+                Descripcion = "Registra al cliente.",
+                ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}"
+            };
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.", "Info real.", "GENERAL_AVISA", "Hola, a cuánto el bidón? es mi primera vez", [],
+                herramientas: [registrar],
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult(string.Empty),
+                precioRequiereIdentificacion: true);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
+            Assert.Contains("ofrecele también registrarlo como cliente", system);
+            Assert.DoesNotContain("Ejemplo: \"Para pasarte el precio", system);
+            Assert.NotNull(result);
+            Assert.Equal(pidePrecio, result!.PidePrecio);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_ChatWeb_ConHerramientaDeContacto_LeIndicaPedirloSinFrenarLaCharla()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"ok\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.", "Info real.", "GENERAL_AVISA", "Hola, hacen envíos?", [],
+                herramientas: [ConversacionesService.HerramientaGuardarContactoWeb],
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult(string.Empty));
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
+            Assert.Contains("VISITANTE DEL CHAT WEB", system);
+            Assert.Contains("guardar_contacto_web", system);
+            Assert.DoesNotContain("razón social de tu empresa", system);
         }
         finally
         {

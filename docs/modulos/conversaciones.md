@@ -252,6 +252,17 @@ punta a punta (primer caso: un reparto de agua):
 - **Dirección de entrega** en *Tomar pedidos*: el resumen del pedido muestra "Entrega en: …" (la dirección de la
   cuenta, o la que el cliente pidió en el chat) y queda en las observaciones de la Nota de Pedido.
 
+- **Precios solo a clientes identificados** (sin *precio consumidor* en el catálogo): es una política que se le
+  pasa a la IA mientras quien escribe no esté identificado; si el mensaje es una consulta de precio lo decide la
+  IA leyendo la conversación (campo `pide_precio` del JSON), no una lista de palabras. Con *Dar de alta clientes*
+  activo, además de pedirle el nombre si ya es cliente le ofrece registrarse. La plantilla de respaldo solo se
+  usa si la IA dijo `pide_precio` y derivó o dio una respuesta indebida, y nunca mientras está registrando al
+  cliente (2026-11-17, Las Vertientes: el interesado nuevo quedaba en un loop de "si ya sos cliente…").
+- **Chat web: pedir WhatsApp y nombre** (`CONV_BOT_WEB_PIDE_DATOS`): mientras el visitante no dejó un teléfono,
+  la IA tiene la tool `guardar_contacto_web` y se los pide en un momento natural de la charla; el servidor solo
+  valida el teléfono (8 a 15 dígitos). Reemplaza la pregunta fija de "WhatsApp y razón social" y su lectura por
+  expresiones (guardaba "no tengo" como razón social).
+
 Borradores en `CONV_BOT_CLIENTES` y `CONV_BOT_PEDIDOS.DireccionEntrega` (script
 `2026-11-17-053__conversaciones_bot_alta_clientes.sql`). Código: `ConversacionBotClientesService`.
 

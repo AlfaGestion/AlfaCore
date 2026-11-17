@@ -65,4 +65,10 @@ public sealed class ConversacionAsistenteRespuesta
 
     /// <summary>Qué vio el asistente en la imagen del cliente (datos útiles para el operador); vacío si no hubo imagen.</summary>
     public string ImagenDescripcion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Con la política "precios solo a clientes identificados": si quien escribe está pidiendo precios.
+    /// Lo decide la IA leyendo la conversación (no una lista de palabras); false si no lo informa.
+    /// </summary>
+    public bool PidePrecio { get; set; }
 }

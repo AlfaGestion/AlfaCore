@@ -215,10 +215,10 @@
                 <ConversacionesConfigTarjeta Titulo="Chat del sitio web" Descripcion="Los visitantes del chat web son anónimos: el asistente puede pedirles datos para saber quién escribe.">
                     <div class="cfg-stack">
                         <AlfaCheckbox Value="@Config.BotWebPideDatos" ValueChanged="@((bool? v) => Config.BotWebPideDatos = v == true)">
-                            Pedir el número de WhatsApp y la razón social al visitante
+                            Pedir un número de WhatsApp y el nombre al visitante
                         </AlfaCheckbox>
                     </div>
-                    <p class="cfg-hint">Lo pide una sola vez, junto con su primera respuesta. Si el número coincide con un contacto cargado, la conversación queda vinculada a ese cliente.</p>
+                    <p class="cfg-hint">El asistente lo pide en un momento natural de la charla, sin frenar lo que el visitante necesita, y no insiste si no los quiere dar. Si el número coincide con un contacto cargado, la conversación queda vinculada a ese cliente.</p>
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfigTarjeta Titulo="Cuándo responde" Descripcion="Combiná estas opciones para que el asistente no se superponga con tu equipo.">

@@ -47,6 +47,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var hayPortalEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_portal", StringComparison.Ordinal)) ?? false;
         var hayPrepararPedido = herramientas?.Any(h => string.Equals(h.Nombre, ConversacionAsistenteHerramientasService.ToolPrepararPedido, StringComparison.Ordinal)) ?? false;
         var hayRegistrarCliente = herramientas?.Any(h => string.Equals(h.Nombre, ConversacionAsistenteHerramientasService.ToolRegistrarCliente, StringComparison.Ordinal)) ?? false;
+        var hayGuardarContactoWeb = herramientas?.Any(h => string.Equals(h.Nombre, ConversacionAsistenteHerramientasService.ToolGuardarContactoWeb, StringComparison.Ordinal)) ?? false;
         // La IA decide qué herramienta usar (2026-10-28). La única que se fuerza es consultar_precio,
         // y sólo como red de seguridad: si la respuesta trae un monto que no salió de ninguna herramienta,
         // ni de la información del negocio, ni de la charla.
@@ -55,7 +56,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var reintentoPorDerivarSinBuscar = false;
         var seUsoAlgunaHerramienta = false;
         string? herramientaForzadaSiguienteRonda = null;
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido, hayRegistrarCliente);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido, hayRegistrarCliente, hayGuardarContactoWeb);
 
         textoConRespaldo.AppendLine(systemPrompt);
         foreach (var m in historial)
@@ -446,7 +447,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
         bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null,
-        bool hayPortalEntreHerramientas = false, bool hayPrepararPedido = false, bool hayRegistrarCliente = false)
+        bool hayPortalEntreHerramientas = false, bool hayPrepararPedido = false, bool hayRegistrarCliente = false,
+        bool hayGuardarContactoWeb = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -512,6 +514,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             sb.AppendLine("- CLIENTE NUEVO O NO IDENTIFICADO: quien escribe todavía no está identificado como cliente. Si quiere hacer un pedido o que lo registren, pedile en un solo mensaje nombre y apellido, DNI, calle y número, localidad y alguna referencia para encontrar la casa. Apenas te dé algún dato, llamá registrar_cliente con lo que tengas (sin inventar nada): la herramienta busca si ya es cliente y te dice qué falta o qué responder. Si ya dijo qué quiere pedir, anotalo y retomalo cuando quede registrado. Nunca digas que quedó registrado: se registra recién cuando responde que los datos están bien.");
         else
             sb.AppendLine("- No ofrezcas armar ni tomar el pedido por este chat: si quiere comprar, indicale cómo hacerlo según la información del negocio (local, catálogo o portal).");
+        if (hayGuardarContactoWeb)
+            sb.AppendLine("- VISITANTE DEL CHAT WEB: quien escribe llega desde la página web y todavía no sabemos cómo contactarlo. Además de ayudarlo con lo que necesita, en un momento natural de la charla (sin frenar lo que está pidiendo) pedile un número de WhatsApp para contactarlo y cómo se llama (o el nombre de su empresa, si escribe por una). Cuando te los dé, guardalos con guardar_contacto_web. Si ya se los pediste y no los dio, no insistas.");
         if (hayPortalEntreHerramientas)
             sb.AppendLine(hayPrepararPedido
                 ? "- PORTAL CLIENTE: si el cliente pide su lista de precios, usá generar_link_portal y pasale el link (ahí ve los precios de su cuenta). También podés ofrecerlo como alternativa para cargar pedidos. No lo derives a un asesor por esto."
@@ -529,15 +533,20 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
         if (precioRequiereIdentificacion)
         {
+            // Política de la empresa, no un disparador: la IA lee la conversación y decide si es una
+            // consulta de precio (lo informa en "pide_precio"). Antes una lista de palabras ("precio",
+            // "cuánto sale") forzaba un texto fijo que no dejaba registrarse a un cliente nuevo
+            // (Las Vertientes, 2026-11-17).
             var conLink = !string.IsNullOrWhiteSpace(linkCatalogoParaLead);
-            sb.AppendLine("- PRECIO SIN CLIENTE IDENTIFICADO: quien escribe todavía no está identificado como cliente y la empresa informa precios solo a clientes identificados. Ante una consulta de precio respondé tipo \"RESUELVE\" (NO derives): explicá que para pasarle el precio correcto primero necesitás identificarlo como cliente, porque puede variar según su cuenta; invitalo a decir su nombre o razón social si ya es cliente"
+            sb.AppendLine("- PRECIO SIN CLIENTE IDENTIFICADO: la empresa informa precios solo a clientes identificados y quien escribe todavía no lo está. Si en la conversación te pide precios, no los des ni los inventes y no lo derives por eso (tipo RESUELVE): explicale que para pasarle el precio correcto primero tenés que identificarlo, porque puede variar según su cuenta, y que si ya es cliente te diga su nombre o razón social."
+                + (hayRegistrarCliente
+                    ? " Si por lo que dice es su primera compra (o no lo sabés), ofrecele también registrarlo como cliente siguiendo el punto CLIENTE NUEVO: una vez registrado le podés pasar los precios y tomarle el pedido."
+                    : string.Empty)
                 + (conLink
-                    ? $"; e incluí, tal cual, este link real del catálogo para que vea los productos disponibles: {linkCatalogoParaLead!.Trim()} (no lo cambies ni inventes otros links)."
-                    : ". No menciones el catálogo (no hay un link disponible para compartir)."));
-            sb.AppendLine("  No digas que no tenés el precio, no digas que un asesor le va a responder y no digas que el catálogo muestra precios."
-                + (conLink
-                    ? $" Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos. Mientras tanto podés ver los productos disponibles acá: {linkCatalogoParaLead!.Trim()}\""
-                    : " Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos.\""));
+                    ? $" Incluí, tal cual, este link real del catálogo para que vea los productos disponibles: {linkCatalogoParaLead!.Trim()} (no lo cambies ni inventes otros links)."
+                    : " No menciones el catálogo (no hay un link disponible para compartir)."));
+            sb.AppendLine("  No digas que no tenés el precio, no digas que un asesor le va a responder y no digas que el catálogo muestra precios.");
+            sb.AppendLine("- En \"pide_precio\" indicá true si, leyendo el mensaje junto con la conversación, quien escribe está pidiendo precios (ahora o retomando lo que preguntó antes); si no, false.");
         }
 
         if (haySaldoEntreHerramientas)
@@ -582,7 +591,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
 
         sb.AppendLine();
-        sb.AppendLine("Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false,\"respuesta\": \"...\"}.");
+        sb.AppendLine(precioRequiereIdentificacion
+            ? "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"pide_precio\": true/false, \"respuesta\": \"...\"}."
+            : "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false,\"respuesta\": \"...\"}.");
         return sb.ToString().Trim();
     }
 
@@ -719,7 +730,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             var abrirTicket = !(root.TryGetProperty("abrir_ticket", out var at)
                 && (at.ValueKind == JsonValueKind.False
                     || (at.ValueKind == JsonValueKind.String && bool.TryParse(at.GetString(), out var bt) && !bt)));
-            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen, AbrirTicket = abrirTicket };
+            var pidePrecio = root.TryGetProperty("pide_precio", out var pp)
+                && (pp.ValueKind == JsonValueKind.True
+                    || (pp.ValueKind == JsonValueKind.String && bool.TryParse(pp.GetString(), out var bp) && bp));
+            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen, AbrirTicket = abrirTicket, PidePrecio = pidePrecio };
         }
         catch (JsonException)
         {

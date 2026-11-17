@@ -43,6 +43,8 @@ public sealed class ConversacionAsistenteHerramientasService(
     internal const string ToolPrepararPedido = "preparar_pedido";
     // La ejecuta ConversacionesService (vincula la conversación y deja notas): acá sólo se ofrece.
     internal const string ToolRegistrarCliente = "registrar_cliente";
+    /// <summary>Chat web: guarda el WhatsApp y el nombre que dio el visitante. La ejecuta ConversacionesService.</summary>
+    internal const string ToolGuardarContactoWeb = "guardar_contacto_web";
 
     // Defensa en profundidad para identidad ambigua: aunque ObtenerHerramientasDisponibles ya no
     // ofrece estas tools cuando EsAmbigua, este set corta también acá -- por si el modelo alucina un
@@ -208,41 +210,6 @@ public sealed class ConversacionAsistenteHerramientasService(
             + @"|\b(hacer|hago|cargar|cargo|armar|armo|realizar|pasar|paso|mandar|mando)\s+(un|el|mi|otro)?\s*pedido\b"
             + @"|\bquiero\s+(pedir|encargar)\b"
             + @"|\bcomo\s+(pido|compro|encargo)\b");
-    }
-
-    /// <summary>
-    /// Intención explícita de precio ("precio", "cuánto sale/cuesta/vale", "a cuánto", "valor",
-    /// "cotización"). Se usa para decidir la respuesta a un contacto sin identificar cuando la empresa
-    /// no informa precios a leads.
-    /// </summary>
-    internal static bool MensajePidePrecio(string? mensajeCliente)
-    {
-        var texto = NormalizarTexto(mensajeCliente);
-        if (texto.Length == 0)
-            return false;
-
-        return Regex.IsMatch(texto,
-            @"\b(precio|precios|valor|valores|cotizacion|cotizar|cotizame)\b"
-            + @"|\bcuanto\s+(sale|salen|cuesta|cuestan|vale|valen|esta|estan)\b"
-            + @"|\ba\s+cuanto\b");
-    }
-
-    /// <summary>
-    /// Pide el precio de un artículo puntual. Excluye preguntas generales sobre precios ("¿los precios
-    /// incluyen IVA?", "lista de precios", "¿aumentaron los precios?") que no se responden buscando un
-    /// artículo. Es la que decide forzar consultar_precio.
-    /// </summary>
-    internal static bool MensajePidePrecioArticulo(string? mensajeCliente)
-    {
-        if (!MensajePidePrecio(mensajeCliente))
-            return false;
-
-        var texto = NormalizarTexto(mensajeCliente);
-        return !Regex.IsMatch(texto,
-            @"\b(incluye|incluyen|con|sin|mas)\s+iva\b"
-            + @"|\blista\s+de\s+precios?\b"
-            + @"|\b(aumentaron|subieron|bajaron|cambiaron|actualizaron)\b"
-            + @"|\bprecios?\s+(actualizados?|vigentes?|nuevos?)\b");
     }
 
     private static readonly string[] InicioPreguntaNueva =
