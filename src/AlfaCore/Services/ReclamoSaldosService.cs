@@ -71,6 +71,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             DiasHasta2 = I("DIAS-HASTA2", 45),
             FormaPago = V("FORMA-PAGO").Length > 0 ? V("FORMA-PAGO") : filas.GetValueOrDefault("CONV_COBRANZA_FORMA_PAGO") ?? string.Empty,
             SaldoMinimo = decimal.TryParse(V("SALDO-MINIMO"), NumberStyles.Number, CultureInfo.InvariantCulture, out var sm) ? sm : 1m,
+            Tolerancia = decimal.TryParse(V("TOLERANCIA"), NumberStyles.Number, CultureInfo.InvariantCulture, out var tl) && tl >= 0 ? tl : 1m,
             DiasEntreEnvios = I("DIAS-ENTRE-ENVIOS", 7),
             PortalDias = Math.Max(1, I("PORTAL-DIAS", 15)),
             IdPlantillaWhatsApp = long.TryParse(V("WA-PLANTILLA"), out var pl) ? pl : 0
@@ -88,6 +89,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             await Set(cn, "DIAS-HASTA2", cfg.DiasHasta2.ToString(CultureInfo.InvariantCulture), token);
             await Set(cn, "FORMA-PAGO", cfg.FormaPago ?? string.Empty, token);
             await Set(cn, "SALDO-MINIMO", cfg.SaldoMinimo.ToString(CultureInfo.InvariantCulture), token);
+            await Set(cn, "TOLERANCIA", Math.Max(0, cfg.Tolerancia).ToString(CultureInfo.InvariantCulture), token);
             await Set(cn, "DIAS-ENTRE-ENVIOS", Math.Max(0, cfg.DiasEntreEnvios).ToString(CultureInfo.InvariantCulture), token);
             await Set(cn, "PORTAL-DIAS", Math.Clamp(cfg.PortalDias, 1, 90).ToString(CultureInfo.InvariantCulture), token);
             await Set(cn, "WA-PLANTILLA", cfg.IdPlantillaWhatsApp > 0 ? cfg.IdPlantillaWhatsApp.ToString(CultureInfo.InvariantCulture) : string.Empty, token);
@@ -113,7 +115,30 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                 """, new { g = Grupo, k, v = largo ? string.Empty : valor, aux = largo ? valor : null, d = descripcion ?? "Reclamo de saldos" }, cancellationToken: ct));
     }
 
+    /// <summary>Saldo máximo (en $) de un comprobante para considerarlo "diferencia mínima" y no reclamarlo. Default 1,00.</summary>
+    private static async Task<decimal> ToleranciaAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var v = await CorreoSalienteService.LeerConfigAsync(cn, Prefijo + "TOLERANCIA", ct);
+        return decimal.TryParse(v?.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var t) && t >= 0 ? t : 1m;
+    }
+
     // ---------------------------------------------------------------- Consultas
+
+    /// <summary>Comprobantes con saldo pendiente positivo pero dentro de la tolerancia: para que el usuario los ajuste.</summary>
+    public Task<IReadOnlyList<ReclamoDiferenciaMinima>> DiferenciasMinimasAsync(CancellationToken ct = default)
+        => Ejecutar<IReadOnlyList<ReclamoDiferenciaMinima>>("Diferencias", "No se pudieron leer las diferencias mínimas.", async (cn, user, token) =>
+        {
+            var tol = await ToleranciaAsync(cn, token);
+            return (await cn.QueryAsync<ReclamoDiferenciaMinima>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(i.CUENTA)) Cuenta, LTRIM(RTRIM(ISNULL(c.RAZON_SOCIAL,''))) Nombre, LTRIM(RTRIM(ISNULL(i.UNEGOCIO,''))) Unidad,
+                    i.FECHA Fecha, LTRIM(RTRIM(i.TC)) Tc,
+                    LTRIM(RTRIM(ISNULL(i.SUCURSAL,''))) + '-' + LTRIM(RTRIM(ISNULL(i.NUMERO,''))) + CASE WHEN LTRIM(RTRIM(ISNULL(i.LETRA,'')))<>'' THEN ' ' + LTRIM(RTRIM(i.LETRA)) ELSE '' END Numero,
+                    i.IMPORTE Importe, ISNULL(i.PAGO,0) Pago, i.SALDO Saldo
+                FROM dbo.VE_CPTES_IMPAGOS i LEFT JOIN dbo.Vt_Clientes c ON c.CODIGO = i.CUENTA
+                WHERE i.SALDO > 0 AND i.SALDO <= @tol AND (@admin=1 OR LTRIM(RTRIM(i.UNEGOCIO))=@uUnidad)
+                ORDER BY i.SALDO DESC, i.FECHA;
+                """, new { tol, admin = user.Admin, uUnidad = user.Unidad }, commandTimeout: 120, cancellationToken: token))).AsList();
+        }, ct);
 
     public Task<IReadOnlyList<ReclamoUnidad>> UnidadesAsync(CancellationToken ct = default)
         => Ejecutar<IReadOnlyList<ReclamoUnidad>>("Unidades", "No se pudieron leer las unidades de negocio.", async (cn, user, token) =>
@@ -148,7 +173,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
         const string sql = """
             SELECT * FROM (
                 SELECT LTRIM(RTRIM(c.CODIGO)) Cuenta, LTRIM(RTRIM(ISNULL(c.RAZON_SOCIAL,''))) Nombre,
-                    CONVERT(decimal(18,2), CASE WHEN @filtraUnidad=1 THEN ISNULL(x.Suma,0) ELSE s.SALDO END) Saldo,
+                    CONVERT(decimal(18,2), CASE WHEN @filtraUnidad=1 THEN ISNULL(x.Suma,0) ELSE s.SALDO - ISNULL(x.Polvo,0) END) Saldo,
                     CONVERT(decimal(18,2), ISNULL(x.Suma,0)) SumaComprobantes, ISNULL(x.Cant,0) CantidadComprobantes,
                     CONVERT(decimal(18,2), ISNULL(x.Vencido,0)) Vencido, ISNULL(x.CantVenc,0) CantidadVencidos,
                     x.MinFecha FechaMasAntigua,
@@ -157,12 +182,15 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                 FROM dbo.Vt_Clientes c
                 JOIN dbo.VE_SALDOSCTA s ON s.CUENTA = c.CODIGO
                 OUTER APPLY (
-                    SELECT SUM(i.SALDO) Suma, COUNT(*) Cant,
-                        SUM(CASE WHEN COALESCE(i.VENCIMIENTO,i.FECHA) < @hoy THEN i.SALDO ELSE 0 END) Vencido,
-                        SUM(CASE WHEN COALESCE(i.VENCIMIENTO,i.FECHA) < @hoy THEN 1 ELSE 0 END) CantVenc,
-                        MIN(i.FECHA) MinFecha,
-                        MIN(CASE WHEN COALESCE(i.VENCIMIENTO,i.FECHA) < @hoy THEN COALESCE(i.VENCIMIENTO,i.FECHA) END) MinVtoVencido,
-                        MIN(LTRIM(RTRIM(ISNULL(i.UNEGOCIO,'')))) Unidades
+                    -- Los comprobantes con saldo <= @tol (centavos de diferencia) no cuentan: ni en saldo, ni en cantidad, ni en días de atraso.
+                    SELECT SUM(CASE WHEN i.SALDO > @tol THEN i.SALDO ELSE 0 END) Suma,
+                        SUM(CASE WHEN i.SALDO > @tol THEN 1 ELSE 0 END) Cant,
+                        SUM(CASE WHEN i.SALDO > @tol AND COALESCE(i.VENCIMIENTO,i.FECHA) < @hoy THEN i.SALDO ELSE 0 END) Vencido,
+                        SUM(CASE WHEN i.SALDO > @tol AND COALESCE(i.VENCIMIENTO,i.FECHA) < @hoy THEN 1 ELSE 0 END) CantVenc,
+                        MIN(CASE WHEN i.SALDO > @tol THEN i.FECHA END) MinFecha,
+                        MIN(CASE WHEN i.SALDO > @tol AND COALESCE(i.VENCIMIENTO,i.FECHA) < @hoy THEN COALESCE(i.VENCIMIENTO,i.FECHA) END) MinVtoVencido,
+                        MIN(LTRIM(RTRIM(ISNULL(i.UNEGOCIO,'')))) Unidades,
+                        SUM(CASE WHEN i.SALDO <= @tol THEN i.SALDO ELSE 0 END) Polvo
                     FROM dbo.VE_CPTES_IMPAGOS i
                     WHERE i.CUENTA = c.CODIGO AND i.SALDO > 0
                         AND (@unidad = '' OR LTRIM(RTRIM(i.UNEGOCIO)) = @unidad)
@@ -176,6 +204,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             WHERE t.Saldo >= @saldoMin AND (@filtraUnidad = 0 OR t.CantidadComprobantes > 0) AND t.DiasAtraso >= @diasMin
             ORDER BY t.Saldo DESC, t.Nombre;
             """;
+        var tol = await ToleranciaAsync(cn, ct);
         var salida = new List<ReclamoCliente>();
         var lotes = cuentas is null ? [Array.Empty<string>()] : cuentas.Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Chunk(1000).ToList();
         foreach (var lote in lotes)
@@ -183,7 +212,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
             var q = cuentas is null ? sql : sql.Replace("/*CUENTAS*/", "AND LTRIM(RTRIM(c.CODIGO)) IN @cuentas");
             salida.AddRange(await cn.QueryAsync<ReclamoCliente>(new CommandDefinition(q, new
             {
-                hoy = DateTime.Today, unidad, restringido, uUnidad = user.Unidad, filtraUnidad = unidad.Length > 0 || restringido,
+                hoy = DateTime.Today, tol, unidad, restringido, uUnidad = user.Unidad, filtraUnidad = unidad.Length > 0 || restringido,
                 saldoMin = filtro.SaldoMinimo, bajas = filtro.IncluirBajas, texto,
                 patron = "%" + texto.Replace("~", "~~").Replace("%", "~%").Replace("_", "~_").Replace("[", "~[") + "%",
                 diasMin = Math.Max(0, filtro.DiasAtrasoMinimo), cuentas = lote
@@ -251,6 +280,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
     {
         var res = new Dictionary<string, List<ReclamoComprobante>>(StringComparer.OrdinalIgnoreCase);
         var hoy = DateTime.Today;
+        var tol = await ToleranciaAsync(cn, ct);
         foreach (var lote in cuentas.Chunk(800))
         {
             var filas = await cn.QueryAsync<DetalleRow>(new CommandDefinition("""
@@ -258,10 +288,10 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
                     LTRIM(RTRIM(i.TC)) Tc, LTRIM(RTRIM(ISNULL(i.SUCURSAL,''))) Sucursal, LTRIM(RTRIM(ISNULL(i.NUMERO,''))) Numero, LTRIM(RTRIM(ISNULL(i.LETRA,''))) Letra,
                     i.IMPORTE Importe, ISNULL(i.PAGO,0) Pago, i.SALDO Saldo
                 FROM dbo.VE_CPTES_IMPAGOS i
-                WHERE LTRIM(RTRIM(i.CUENTA)) IN @cuentas AND i.SALDO > 0
+                WHERE LTRIM(RTRIM(i.CUENTA)) IN @cuentas AND i.SALDO > @tol
                     AND (@unidad='' OR LTRIM(RTRIM(i.UNEGOCIO))=@unidad) AND (@admin=1 OR LTRIM(RTRIM(i.UNEGOCIO))=@uUnidad)
                 ORDER BY i.CUENTA, i.FECHA, i.SUCURSAL, i.NUMERO;
-                """, new { cuentas = lote, unidad, admin = user.Admin, uUnidad = user.Unidad }, commandTimeout: 120, cancellationToken: ct));
+                """, new { cuentas = lote, tol, unidad, admin = user.Admin, uUnidad = user.Unidad }, commandTimeout: 120, cancellationToken: ct));
             foreach (var f in filas)
             {
                 var vto = f.Vencimiento ?? f.Fecha;
@@ -288,17 +318,30 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
 
     private sealed record Armado(ReclamoVistaPrevia Vista, string Texto, string WhatsappDetalle, string FormaPago);
 
-    private async Task<string> FormaPagoAsync(SqlConnection cn, ReclamoConfig cfg, IEnumerable<string> unidades, CancellationToken ct)
+    // La forma de pago es la de la unidad de negocio del ÚLTIMO comprobante pendiente. Orden: clave por unidad
+    // (RECLAMO-SALDOS-FORMA-PAGO-<unidad>), columna de V_TA_UnidadNegocio indicada en RECLAMO-SALDOS-FORMA-PAGO-COLUMNA,
+    // y por último el texto general.
+    private async Task<string> FormaPagoAsync(SqlConnection cn, ReclamoConfig cfg, IReadOnlyList<ReclamoComprobante> cptes, CancellationToken ct)
     {
-        var textos = new List<(string Unidad, string Texto)>();
-        foreach (var u in unidades.Distinct())
+        var unidad = cptes.OrderByDescending(c => c.Fecha).Select(c => c.Unidad).FirstOrDefault() ?? string.Empty;
+        if (unidad.Length > 0)
         {
-            var porUnidad = u.Length > 0 ? await CorreoSalienteService.LeerConfigAsync(cn, $"{Prefijo}FORMA-PAGO-{u}", ct) : string.Empty;
-            textos.Add((u, porUnidad.Trim().Length > 0 ? porUnidad.Trim() : cfg.FormaPago.Trim()));
+            var porClave = (await CorreoSalienteService.LeerConfigAsync(cn, $"{Prefijo}FORMA-PAGO-{unidad}", ct)).Trim();
+            if (porClave.Length > 0) return porClave;
+            var columna = (await CorreoSalienteService.LeerConfigAsync(cn, $"{Prefijo}FORMA-PAGO-COLUMNA", ct)).Trim();
+            if (columna.Length > 0)
+            {
+                // El nombre de columna viene de configuración: solo se usa si existe realmente en la tabla (y entre corchetes).
+                var texto = await cn.QueryFirstOrDefaultAsync<string>(new CommandDefinition("""
+                    DECLARE @col sysname = (SELECT TOP 1 name FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.V_TA_UnidadNegocio') AND name = @columna);
+                    IF @col IS NOT NULL
+                        EXEC sp_executesql N'SELECT TOP 1 CONVERT(nvarchar(max), ' + QUOTENAME(@col) + N') FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(Codigo)) = @u',
+                            N'@u nvarchar(4)', @u = @unidad;
+                    """, new { columna, unidad }, cancellationToken: ct));
+                if (!string.IsNullOrWhiteSpace(texto)) return texto.Trim();
+            }
         }
-        var distintos = textos.Where(t => t.Texto.Length > 0).GroupBy(t => t.Texto).ToList();
-        if (distintos.Count == 0) return string.Empty;
-        return distintos.Count == 1 ? distintos[0].Key : string.Join("\n\n", distintos.Select(g => $"Unidad {string.Join(", ", g.Select(x => x.Unidad))}:\n{g.Key}"));
+        return cfg.FormaPago.Trim();
     }
 
     /// <summary>Datos para armar enlaces al Portal Cliente. <see cref="Problema"/> no vacío = no se puede generar (se avisa en la vista previa).</summary>
@@ -338,7 +381,7 @@ public sealed class ReclamoSaldosService(ISessionService sessions, IAppUserSessi
         var t = cfg.Tramos.First(x => x.Numero == tramo);
         var advert = new List<string>();
         if (string.IsNullOrWhiteSpace(t.Mensaje)) advert.Add($"El tramo {tramo} no tiene mensaje configurado.");
-        var forma = await FormaPagoAsync(cn, cfg, cptes.Select(c => c.Unidad).DefaultIfEmpty(string.Empty), ct);
+        var forma = await FormaPagoAsync(cn, cfg, cptes, ct);
         if (forma.Length == 0 && t.Mensaje.Contains("<FORMADEPAGO>", StringComparison.OrdinalIgnoreCase))
             advert.Add("El mensaje usa <FORMADEPAGO> pero no hay forma de pago configurada.");
 

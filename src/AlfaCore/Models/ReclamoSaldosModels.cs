@@ -51,6 +51,20 @@ public sealed class ReclamoComprobante
     public int DiasVencido { get; set; }
 }
 
+/// <summary>Comprobante cuyo saldo pendiente es solo una diferencia mínima (centavos): se excluye del reclamo y se lista para ajustarlo.</summary>
+public sealed class ReclamoDiferenciaMinima
+{
+    public string Cuenta { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string Unidad { get; set; } = string.Empty;
+    public DateTime Fecha { get; set; }
+    public string Tc { get; set; } = string.Empty;
+    public string Numero { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public decimal Pago { get; set; }
+    public decimal Saldo { get; set; }
+}
+
 public sealed class ReclamoTramo
 {
     public int Numero { get; set; }
@@ -66,6 +80,8 @@ public sealed class ReclamoConfig
     public int DiasHasta2 { get; set; } = 45;
     public string FormaPago { get; set; } = string.Empty;
     public decimal SaldoMinimo { get; set; } = 1m;
+    /// <summary>Comprobantes con saldo menor o igual a este importe no se reclaman ni suman días de atraso (diferencias de centavos).</summary>
+    public decimal Tolerancia { get; set; } = 1m;
     public int DiasEntreEnvios { get; set; } = 7;
     public long IdPlantillaWhatsApp { get; set; }
     /// <summary>Días de vigencia del enlace de <c>&lt;PORTAL&gt;</c> (acceso al Portal Cliente sin usuario ni clave).</summary>

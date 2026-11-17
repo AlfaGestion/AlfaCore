@@ -140,6 +140,37 @@
             }
         }
     }
+    else if (_tab == "diferencias")
+    {
+        <p class="gd-hint">Comprobantes con un saldo de hasta @Dinero(_cfg?.Tolerancia ?? 1m) (centavos de diferencia). No se reclaman ni suman días de atraso: ajustalos (nota de crédito/débito o redondeo) para dejarlos en cero.</p>
+        @if (_cargandoDif)
+        {
+            <p role="status" class="gd-hint">Buscando diferencias mínimas…</p>
+        }
+        else if (_diferencias is not null)
+        {
+            @if (_diferencias.Count == 0)
+            {
+                <p class="gd-hint">No hay comprobantes con diferencias mínimas.</p>
+            }
+            else
+            {
+                <div class="reclamo-page__scroll">
+                    <table class="reclamo-page__tabla">
+                        <thead><tr><th>Cliente</th><th>Unidad</th><th>Comprobante</th><th>Fecha</th><th>Importe</th><th>Pagado</th><th>Saldo</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in _diferencias)
+                            {
+                                <tr><td>@d.Nombre <small>@d.Cuenta</small></td><td>@d.Unidad</td><td>@d.Tc @d.Numero</td><td>@d.Fecha.ToString("dd/MM/yyyy")</td>
+                                    <td class="reclamo-page__num">@Dinero(d.Importe)</td><td class="reclamo-page__num">@Dinero(d.Pago)</td><td class="reclamo-page__num">@Dinero(d.Saldo)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="gd-hint">@_diferencias.Count comprobante(s) · total @Dinero(_diferencias.Sum(d => d.Saldo))</p>
+            }
+        }
+    }
     else if (_cfg is not null)
     {
         <div class="reclamo-cfg">
@@ -150,6 +181,7 @@
                     <AlfaInput Label="Tramo 1: hasta (días)" Type="number" Value="@_cfg.DiasHasta1.ToString()" ValueChanged="v => _cfg.DiasHasta1 = Entero(v, 15)" />
                     <AlfaInput Label="Tramo 2: hasta (días)" Type="number" Value="@_cfg.DiasHasta2.ToString()" ValueChanged="v => _cfg.DiasHasta2 = Entero(v, 45)" HelpText="Más que esto usa el tramo 3." />
                     <AlfaInput Label="Saldo mínimo a reclamar" Type="number" Step="0.01" Value="@_cfg.SaldoMinimo.ToString(CultureInfo.InvariantCulture)" ValueChanged="v => _cfg.SaldoMinimo = Decimal(v)" />
+                    <AlfaInput Label="Tolerancia por comprobante ($)" Type="number" Step="0.01" Value="@_cfg.Tolerancia.ToString(CultureInfo.InvariantCulture)" ValueChanged="v => _cfg.Tolerancia = Decimal(v)" HelpText="Un comprobante con saldo hasta este importe no se reclama ni cuenta para los días de atraso (ver pestaña Diferencias mínimas)." />
                     <AlfaInput Label="Días mínimos entre reclamos" Type="number" Value="@_cfg.DiasEntreEnvios.ToString()" ValueChanged="v => _cfg.DiasEntreEnvios = Entero(v, 7)" HelpText="Evita reclamar dos veces seguidas. 0 = sin límite." />
                     <AlfaInput Label="Vigencia del enlace al portal (días)" Type="number" Value="@_cfg.PortalDias.ToString()" ValueChanged="v => _cfg.PortalDias = Math.Clamp(Entero(v, 15), 1, 90)" HelpText="Para el botón del portal: el cliente entra a su cuenta sin usuario ni clave hasta que venza." />
                 </div>
@@ -271,7 +303,22 @@
     private const string DefSaldo = "1", DefDias = "0", DefCanal = "Email";
     private const int TamPagina = 50;
     private string _tab = "clientes";
-    private void CambiarTab(string? v) { _tab = string.IsNullOrEmpty(v) ? "clientes" : v; UpdateHeader(); }
+    private IReadOnlyList<ReclamoDiferenciaMinima>? _diferencias;
+    private bool _cargandoDif;
+    private void CambiarTab(string? v)
+    {
+        _tab = string.IsNullOrEmpty(v) ? "clientes" : v; UpdateHeader();
+        if (_tab == "diferencias") _ = CargarDiferenciasAsync();
+    }
+
+    private async Task CargarDiferenciasAsync()
+    {
+        _cargandoDif = true; StateHasChanged();
+        try { _diferencias = await Servicio.DiferenciasMinimasAsync(_cts.Token); }
+        catch (OperationCanceledException) { return; }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _cargandoDif = false; await InvokeAsync(StateHasChanged); }
+    }
 
     // Filtros del panel (se piden al servidor al buscar) y filtros sobre lo ya cargado (inmediatos).
     private string _texto = string.Empty, _unidad = string.Empty, _saldoMin = "1", _diasMin = "0", _tramoFiltro = string.Empty;
@@ -294,7 +341,7 @@
     private PageHeaderConfig? _pageHeaderPublicado;
     private readonly CancellationTokenSource _cts = new();
 
-    private IReadOnlyList<AlfaTabItem> Pestanas => [new("clientes", "Clientes"), new("mensaje", "Mensaje y configuración")];
+    private IReadOnlyList<AlfaTabItem> Pestanas => [new("clientes", "Clientes"), new("diferencias", "Diferencias mínimas"), new("mensaje", "Mensaje y configuración")];
     private IReadOnlyList<AlfaSelectOption> OpcionesUnidad
         => [new("", "Todas las unidades"), .. _unidades.Select(u => new AlfaSelectOption(u.Codigo, u.Descripcion.Length > 0 ? $"{u.Codigo} - {u.Descripcion}" : u.Codigo))];
     private IReadOnlyList<AlfaSelectOption> OpcionesTramo
