@@ -21,6 +21,21 @@ public sealed class WhatsAppAdReferralTests
     }
 
     [Fact]
+    public void LeeElAnuncioConElFormatoQueGuardaAlfaCore()
+    {
+        // Forma real de CONV_MENSAJES.PayloadJson para Meta: { metadata, message }.
+        const string payload = """
+            {"metadata":{"phone_number_id":"111","display_phone_number":"5491100000000"},
+             "message":{"from":"5491164703215","id":"wamid.Y","type":"text","text":{"body":"¡Hola! Quiero más información"},
+                        "referral":{"source_url":"https://fb.me/xyz","source_type":"ad","headline":"Calendario de Adviento"}}}
+            """;
+
+        Assert.True(WhatsAppAdReferral.TryParse(payload, out var referral));
+        Assert.Equal("Calendario de Adviento", referral.Titulo);
+        Assert.Equal("https://fb.me/xyz", referral.Url);
+    }
+
+    [Fact]
     public void PublicacionSeNombraComoPublicacion()
     {
         const string payload = """{"referral":{"source_type":"post","source_url":"https://www.instagram.com/p/x/"}}""";

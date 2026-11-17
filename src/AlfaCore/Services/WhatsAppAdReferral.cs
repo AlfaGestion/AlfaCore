@@ -41,14 +41,18 @@ public sealed record WhatsAppAdReferral(string Titulo, string Texto, string Url,
         }
     }
 
-    // El payload guardado es el mensaje ("messages[i]"); por las dudas se acepta también el
-    // envoltorio completo del webhook.
+    // Lo que guarda AlfaCore para un mensaje de Meta es { metadata, message: {...} }
+    // (BuildIncomingWhatsAppMessagePayloadJson). Se aceptan también el mensaje suelto y la lista
+    // "messages" del webhook.
     private static bool TryFindReferral(JsonElement root, out JsonElement referral)
     {
         referral = default;
         if (root.ValueKind != JsonValueKind.Object)
             return false;
         if (root.TryGetProperty("referral", out referral) && referral.ValueKind == JsonValueKind.Object)
+            return true;
+        if (root.TryGetProperty("message", out var wrapped) && wrapped.ValueKind == JsonValueKind.Object
+            && wrapped.TryGetProperty("referral", out referral) && referral.ValueKind == JsonValueKind.Object)
             return true;
         if (root.TryGetProperty("messages", out var messages) && messages.ValueKind == JsonValueKind.Array)
         {
