@@ -75,8 +75,10 @@ public sealed class WhatsAppEmbeddedSignupJavaScriptTests
         Assert.Contains("[\"onboardingMode\"] = jsInteropMode", pageSource, StringComparison.Ordinal);
         Assert.Contains("if (start.OnboardingMode != expectedMode)", pageSource, StringComparison.Ordinal);
         Assert.Contains("Vas a configurar un WhatsApp nuevo.", pageSource, StringComparison.Ordinal);
-        Assert.Contains("WhatsApp conectados", pageSource, StringComparison.Ordinal);
-        Assert.Contains("Agregar por Phone Number ID", pageSource, StringComparison.Ordinal);
+        Assert.Contains("<h2>WhatsApp</h2>", pageSource, StringComparison.Ordinal);
+        // El alta manual por Phone Number ID ya no se ofrece en la pantalla (17/11/2026).
+        Assert.DoesNotContain("OnClick=\"StartAddApiNumero\"", pageSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnClick = StartAddApiNumero", pageSource, StringComparison.Ordinal);
         Assert.DoesNotContain(">Conectar con Meta<", pageSource, StringComparison.Ordinal);
     }
 

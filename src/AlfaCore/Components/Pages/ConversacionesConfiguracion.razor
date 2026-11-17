@@ -214,7 +214,7 @@
                    que siguen existiendo en código para una futura pantalla interna/de soporte). *@
 
                 <header class="wa-api-list__header">
-                    <h2>WhatsApp conectados</h2>
+                    <h2>WhatsApp</h2>
                     <span>@(_whatsAppConnectionsLoaded ? GetWhatsAppConnectionSummary() : "Cargando...")</span>
                 </header>
 
@@ -295,10 +295,6 @@
                             <AlfaTag Tone="AlfaTagTone.Accent">Configuración en curso</AlfaTag>
                         </div>
                     }
-                    <AlfaButton Variant="AlfaButtonVariant.Secondary"
-                                Size="AlfaSize.Sm"
-                                Icon="bi bi-plus-circle"
-                                OnClick="StartAddApiNumero">Agregar por Phone Number ID</AlfaButton>
                 }
                 else if (EmbeddedSignupCta.ShowPrimaryAction)
                 {
@@ -1224,7 +1220,7 @@
         // estén conectados así (se llega desde Operación y accesos → Editar accesos).
         new("canales", "Canales",
         [
-            new("whatsapp-api", "WhatsApp conectados"),
+            new("whatsapp-api", "WhatsApp"),
             new("instagram", "Instagram"),
             new("facebook", "Facebook"),
             new("mercadolibre", "Mercado Libre"),
@@ -2535,17 +2531,8 @@
                                 OnClick = RequestArchiveSelectedApiNumeroAsync
                             });
                         }
-
-                        listActions.Add(new PageHeaderAction
-                        {
-                            Key = "nuevo-numero-api",
-                            Label = "Agregar por Phone Number ID",
-                            Icon = "bi-plus-circle",
-                            Style = PageHeaderActionStyle.Primary,
-                            Priority = PageHeaderActionPriority.Essential,
-                            Disabled = Loading || Saving,
-                            OnClick = StartAddApiNumero
-                        });
+                        // "Agregar por Phone Number ID" (alta manual) se sacó de la pantalla el 17/11/2026:
+                        // todos los WhatsApp se conectan con Meta (Embedded Signup).
                     }
                 }
                 else
@@ -6078,7 +6065,7 @@
                 return $"WhatsApp · {prefix}{GetNumeroDisplayName(SelectedApiNumero)}";
             }
 
-            return "WhatsApp conectados";
+            return "WhatsApp";
         }
 
         if (IsWhatsAppBusinessView && _connectMethodPromptForIdNumero == 0)

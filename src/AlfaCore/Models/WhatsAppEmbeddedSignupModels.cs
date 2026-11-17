@@ -109,7 +109,7 @@ public static class WhatsAppEmbeddedSignupCtaPolicy
             !active && !blockedByPendingRetry,
             active,
             hasNumbers ? "Conectar otro WhatsApp" : "Conectar WhatsApp",
-            hasNumbers ? "WhatsApp conectados" : "Conectá WhatsApp para empezar");
+            hasNumbers ? "WhatsApp" : "Conectá WhatsApp para empezar");
     }
 
     public static bool IsActiveInProgress(WhatsAppEmbeddedOnboardingStatus? status)
