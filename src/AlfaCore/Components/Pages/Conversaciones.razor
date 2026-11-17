@@ -5351,8 +5351,9 @@
         if (IsConfiguredDefaultApiNumero(numero))
             return _whatsAppConfig.IsConfiguredForSend;
 
-        return numero.Activo
-               || numero.Usuarios.Count > 0;
+        // Un número de Meta desactivado ya no se ofrece para filtrar ni para enviar, aunque tenga usuarios
+        // asignados: sus chats siguen en "Todos" y conservan la privacidad por usuario del número.
+        return numero.Activo;
     }
 
     private bool IsConfiguredDefaultApiNumero(ConversacionWhatsAppNumeroDto numero)
