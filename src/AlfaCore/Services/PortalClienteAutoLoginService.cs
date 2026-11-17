@@ -41,8 +41,8 @@ public sealed class PortalClienteAutoLoginService(
         await cn.ExecuteAsync(new CommandDefinition(
             """
             INSERT INTO dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN
-                (CodigoCliente, RazonSocial, Email, IdWeb, IdBase, TokenHash, FechaHora_Expiracion)
-            VALUES (@Codigo, @RazonSocial, @Email, @IdWeb, @IdBase, @TokenHash, DATEADD(MINUTE, @ExpiracionMinutos, GETDATE()));
+                (CodigoCliente, RazonSocial, Email, IdWeb, IdBase, TokenHash, FechaHora_Expiracion, Reutilizable)
+            VALUES (@Codigo, @RazonSocial, @Email, @IdWeb, @IdBase, @TokenHash, DATEADD(MINUTE, @ExpiracionMinutos, GETDATE()), @Reutilizable);
             """,
             new
             {
@@ -52,7 +52,8 @@ public sealed class PortalClienteAutoLoginService(
                 IdWeb = idWeb,
                 request.IdBase,
                 TokenHash = HashToken(token),
-                ExpiracionMinutos = ExpiracionMinutos
+                ExpiracionMinutos = request.ExpiracionMinutos > 0 ? request.ExpiracionMinutos : ExpiracionMinutos,
+                request.Reutilizable
             }, cancellationToken: ct));
 
         return QueryHelpers.AddQueryString($"{portalUri.GetLeftPart(UriPartial.Path).TrimEnd('/')}/acceso", "token", token);
@@ -69,11 +70,12 @@ public sealed class PortalClienteAutoLoginService(
             await cn.OpenAsync(ct);
             if (!await SqlObjectExistsAsync(cn, "ALFACORE_CLIENTE_AUTOLOGIN_TOKEN", ct))
                 return InvalidResult();
+            await EnsureTableOnceAsync(cn, ct); // agrega la columna Reutilizable en tablas creadas antes
 
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
             var row = await cn.QuerySingleOrDefaultAsync<AutoLoginRow>(new CommandDefinition(
                 """
-                SELECT TOP (1) IdToken, CodigoCliente, RazonSocial, Email, IdWeb, IdBase
+                SELECT TOP (1) IdToken, CodigoCliente, RazonSocial, Email, IdWeb, IdBase, Reutilizable
                 FROM dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN
                 WHERE TokenHash = @TokenHash
                   AND UPPER(LTRIM(RTRIM(IdWeb))) = UPPER(LTRIM(RTRIM(@IdWeb)))
@@ -87,8 +89,11 @@ public sealed class PortalClienteAutoLoginService(
                 return InvalidResult();
             }
 
+            // Reutilizable: solo registra el último acceso; el enlace sigue valiendo hasta vencer.
             await cn.ExecuteAsync(new CommandDefinition(
-                "UPDATE dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN SET Usado = 1, FechaHora_Uso = GETDATE() WHERE IdToken = @IdToken AND Usado = 0;",
+                row.Reutilizable
+                    ? "UPDATE dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN SET FechaHora_Uso = GETDATE() WHERE IdToken = @IdToken;"
+                    : "UPDATE dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN SET Usado = 1, FechaHora_Uso = GETDATE() WHERE IdToken = @IdToken AND Usado = 0;",
                 new { row.IdToken }, transaction: tx, cancellationToken: ct));
             await tx.CommitAsync(ct);
 
@@ -166,6 +171,8 @@ public sealed class PortalClienteAutoLoginService(
                     FechaHora_Uso datetime NULL
                 );
             END;
+            IF COL_LENGTH(N'dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN', N'Reutilizable') IS NULL
+                ALTER TABLE dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN ADD Reutilizable bit NOT NULL CONSTRAINT DF_ALFACORE_CLIENTE_AUTOLOGIN_TOKEN_Reutilizable DEFAULT (0);
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_ALFACORE_CLIENTE_AUTOLOGIN_TOKEN_HASH' AND object_id = OBJECT_ID(N'dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN'))
                 CREATE UNIQUE NONCLUSTERED INDEX UX_ALFACORE_CLIENTE_AUTOLOGIN_TOKEN_HASH ON dbo.ALFACORE_CLIENTE_AUTOLOGIN_TOKEN(TokenHash);
             """;
@@ -180,5 +187,6 @@ public sealed class PortalClienteAutoLoginService(
         public string Email { get; init; } = string.Empty;
         public string IdWeb { get; init; } = string.Empty;
         public int IdBase { get; init; }
+        public bool Reutilizable { get; init; }
     }
 }

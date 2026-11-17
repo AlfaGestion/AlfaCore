@@ -1,0 +1,547 @@
+@page "/ventas/reclamo-saldos"
+@page "/{idweb}/{idbase:int}/ventas/reclamo-saldos"
+@using System.Globalization
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using AlfaCore.Components.Shared
+@using AlfaCore.Components.Shared.AlfaDesign
+@inject ReclamoSaldosService Servicio
+@inject IPageHeaderService PageHeader
+@implements IDisposable
+
+<PageTitle>Reclamo de saldos | AlfaCore</PageTitle>
+
+<div class="gd-page gd reclamo-page">
+    <header class="gd-header">
+        <div>
+            <h2>Reclamo de saldos</h2>
+            <p>Elegí los clientes con deuda y enviales el detalle de sus comprobantes pendientes por email y/o WhatsApp. El mensaje cambia solo según los días de atraso.</p>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(_aviso))
+    {
+        <AlfaNotification Message="@(new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Title = "Reclamo de saldos", Message = _aviso })" OnDismiss="() => _aviso = string.Empty" />
+    }
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <AlfaNotification Message="@AppUiMessage.Warning("Reclamo de saldos", _error)" OnDismiss="() => _error = string.Empty" />
+    }
+
+    <AlfaTabs Items="@Pestanas" ActiveKey="@_tab" ActiveKeyChanged="CambiarTab" AriaLabel="Secciones del reclamo de saldos" />
+
+    @if (_tab == "clientes")
+    {
+        @if (_busy && _clientes is null)
+        {
+            <p role="status" class="gd-hint">Buscando clientes con saldo…</p>
+        }
+        else if (_clientes is not null)
+        {
+            var filtrados = Filtrados();
+            var total = filtrados.Count;
+            var paginas = Math.Max(1, (int)Math.Ceiling(total / (double)TamPagina));
+            if (_pagina >= paginas) _pagina = paginas - 1;
+            var visibles = filtrados.Skip(_pagina * TamPagina).Take(TamPagina).ToList();
+            var saldoTotal = filtrados.Sum(c => c.Saldo);
+            var vencidoTotal = filtrados.Sum(c => c.Vencido);
+
+            <div class="kpi-grid reclamo-kpis">
+                <div class="kpi-card"><div class="kpi-card__body">
+                    <p class="kpi-card__label">Clientes con saldo</p>
+                    <p class="kpi-card__value">@total</p>
+                    <p class="kpi-card__description">@filtrados.Count(c => c.DiasAtraso > 0) con comprobantes vencidos</p>
+                </div></div>
+                <div class="kpi-card"><div class="kpi-card__body">
+                    <p class="kpi-card__label">Saldo total</p>
+                    <p class="kpi-card__value">@Dinero(saldoTotal)</p>
+                    <p class="kpi-card__description">Promedio @Dinero(total == 0 ? 0 : saldoTotal / total) por cliente</p>
+                </div></div>
+                <div class="kpi-card @(vencidoTotal > 0 ? "kpi-card--balance-neg" : string.Empty)"><div class="kpi-card__body">
+                    <p class="kpi-card__label">Vencido</p>
+                    <p class="kpi-card__value">@Dinero(vencidoTotal)</p>
+                    <p class="kpi-card__description">@(saldoTotal > 0 ? (vencidoTotal / saldoTotal).ToString("P0", Ar) : "0 %") del saldo</p>
+                </div></div>
+                <div class="kpi-card"><div class="kpi-card__body">
+                    <p class="kpi-card__label">Por tramo de atraso</p>
+                    <p class="kpi-card__value reclamo-kpis__tramos">
+                        <span class="reclamo-tramo reclamo-tramo--1" title="Tramo 1">@filtrados.Count(c => TramoNum(c) == 1)</span>
+                        <span class="reclamo-tramo reclamo-tramo--2" title="Tramo 2">@filtrados.Count(c => TramoNum(c) == 2)</span>
+                        <span class="reclamo-tramo reclamo-tramo--3" title="Tramo 3">@filtrados.Count(c => TramoNum(c) == 3)</span>
+                    </p>
+                    <p class="kpi-card__description">Tramo 1 · 2 · 3</p>
+                </div></div>
+                <div class="kpi-card"><div class="kpi-card__body">
+                    <p class="kpi-card__label">Sin medio de contacto</p>
+                    <p class="kpi-card__value">@filtrados.Count(c => !c.TieneEmail && !c.TieneWhatsapp)</p>
+                    <p class="kpi-card__description">@filtrados.Count(c => c.TieneEmail) con email · @filtrados.Count(c => c.TieneWhatsapp) con WhatsApp</p>
+                </div></div>
+                <div class="kpi-card @(_marcados.Count > 0 ? "reclamo-kpis__sel" : string.Empty)"><div class="kpi-card__body">
+                    <p class="kpi-card__label">Seleccionados</p>
+                    <p class="kpi-card__value">@_marcados.Count</p>
+                    <p class="kpi-card__description">@(_marcados.Count > 0 ? Dinero(SaldoMarcado) : "Tildá los clientes a reclamar")</p>
+                </div></div>
+            </div>
+
+            @if (total == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin clientes con saldo" Message="No hay clientes con saldo pendiente para esos filtros, dentro de tus unidades de negocio." />
+            }
+            else
+            {
+                <div class="reclamo-page__scroll">
+                    <table class="reclamo-page__tabla">
+                        <thead>
+                            <tr>
+                                <th class="reclamo-page__check"><AlfaCheckbox Value="@TodosMarcados(filtrados)" ValueChanged="v => MarcarTodos(filtrados, v == true)" AriaLabel="Seleccionar todos" /></th>
+                                @Cabecera("nombre", "Cliente")
+                                @Cabecera("saldo", "Saldo", true)
+                                @Cabecera("vencido", "Vencido", true)
+                                @Cabecera("cptes", "Cptes.", true)
+                                @Cabecera("atraso", "Atraso", true)
+                                @Cabecera("tramo", "Tramo")
+                                @Cabecera("email", "Email")
+                                @Cabecera("whatsapp", "WhatsApp")
+                                @Cabecera("ultimo", "Último reclamo")
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in visibles)
+                            {
+                                <tr @key="c.Cuenta" class="@(_marcados.Contains(c.Cuenta) ? "is-selected" : string.Empty)">
+                                    <td class="reclamo-page__check"><AlfaCheckbox Value="@_marcados.Contains(c.Cuenta)" ValueChanged="v => Marcar(c.Cuenta, v == true)" AriaLabel="@($"Seleccionar {c.Nombre}")" /></td>
+                                    <td><strong>@c.Nombre</strong><small>@c.Cuenta</small></td>
+                                    <td class="reclamo-page__num">@Dinero(c.Saldo)@if (c.SaldoDifiere) { <i class="bi bi-info-circle" title="El saldo de la cuenta difiere de la suma de comprobantes (@Dinero(c.SumaComprobantes)): hay notas de crédito o pagos a cuenta sin aplicar."></i> }</td>
+                                    <td class="reclamo-page__num @(c.Vencido > 0 ? "reclamo-page__vencido" : string.Empty)">@Dinero(c.Vencido)</td>
+                                    <td class="reclamo-page__num">@c.CantidadComprobantes</td>
+                                    <td class="reclamo-page__num">@(c.DiasAtraso > 0 ? c.DiasAtraso.ToString() + " d" : "—")</td>
+                                    <td><span class="reclamo-tramo reclamo-tramo--@TramoNum(c)">@TramoNum(c)</span></td>
+                                    <td>@if (c.TieneEmail) { <span title="@c.Emails"><i class="bi bi-check-circle-fill reclamo-page__ok"></i> @Primero(c.Emails)</span> } else { <span class="reclamo-page__falta">Sin email</span> }</td>
+                                    <td>@if (c.TieneWhatsapp) { <span title="@c.Whatsapp"><i class="bi bi-check-circle-fill reclamo-page__ok"></i> @c.Whatsapp</span> } else { <span class="reclamo-page__falta">—</span> }</td>
+                                    <td>@if (c.UltimoReclamo is { } u) { <span>@u.ToString("dd/MM/yy HH:mm") <small>@c.UltimoCanal</small></span> } else { <span class="reclamo-page__falta">Nunca</span> }</td>
+                                    <td><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => VerAsync(c)">Ver mensaje</AlfaButton></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="reclamo-page__pie">
+                    <span>@total cliente(s) · Saldo @Dinero(saldoTotal) · Vencido @Dinero(vencidoTotal)
+                        @if (_marcados.Count > 0) { <text> · <strong>@_marcados.Count seleccionado(s): @Dinero(SaldoMarcado)</strong></text> }
+                    </span>
+                    <span class="reclamo-page__paginas">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_marcados.Count == 0)" OnClick="_ => LimpiarSeleccion()">Deseleccionar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina == 0)" OnClick="_ => _pagina--">Anterior</AlfaButton>
+                        <span>Página @(_pagina + 1) de @paginas</span>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina >= paginas - 1)" OnClick="_ => _pagina++">Siguiente</AlfaButton>
+                    </span>
+                </div>
+            }
+        }
+    }
+    else if (_cfg is not null)
+    {
+        <div class="reclamo-cfg">
+            <section class="reclamo-cfg__bloque">
+                <h3>Tramos por días de atraso</h3>
+                <p class="gd-hint">Cada cliente recibe el mensaje del tramo que corresponde a los días de atraso de su comprobante vencido más antiguo.</p>
+                <div class="reclamo-cfg__fila">
+                    <AlfaInput Label="Tramo 1: hasta (días)" Type="number" Value="@_cfg.DiasHasta1.ToString()" ValueChanged="v => _cfg.DiasHasta1 = Entero(v, 15)" />
+                    <AlfaInput Label="Tramo 2: hasta (días)" Type="number" Value="@_cfg.DiasHasta2.ToString()" ValueChanged="v => _cfg.DiasHasta2 = Entero(v, 45)" HelpText="Más que esto usa el tramo 3." />
+                    <AlfaInput Label="Saldo mínimo a reclamar" Type="number" Step="0.01" Value="@_cfg.SaldoMinimo.ToString(CultureInfo.InvariantCulture)" ValueChanged="v => _cfg.SaldoMinimo = Decimal(v)" />
+                    <AlfaInput Label="Días mínimos entre reclamos" Type="number" Value="@_cfg.DiasEntreEnvios.ToString()" ValueChanged="v => _cfg.DiasEntreEnvios = Entero(v, 7)" HelpText="Evita reclamar dos veces seguidas. 0 = sin límite." />
+                    <AlfaInput Label="Vigencia del enlace al portal (días)" Type="number" Value="@_cfg.PortalDias.ToString()" ValueChanged="v => _cfg.PortalDias = Math.Clamp(Entero(v, 15), 1, 90)" HelpText="Para el botón del portal: el cliente entra a su cuenta sin usuario ni clave hasta que venza." />
+                </div>
+            </section>
+
+            @foreach (var t in _cfg.Tramos)
+            {
+                var tr = t;
+                <section class="reclamo-cfg__bloque" @key="tr.Numero">
+                    <h3>Mensaje tramo @tr.Numero <small>@DescripcionTramo(tr.Numero)</small></h3>
+                    <AlfaInput Label="Asunto del email" Value="@tr.Asunto" ValueChanged="v => tr.Asunto = v ?? string.Empty" MaxLength="150" />
+                    <label class="reclamo-cfg__label" for="@($"msg{tr.Numero}")">Mensaje (email y base del texto)</label>
+                    <textarea id="@($"msg{tr.Numero}")" class="reclamo-cfg__texto" rows="9" value="@tr.Mensaje" @onchange="e => tr.Mensaje = e.Value?.ToString() ?? string.Empty"></textarea>
+                </section>
+            }
+
+            <section class="reclamo-cfg__bloque">
+                <h3>Forma de pago</h3>
+                <p class="gd-hint">Se inserta en <code>&lt;FORMADEPAGO&gt;</code>. Para una forma distinta por unidad de negocio, agregá en Configuración la clave <code>RECLAMO-SALDOS-FORMA-PAGO-&lt;código de unidad&gt;</code>.</p>
+                <textarea class="reclamo-cfg__texto" rows="4" value="@_cfg.FormaPago" @onchange="e => _cfg.FormaPago = e.Value?.ToString() ?? string.Empty"></textarea>
+            </section>
+
+            <section class="reclamo-cfg__bloque">
+                <h3>WhatsApp</h3>
+                <p class="gd-hint">WhatsApp exige una plantilla aprobada por Meta para escribirle a un cliente que no te escribió en las últimas 24 horas. Creá la plantilla en Conversaciones → Plantillas con variables de tipo <em>Nombre del cliente</em>, <em>Detalle de deuda</em> y <em>Forma de pago</em> (en ese orden si no las mapeás).</p>
+                <AlfaSelect Label="Plantilla de reclamo" Value="@_cfg.IdPlantillaWhatsApp.ToString()" ValueChanged="v => CambiarPlantilla(v)" Options="@OpcionesPlantilla" Placeholder="Sin plantilla" />
+                @if (_plantillaElegida is { } p)
+                {
+                    <p class="reclamo-cfg__plantilla">@p.Cuerpo</p>
+                }
+            </section>
+
+            <section class="reclamo-cfg__bloque">
+                <h3>Variables disponibles</h3>
+                <ul class="reclamo-cfg__vars">
+                    @foreach (var (token, desc) in ReclamoSaldosPlantilla.Variables)
+                    {
+                        <li><code>@token</code> — @desc</li>
+                    }
+                </ul>
+            </section>
+
+            <div class="reclamo-cfg__acciones">
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@_busy" OnClick="_ => GuardarAsync()">Guardar configuración</AlfaButton>
+            </div>
+        </div>
+    }
+</div>
+
+<AlfaDialog Open="@(_vista is not null)" Title="@(_vista is null ? string.Empty : $"Mensaje para {_vista.Nombre}")" Eyebrow="@(_vista is null ? null : $"Tramo {_vista.Tramo}")"
+            Size="AlfaDialogSize.Lg" OnClose="() => _vista = null">
+    <ChildContent>
+    @if (_vista is { } v)
+    {
+        <dl class="reclamo-vista__datos">
+            <dt>Para</dt><dd>@(v.Destinatarios.Length > 0 ? v.Destinatarios : "— sin email —")</dd>
+            <dt>Asunto</dt><dd>@v.Asunto</dd>
+        </dl>
+        @foreach (var a in v.Advertencias)
+        {
+            <p class="reclamo-vista__aviso"><i class="bi bi-exclamation-triangle"></i> @a</p>
+        }
+        @* Iframe aislado: el correo usa sus propios colores (fondo blanco) y no hereda el tema oscuro de la aplicación. *@
+        <iframe class="reclamo-vista__cuerpo" sandbox title="Vista previa del email" srcdoc="@ReclamoSaldosPlantilla.DocumentoVistaPrevia(v.CuerpoHtml)"></iframe>
+        @if (v.WhatsappTexto.Length > 0)
+        {
+            <h4>WhatsApp @(v.Whatsapp.Length > 0 ? "a " + v.Whatsapp : string.Empty)</h4>
+            <p class="reclamo-cfg__plantilla">@v.WhatsappTexto</p>
+        }
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="_ => _vista = null">Cerrar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@_envioAbierto" Title="Enviar reclamo" Eyebrow="@($"{_marcados.Count} cliente(s)")" Size="AlfaDialogSize.Lg" Loading="@_busy"
+            OnClose="CerrarEnvio" CloseOnBackdrop="false">
+    <ChildContent>
+    <div class="reclamo-envio">
+        <AlfaSelect Label="Canal" Value="@_canal" ValueChanged="v => _canal = string.IsNullOrWhiteSpace(v) ? DefCanal : v" Options="@OpcionesCanal" Disabled="@_busy" />
+        <AlfaCheckbox Value="@_simular" ValueChanged="v => _simular = v == true" Disabled="@_busy">Solo simular: arma todo pero no envía nada (recomendado para revisar antes)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_ignorarRecientes" ValueChanged="v => _ignorarRecientes = v == true" Disabled="@_busy">Reenviar aunque haya recibido un reclamo hace pocos días</AlfaCheckbox>
+        <div class="reclamo-filtros">
+            <AlfaInput Label="Enviar de prueba a este email (opcional)" Value="@_mailPrueba" ValueChanged="v => _mailPrueba = v ?? string.Empty" Placeholder="tu@correo.com" Disabled="@_busy"
+                       HelpText="Si lo completás, ningún cliente recibe nada: todo llega a esta dirección." />
+            <AlfaInput Label="Enviar de prueba a este celular (opcional)" Value="@_telPrueba" ValueChanged="v => _telPrueba = v ?? string.Empty" Placeholder="+549..." Disabled="@_busy" />
+        </div>
+        @if (!_simular && string.IsNullOrWhiteSpace(_mailPrueba) && string.IsNullOrWhiteSpace(_telPrueba))
+        {
+            <p class="reclamo-vista__aviso"><i class="bi bi-exclamation-triangle"></i> Se va a enviar a los clientes reales.</p>
+        }
+        @if (_resultados.Count > 0)
+        {
+            <div class="reclamo-page__scroll reclamo-envio__resultados">
+                <table class="reclamo-page__tabla">
+                    <thead><tr><th>Cliente</th><th>Canal</th><th>Destino</th><th>Estado</th><th>Detalle</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _resultados)
+                        {
+                            <tr><td>@r.Nombre <small>@r.Cuenta</small></td><td>@r.Canal</td><td>@r.Destino</td>
+                                <td class="@(r.Estado == "Error" ? "reclamo-page__vencido" : string.Empty)">@r.Estado</td><td>@r.Detalle</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="gd-hint">@_resultados.Count(r => r.Estado == "Enviado") enviado(s) · @_resultados.Count(r => r.Estado == "Simulado") simulado(s) · @_resultados.Count(r => r.Estado == "Omitido") omitido(s) · @_resultados.Count(r => r.Estado == "Error") con error</p>
+        }
+    </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_busy" OnClick="_ => CerrarEnvio()">Cerrar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Disabled="@_busy" OnClick="_ => EnviarAsync()">@(_simular ? "Simular" : "Enviar")</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private const string DefSaldo = "1", DefDias = "0", DefCanal = "Email";
+    private const int TamPagina = 50;
+    private string _tab = "clientes";
+    private void CambiarTab(string? v) { _tab = string.IsNullOrEmpty(v) ? "clientes" : v; UpdateHeader(); }
+
+    // Filtros del panel (se piden al servidor al buscar) y filtros sobre lo ya cargado (inmediatos).
+    private string _texto = string.Empty, _unidad = string.Empty, _saldoMin = "1", _diasMin = "0", _tramoFiltro = string.Empty;
+    private bool _bajas, _soloEmail, _soloWhatsapp, _mostrarFiltros;
+    private FiltroAplicado _aplicado = new(string.Empty, 1m, 0, false);
+    private sealed record FiltroAplicado(string Unidad, decimal SaldoMin, int DiasMin, bool Bajas);
+
+    private bool _busy, _envioAbierto, _simular = true, _ignorarRecientes;
+    private string _error = string.Empty, _aviso = string.Empty, _canal = "Email", _mailPrueba = string.Empty, _telPrueba = string.Empty;
+    private int _pagina;
+    private string _ordenCampo = "saldo";
+    private bool _ordenDesc = true;
+    private IReadOnlyList<ReclamoCliente>? _clientes;
+    private IReadOnlyList<ReclamoUnidad> _unidades = [];
+    private IReadOnlyList<ReclamoPlantillaWhatsApp> _plantillas = [];
+    private ReclamoConfig? _cfg;
+    private ReclamoVistaPrevia? _vista;
+    private readonly HashSet<string> _marcados = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<ReclamoEnvioResultado> _resultados = [];
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private readonly CancellationTokenSource _cts = new();
+
+    private IReadOnlyList<AlfaTabItem> Pestanas => [new("clientes", "Clientes"), new("mensaje", "Mensaje y configuración")];
+    private IReadOnlyList<AlfaSelectOption> OpcionesUnidad
+        => [new("", "Todas las unidades"), .. _unidades.Select(u => new AlfaSelectOption(u.Codigo, u.Descripcion.Length > 0 ? $"{u.Codigo} - {u.Descripcion}" : u.Codigo))];
+    private IReadOnlyList<AlfaSelectOption> OpcionesTramo
+        => [new("", "Todos los tramos"), new("1", "Tramo 1"), new("2", "Tramo 2"), new("3", "Tramo 3")];
+    private IReadOnlyList<AlfaSelectOption> OpcionesCanal
+        => [new("Email", "Email"), new("WhatsApp", "WhatsApp (plantilla)"), new("Ambos", "Email y WhatsApp")];
+    private IReadOnlyList<AlfaSelectOption> OpcionesPlantilla
+        => [new("0", "Sin plantilla"), .. _plantillas.Select(p => new AlfaSelectOption(p.IdPlantilla.ToString(), p.Nombre))];
+    private ReclamoPlantillaWhatsApp? _plantillaElegida => _cfg is null ? null : _plantillas.FirstOrDefault(p => p.IdPlantilla == _cfg.IdPlantillaWhatsApp);
+    private decimal SaldoMarcado => _clientes?.Where(c => _marcados.Contains(c.Cuenta)).Sum(c => c.Saldo) ?? 0;
+
+    private static string Dinero(decimal v) => v.ToString("N2", Ar);
+    private static string Primero(string mails) => mails.Split(';')[0].Trim() + (mails.Contains(';') ? " …" : string.Empty);
+    private static int Entero(string? v, int def) => int.TryParse(v, out var n) && n >= 0 ? n : def;
+    private static decimal Decimal(string? v) => decimal.TryParse(v, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n >= 0 ? n : 1m;
+    private static string DescripcionTramo(int n) => n switch { 1 => "(recordatorio amable)", 2 => "(reclamo firme)", _ => "(último aviso)" };
+    private int TramoNum(ReclamoCliente c)
+        => _cfg is null ? 1 : ReclamoSaldosPlantilla.ElegirTramo(c.DiasAtraso, _cfg.DiasHasta1, _cfg.DiasHasta2);
+    private string NombreUnidad(string codigo)
+        => _unidades.FirstOrDefault(u => u.Codigo == codigo) is { } u && u.Descripcion.Length > 0 ? $"{u.Codigo} - {u.Descripcion}" : codigo;
+
+    // ---- Orden y búsqueda libre sobre cualquier columna (igual que Cobranzas) ----
+    private RenderFragment Cabecera(string campo, string titulo, bool derecha = false) => @<th class="@(derecha ? "reclamo-page__num" : string.Empty)" aria-sort="@(_ordenCampo == campo ? (_ordenDesc ? "descending" : "ascending") : "none")">
+        <button type="button" class="reclamo-page__orden @(derecha ? "is-right" : string.Empty) @(_ordenCampo == campo ? "is-active" : string.Empty)" @onclick="() => Ordenar(campo)">
+            @titulo @if (_ordenCampo == campo) { <i class="bi @(_ordenDesc ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i> }
+        </button>
+    </th>;
+
+    private void Ordenar(string campo)
+    {
+        if (_ordenCampo == campo) _ordenDesc = !_ordenDesc;
+        else { _ordenCampo = campo; _ordenDesc = campo is "saldo" or "vencido" or "cptes" or "atraso" or "ultimo"; }
+        _pagina = 0;
+    }
+
+    private IEnumerable<ReclamoCliente> Ordenados(IEnumerable<ReclamoCliente> lista)
+    {
+        IOrderedEnumerable<ReclamoCliente> Ord<T>(Func<ReclamoCliente, T> k) => _ordenDesc ? lista.OrderByDescending(k) : lista.OrderBy(k);
+        var o = _ordenCampo switch
+        {
+            "saldo" => Ord(c => c.Saldo),
+            "vencido" => Ord(c => c.Vencido),
+            "cptes" => Ord(c => c.CantidadComprobantes),
+            "atraso" => Ord(c => c.DiasAtraso),
+            "tramo" => Ord(c => TramoNum(c)),
+            "email" => Ord(c => c.Emails),
+            "whatsapp" => Ord(c => c.Whatsapp),
+            "ultimo" => Ord(c => c.UltimoReclamo ?? DateTime.MinValue),
+            _ => Ord(c => c.Nombre)
+        };
+        return o.ThenBy(c => c.Nombre).ThenBy(c => c.Cuenta);
+    }
+
+    private List<ReclamoCliente> Filtrados()
+    {
+        var palabras = _texto.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        IEnumerable<ReclamoCliente> origen = _clientes ?? [];
+        if (_tramoFiltro.Length > 0 && int.TryParse(_tramoFiltro, out var tramo)) origen = origen.Where(c => TramoNum(c) == tramo);
+        if (_soloEmail) origen = origen.Where(c => c.TieneEmail);
+        if (_soloWhatsapp) origen = origen.Where(c => c.TieneWhatsapp);
+        if (palabras.Length > 0)
+            origen = origen.Where(c => { var pajar = Pajar(c); return palabras.All(p => Contiene(pajar, p)); });
+        return Ordenados(origen).ToList();
+    }
+
+    // Todo lo que se ve en la fila, para que el texto coincida con cualquier columna (importes con y sin formato).
+    private string Pajar(ReclamoCliente c)
+        => string.Join(' ', c.Cuenta, c.Nombre, c.Emails, c.Whatsapp, c.Unidades, Dinero(c.Saldo), c.Saldo.ToString("0.00", CultureInfo.InvariantCulture),
+            Dinero(c.Vencido), c.DiasAtraso, "tramo " + TramoNum(c), c.UltimoReclamo?.ToString("dd/MM/yyyy") ?? "nunca");
+
+    private static bool Contiene(string pajar, string palabra)
+        => Ar.CompareInfo.IndexOf(pajar, palabra, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
+
+    private void CambiarTexto(string? v) { _texto = v ?? string.Empty; _pagina = 0; }
+
+    // ---- Selección ----
+    private bool TodosMarcados(List<ReclamoCliente> lista) => lista.Count > 0 && lista.All(c => _marcados.Contains(c.Cuenta));
+
+    private void Marcar(string cuenta, bool on) { if (on) _marcados.Add(cuenta); else _marcados.Remove(cuenta); UpdateHeader(); }
+
+    private void MarcarTodos(List<ReclamoCliente> lista, bool on)
+    {
+        foreach (var c in lista) { if (on) _marcados.Add(c.Cuenta); else _marcados.Remove(c.Cuenta); }
+        UpdateHeader();
+    }
+
+    private void LimpiarSeleccion() { _marcados.Clear(); UpdateHeader(); }
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        try
+        {
+            _unidades = await Servicio.UnidadesAsync(_cts.Token);
+            _cfg = await Servicio.ConfigAsync(_cts.Token);
+            _saldoMin = _cfg.SaldoMinimo.ToString(CultureInfo.InvariantCulture);
+            _plantillas = await Servicio.PlantillasWhatsAppAsync(_cts.Token);
+        }
+        catch (OperationCanceledException) { return; }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        await BuscarAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
+
+    private void UpdateHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        Title = "Reclamo de saldos", ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas",
+        ShowHistoryNavigation = false, Breadcrumb = ["Ventas", "Reclamo de saldos"],
+        TopNavigationItems = [new() { Key = "reclamo", Label = "Reclamo de saldos", Active = true }],
+        SearchContent = _tab == "clientes" ? RenderFiltros() : null,
+        Actions = _tab != "clientes" ? [] : [
+            new() { Key = "enviar", Label = _marcados.Count > 0 ? $"Enviar reclamo ({_marcados.Count})" : "Enviar reclamo", Icon = "bi-send", Style = PageHeaderActionStyle.Primary,
+                Disabled = _busy || _marcados.Count == 0, OnClick = () => { AbrirEnvio(); return Task.CompletedTask; } },
+            new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Disabled = _busy,
+                OnClick = () => { _ = BuscarAsync(); return Task.CompletedTask; } },
+            new() { Key = "limpiar", Label = "Limpiar filtros", Icon = "bi-x-circle", Disabled = _busy,
+                OnClick = () => { LimpiarFiltros(); _ = BuscarAsync(); return Task.CompletedTask; } }
+        ]
+    });
+
+    private void ToggleFiltros() { _mostrarFiltros = !_mostrarFiltros; UpdateHeader(); }
+
+    private void LimpiarFiltros()
+    {
+        _texto = _unidad = _tramoFiltro = string.Empty; _saldoMin = _cfg?.SaldoMinimo.ToString(CultureInfo.InvariantCulture) ?? DefSaldo; _diasMin = DefDias;
+        _bajas = _soloEmail = _soloWhatsapp = false; _pagina = 0;
+    }
+
+    private RenderFragment RenderFiltros() => @<div class="smart-search reclamo-search" @onclick:stopPropagation>
+        <div class="smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button is-active" title="Filtros del reclamo" aria-label="Filtros del reclamo" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi bi-funnel-fill"></i></button>
+            <div class="smart-search__active-filters" aria-label="Filtros aplicados">
+                <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Saldo desde @Dinero(_aplicado.SaldoMin)</span></button>
+                @if (_aplicado.DiasMin > 0) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Atraso desde @_aplicado.DiasMin d</span></button> }
+                @if (_aplicado.Unidad.Length > 0) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Unidad @_aplicado.Unidad</span></button> }
+                @if (_aplicado.Bajas) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Con bajas</span></button> }
+                @if (_tramoFiltro.Length > 0) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Tramo @_tramoFiltro</span></button> }
+                @if (_soloEmail) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Con email</span></button> }
+                @if (_soloWhatsapp) { <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>Con WhatsApp</span></button> }
+            </div>
+            <input type="search" placeholder="Buscar en cualquier columna: cliente, código, email, importe…" value="@_texto"
+                   @oninput="e => { CambiarTexto(e.Value?.ToString()); StateHasChanged(); }" />
+            <button type="button" class="smart-search__toggle" title="Filtros y opciones" aria-label="Filtros y opciones" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi @(_mostrarFiltros ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
+        </div>
+        @if (_mostrarFiltros)
+        {
+            <div class="smart-search__panel reclamo-filter-panel">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-cash-stack"></i> Deuda</h4>
+                    <AlfaInput Label="Saldo mínimo" Type="number" Step="0.01" Value="@_saldoMin" ValueChanged="v => _saldoMin = string.IsNullOrWhiteSpace(v) ? DefSaldo : v" Disabled="@_busy" />
+                    <AlfaInput Label="Atraso mínimo (días)" Type="number" Value="@_diasMin" ValueChanged="v => _diasMin = string.IsNullOrWhiteSpace(v) ? DefDias : v" Disabled="@_busy"
+                               HelpText="0 = todos los que tengan saldo; 1 = solo con comprobantes vencidos." />
+                    <AlfaSelect Label="Tramo" Value="@_tramoFiltro" ValueChanged="v => { _tramoFiltro = v ?? string.Empty; _pagina = 0; }" Options="@OpcionesTramo" Disabled="@_busy" />
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-building"></i> Cliente</h4>
+                    <AlfaSelect Label="Unidad de negocio" Value="@_unidad" ValueChanged="v => _unidad = v ?? string.Empty" Options="@OpcionesUnidad" Disabled="@_busy" />
+                    <div class="reclamo-opciones">
+                        <AlfaCheckbox Value="@_soloEmail" ValueChanged="v => { _soloEmail = v == true; _pagina = 0; }" Disabled="@_busy">Solo con email</AlfaCheckbox>
+                        <AlfaCheckbox Value="@_soloWhatsapp" ValueChanged="v => { _soloWhatsapp = v == true; _pagina = 0; }" Disabled="@_busy">Solo con WhatsApp</AlfaCheckbox>
+                        <AlfaCheckbox Value="@_bajas" ValueChanged="v => _bajas = v == true" Disabled="@_busy">Incluir clientes dados de baja</AlfaCheckbox>
+                    </div>
+                </div>
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => LimpiarFiltros()">Limpiar</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_busy" OnClick="_ => BuscarAsync()">Buscar</AlfaButton>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private async Task BuscarAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = string.Empty; _mostrarFiltros = false; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var filtro = new ReclamoFiltro
+            {
+                Unidad = _unidad, IncluirBajas = _bajas,
+                SaldoMinimo = decimal.TryParse(_saldoMin, NumberStyles.Number, CultureInfo.InvariantCulture, out var sm) ? sm : 1m,
+                DiasAtrasoMinimo = int.TryParse(_diasMin, out var dm) ? dm : 0
+            };
+            _clientes = await Servicio.BuscarAsync(filtro, _cts.Token);
+            _aplicado = new FiltroAplicado(filtro.Unidad, filtro.SaldoMinimo, filtro.DiasAtrasoMinimo, filtro.IncluirBajas);
+            _pagina = 0;
+            _marcados.RemoveWhere(c => _clientes.All(x => !x.Cuenta.Equals(c, StringComparison.OrdinalIgnoreCase)));
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; _clientes ??= []; }
+        finally { _busy = false; UpdateHeader(); }
+        StateHasChanged();
+    }
+
+    private async Task VerAsync(ReclamoCliente c)
+    {
+        _busy = true; _error = string.Empty; StateHasChanged();
+        try { _vista = await Servicio.VistaPreviaAsync(c.Cuenta, 0, _cts.Token); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void AbrirEnvio() { _resultados.Clear(); _simular = true; _envioAbierto = true; StateHasChanged(); }
+    private void CerrarEnvio() { if (!_busy) _envioAbierto = false; }
+
+    private async Task EnviarAsync()
+    {
+        _busy = true; _error = string.Empty; _resultados.Clear(); StateHasChanged();
+        try
+        {
+            var sol = new ReclamoEnvioSolicitud
+            {
+                Cuentas = [.. _marcados], SoloSimular = _simular, IgnorarEnviosRecientes = _ignorarRecientes,
+                Canal = Enum.Parse<ReclamoCanal>(_canal),
+                MailPrueba = string.IsNullOrWhiteSpace(_mailPrueba) ? null : _mailPrueba.Trim(),
+                TelefonoPrueba = string.IsNullOrWhiteSpace(_telPrueba) ? null : _telPrueba.Trim()
+            };
+            _resultados.AddRange(await Servicio.EnviarAsync(sol, null, _cts.Token));
+            if (!_simular) { _busy = false; await BuscarAsync(); }
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void CambiarPlantilla(string? v)
+    {
+        if (_cfg is not null) _cfg.IdPlantillaWhatsApp = long.TryParse(v, out var id) ? id : 0;
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_cfg is null) return;
+        _busy = true; _error = string.Empty; StateHasChanged();
+        try { await Servicio.GuardarConfigAsync(_cfg, _cts.Token); _aviso = "Configuración guardada."; _busy = false; await BuscarAsync(); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado)) PageHeader.Clear();
+    }
+}
