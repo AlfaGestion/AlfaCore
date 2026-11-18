@@ -547,7 +547,10 @@ else
 
             _sinPermiso = !await Permisos.HasAccessAsync(AlfaCore.Services.PermisosWebCatalogo.ConversacionesPlantillas, _lifetimeCts.Token);
             if (_sinPermiso)
+            {
+                UpdatePageHeader();
                 return;
+            }
 
             await LoadRouteTenantAsync();
         }
@@ -871,12 +874,14 @@ else
 
     private void UpdatePageHeader()
     {
-        var actions = _mode switch
+        // Sin permiso no se ofrecen acciones ni búsqueda: solo el aviso.
+        List<PageHeaderAction> actions = _sinPermiso ? [] : _mode switch
         {
             PageMode.Create => BuildCreateActions(),
             PageMode.Edit => BuildEditActions(),
             _ => BuildBrowseActions()
         };
+        var conBusqueda = _mode == PageMode.Browse && !_sinPermiso;
 
         PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
@@ -890,8 +895,8 @@ else
             },
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),
-            Search = _mode == PageMode.Browse ? new PageHeaderSearchConfig() : null,
-            SearchContent = _mode == PageMode.Browse ? RenderTemplatesSmartSearch() : null,
+            Search = conBusqueda ? new PageHeaderSearchConfig() : null,
+            SearchContent = conBusqueda ? RenderTemplatesSmartSearch() : null,
             Actions = actions
         });
         _ = InvokeAsync(StateHasChanged);

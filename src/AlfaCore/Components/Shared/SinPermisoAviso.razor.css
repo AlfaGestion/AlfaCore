@@ -1,5 +1,10 @@
 .sin-permiso {
-    max-width: 34rem;
+    box-sizing: border-box;
+    width: min(40rem, 100%);
+    max-width: 40rem;
+    flex: 0 0 auto;
+    align-self: center;
+    justify-self: center;
     margin: 3rem auto;
     padding: 2rem 1.5rem;
     display: flex;
