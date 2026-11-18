@@ -1422,19 +1422,9 @@
             ? "usuarios-page usuarios-page--editor"
             : "usuarios-page usuarios-page--list";
 
-    // Contactos y Configuración se sacaron a pedido: son de otros módulos (Contactos es aparte, y
-    // Configuración ahí apuntaba a la de Conversaciones) -- ninguna pertenece al menú de Usuarios.
+    // Usuarios es parte de Seguridad: mismas pestañas que Autorización, Perfiles y Accesos.
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
-        =>
-        [
-            new()
-            {
-                Key = "usuarios",
-                Label = "Usuarios",
-                Url = RouteContext.BuildRoute("/usuarios"),
-                Active = true
-            }
-        ];
+        => AlfaCore.Services.ModuleTopNavPresets.BuildSeguridad(RouteContext, Nav, "usuarios");
 
     private PageHeaderPaginationConfig BuildHeaderPagination()
         => new()

@@ -109,9 +109,8 @@ public static class ModuleTopNavPresets
             ("resumen", "Resumen", "/auditoria"),
             ("errores", "Errores", "/auditoria/errores"),
             ("usuarios", "Actividad de usuarios", "/auditoria/usuarios"),
-            ("comprobantes", "Comprobantes", "/auditoria/comprobantes"),
-            ("usuarios-sistema", "Usuarios", "/usuarios"),
-            ("autorizacion", "Autorización", "/seguridad/autorizacion-tareas")
+            // Usuarios y Autorización son de Seguridad: no se repiten acá para no saltar de módulo.
+            ("comprobantes", "Comprobantes", "/auditoria/comprobantes")
         ]);
 
     // Mismas entradas que el sidebar legacy de Actualización de Costos.
