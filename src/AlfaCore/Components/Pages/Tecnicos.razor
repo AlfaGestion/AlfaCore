@@ -1651,30 +1651,14 @@
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
         =>
         [
-            new()
-            {
-                Key = "contactos",
-                Label = "Contactos",
-                Url = RouteContext.BuildRoute("/contactos")
-            },
-            new()
-            {
-                Key = "usuarios",
-                Label = "Usuarios",
-                Url = RouteContext.BuildRoute("/usuarios")
-            },
+            // Solo su pestaña, como Clientes, Proveedores y Contactos (Archivos > Maestros): Contactos, Usuarios y la
+            // configuración de Conversaciones son de otros módulos.
             new()
             {
                 Key = "tecnicos",
                 Label = "Técnicos",
                 Url = RouteContext.BuildRoute("/tecnicos"),
                 Active = true
-            },
-            new()
-            {
-                Key = "configuracion",
-                Label = "Configuración",
-                Url = RouteContext.BuildRoute("/conversaciones/configuracion")
             }
         ];
 

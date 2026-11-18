@@ -181,8 +181,9 @@ public static class ModuleTopNavPresets
             ("usuarios", "Usuarios", "/usuarios"),
             ("autorizacion", "Autorización de tareas", "/seguridad/autorizacion-tareas"),
             ("perfiles", "Perfiles", "/seguridad/perfiles"),
-            ("accesos-conversaciones", "Accesos a Conversaciones", "/seguridad/accesos-conversaciones"),
-            ("auditoria", "Reporte de auditoría", "/auditoria")
+            ("accesos-conversaciones", "Accesos a Conversaciones", "/seguridad/accesos-conversaciones")
+            // El Reporte de auditoría está en Archivos > Seguridad del menú (como en Alfa), pero tiene sus propias
+            // pestañas (Resumen, Errores, Actividad, Comprobantes): no se pone acá para no cambiar de barra al tocarla.
         ]);
 
     // Centro de ayuda.
@@ -248,10 +249,8 @@ public static class ModuleTopNavPresets
     public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionWebPortal(IRouteContextService routeContext, NavigationManager nav)
         => Build(routeContext, nav, "identidad",
         [
-            ("identidad", "Identidad", "/configuracion-web-portal"),
-            ("empresa", "Configuración general", "/configuracion-general"),
-            ("logo", "Logo de impresión", "/configuracion-general/logo"),
-            ("email", "Email saliente", "/configuracion-general/email")
+            // Solo lo suyo: Configuración General (empresa, logo, correo) es otra opción de Utilidades > Configuración.
+            ("identidad", "Portal web", "/configuracion-web-portal")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildAdministrar(IRouteContextService routeContext, NavigationManager nav, string activeKey)

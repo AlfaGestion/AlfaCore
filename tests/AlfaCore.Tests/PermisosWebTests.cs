@@ -189,6 +189,28 @@ public class PermisosWebTests
         Assert.Contains("Clave = N''D016040''", script);
     }
 
+    [Fact]
+    public void PestanasDeCadaModulo_SonSoloDeEseModulo()
+    {
+        // Una pestaña que lleva a otro módulo cambia toda la barra al tocarla (ej. Seguridad > Usuarios caía en
+        // otro módulo). Excepciones: el inicio de Ventas (/ventas-dashboard) y Usuarios, que se muestra como Seguridad.
+        var permitidas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Ventas:ventas-dashboard", "Seguridad:usuarios" };
+        var codigo = File.ReadAllText(Path.Combine(RepoRoot(), "src", "AlfaCore", "Services", "ModuleTopNavPresets.cs"));
+        var presets = System.Text.RegularExpressions.Regex.Matches(codigo,
+            @"public static IReadOnlyList<PageHeaderTopNavItem> Build(\w+)\(.*?\]\);", System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.NotEmpty(presets);
+        foreach (System.Text.RegularExpressions.Match preset in presets)
+        {
+            var nombre = preset.Groups[1].Value;
+            var segmentos = System.Text.RegularExpressions.Regex.Matches(preset.Value, @"\(""[^""]+"",\s*""[^""]+"",\s*""/([^/""]+)")
+                .Select(m => m.Groups[1].Value).ToList();
+            if (segmentos.Count == 0) continue;
+            var principal = segmentos.GroupBy(x => x, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).First().Key;
+            foreach (var otro in segmentos.Where(x => !x.Equals(principal, StringComparison.OrdinalIgnoreCase)))
+                Assert.True(permitidas.Contains($"{nombre}:{otro}"), $"Build{nombre} tiene una pestaña de otro módulo: /{otro}");
+        }
+    }
+
     private static MenuAutorizacionItemDto Nodo(string clave, string? ruta, params MenuAutorizacionItemDto[] hijos)
         => Nodo(clave, ruta, accion: false, explicito: false, porPerfil: false, autorizado: false, hijos);
 
