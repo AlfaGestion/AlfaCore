@@ -717,7 +717,7 @@ Criterio aplicado:
 
 - Tipo: Page
 - Ubicación: `src/AlfaCore/Components/Pages/ConfiguracionGeneralContable.razor`
-- Propósito: pantalla `/configuracion-general/contable`: plan general de cuentas, índices de ajuste, datos generales, centros de costo y fechas del ejercicio.
+- Propósito: pantalla `/contabilidad/configuracion` (pestaña Configuración de Gestión contable; la ruta vieja `/configuracion-general/contable` redirige): plan general de cuentas, índices de ajuste, datos generales, centros de costo y fechas del ejercicio.
 - Datos que usa: `ConfiguracionContableService`
 - Observaciones: el ejercicio vigente se muestra solo como referencia; queda afuera el «Utilitario CD-W» del legacy.
 

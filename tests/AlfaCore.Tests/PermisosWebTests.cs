@@ -152,6 +152,43 @@ public class PermisosWebTests
         Assert.Equal(PermisoWebAlmacen.Tareas, accion.Almacen);
     }
 
+    [Fact]
+    public void ConfiguracionDeCadaModulo_EstaEnSuModulo_NoEnConfiguracionGeneral()
+    {
+        // 2026-11-18: Ventas, Artículos y Gestión contable tienen su pestaña Configuración.
+        Assert.DoesNotContain(ConfiguracionCatalogo.Entradas, e => e.Ruta.StartsWith("/configuracion-general/ventas", StringComparison.OrdinalIgnoreCase)
+            || e.Ruta.StartsWith("/configuracion-general/articulos", StringComparison.OrdinalIgnoreCase)
+            || e.Ruta.StartsWith("/configuracion-general/contable", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("ventas", Assert.Single(ConfiguracionCatalogo.Entradas, e => e.Clave == "ventas").Modulo);
+        Assert.Equal("articulos", Assert.Single(ConfiguracionCatalogo.Entradas, e => e.Clave == "articulos").Modulo);
+        Assert.Equal("contabilidad", Assert.Single(ConfiguracionCatalogo.Entradas, e => e.Clave == "gestion-contable").Modulo);
+
+        var pages = Path.Combine(RepoRoot(), "src", "AlfaCore", "Components", "Pages");
+        foreach (var (archivo, nueva) in new[] { ("ConfiguracionGeneralVentas.razor", "/ventas/configuracion"),
+                     ("ConfiguracionGeneralArticulos.razor", "/articulos/configuracion"), ("ConfiguracionGeneralContable.razor", "/contabilidad/configuracion") })
+        {
+            var razor = File.ReadAllText(Path.Combine(pages, archivo));
+            Assert.Contains($"@page \"{nueva}\"", razor);
+            Assert.Contains("RedirigirRutaMudada", razor);
+        }
+    }
+
+    [Fact]
+    public void MenuArchivos_SigueLaEstructuraDeAlfa_SinTocarTablasLegacy()
+    {
+        var script = string.Join(Environment.NewLine,
+            File.ReadAllLines(Path.Combine(RepoRoot(), "src", "AlfaCore", "App_Data", "updates", "2026-11-18-003__archivos_estructura_alfa_menu_web.sql"))
+                .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal)));
+        Assert.DoesNotContain("TA_MENU", script);
+        Assert.DoesNotContain("TA_TAREAS", script);
+        // Tablas (D0103) y Precios (D0105) como en Alfa; Paquete y Estudio contable a Utilidades (D98).
+        Assert.Contains("(N''D010301'', N''D0103''", script);
+        Assert.Contains("SET PadreClave = N''D0103''", script);
+        Assert.Contains("SET PadreClave = N''D0105''", script);
+        Assert.Contains("Clave = N''D9832''", script);
+        Assert.Contains("Clave = N''D016040''", script);
+    }
+
     private static MenuAutorizacionItemDto Nodo(string clave, string? ruta, params MenuAutorizacionItemDto[] hijos)
         => Nodo(clave, ruta, accion: false, explicito: false, porPerfil: false, autorizado: false, hijos);
 

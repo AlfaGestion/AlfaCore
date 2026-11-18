@@ -38,7 +38,8 @@ public static class ModuleTopNavPresets
             ("articulos", "Artículos", "/ventas/articulos"),
             ("comparativo", "Comparativo", "/ventas/comparativo"),
             ("vendedores", "Vendedores", "/ventas/vendedores"),
-            ("unidades-negocio", "U. de negocio", "/ventas/unidades-negocio")
+            ("unidades-negocio", "U. de negocio", "/ventas/unidades-negocio"),
+            ("configuracion", "Configuración", "/ventas/configuracion")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildPuntoVenta(IRouteContextService routeContext, NavigationManager nav, string activeKey)
@@ -65,7 +66,8 @@ public static class ModuleTopNavPresets
             ("paquete-estudio", "Paquete estudio", "/contabilidad/paquete-estudio"),
             ("estudio-contable", "Estudio contable", "/contabilidad/estudio-contable"),
             ("fechas-cierre", "Fechas de cierre", "/contabilidad/fechas-de-cierre"),
-            ("control-arca", "Control ARCA", "/contabilidad/control-arca")
+            ("control-arca", "Control ARCA", "/contabilidad/control-arca"),
+            ("configuracion", "Configuración", "/contabilidad/configuracion")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCajaBancos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
@@ -159,7 +161,8 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("articulos", "Artículos", "/articulos"),
-            ("listas", "Listas de precios", "/articulos/listas-precios")
+            ("listas", "Listas de precios", "/articulos/listas-precios"),
+            ("configuracion", "Configuración", "/articulos/configuracion")
         ]);
 
     // Tablas de referencia (antes sin menú propio: se llegaba desde Archivos).
@@ -238,10 +241,8 @@ public static class ModuleTopNavPresets
         [
             ("empresa", "Empresa", "/configuracion-general"),
             ("logo", "Logo y Estilo", "/configuracion-general/logo"),
-            ("email", "Email", "/configuracion-general/email"),
-            ("ventas", "Ventas", "/configuracion-general/ventas"),
-            ("articulos", "Artículos", "/configuracion-general/articulos"),
-            ("contable", "Gestión contable", "/configuracion-general/contable")
+            ("email", "Email", "/configuracion-general/email")
+            // La configuración de Ventas, Artículos y Gestión contable está en la pestaña "Configuración" de cada módulo.
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionWebPortal(IRouteContextService routeContext, NavigationManager nav)
@@ -272,6 +273,24 @@ public static class ModuleTopNavPresets
             ("disenador", "Diseñador", "/documentos/disenador"),
             ("configuracion", "Configuración", "/documentos/configuracion")
         ]);
+
+    /// <summary>
+    /// Si la pantalla se abrió por una ruta que se mudó (link o favorito viejo), navega a la nueva
+    /// conservando la base (/{idweb}/{idbase}) y la query. Devuelve true si redirigió.
+    /// </summary>
+    public static bool RedirigirRutaMudada(NavigationManager nav, string rutaVieja, string rutaNueva)
+    {
+        var rel = nav.ToBaseRelativePath(nav.Uri);
+        var corte = rel.IndexOfAny(['?', '#']);
+        var path = (corte < 0 ? rel : rel[..corte]).TrimEnd('/');
+        var resto = corte < 0 ? string.Empty : rel[corte..];
+        var vieja = rutaVieja.Trim('/');
+        if (!path.Equals(vieja, StringComparison.OrdinalIgnoreCase)
+            && !path.EndsWith("/" + vieja, StringComparison.OrdinalIgnoreCase))
+            return false;
+        nav.NavigateTo(path[..^vieja.Length] + rutaNueva.Trim('/') + resto, replace: true);
+        return true;
+    }
 
     private static IReadOnlyList<PageHeaderTopNavItem> Build(
         IRouteContextService routeContext,

@@ -30,7 +30,7 @@ Accesos locales, sujetos a que el preview esté iniciado:
 
 - Listado: <http://localhost:5055/ALFANET/153/ventas/carga-comprobantes>.
 - Carga directa: <http://localhost:5055/ALFANET/153/ventas/carga-comprobantes/nuevo>.
-- Configuración: <http://localhost:5055/ALFANET/153/configuracion-general/ventas?tab=carga-comprobantes>.
+- Configuración: <http://localhost:5055/ALFANET/153/ventas/configuracion?tab=carga-comprobantes>.
 
 La aplicación permite probar estos circuitos acotados. **No está habilitada la emisión en producción ni certificada la equivalencia general de grabación con Alfa Gestión.**
 
@@ -139,7 +139,7 @@ Los resultados y PDF reales se conservan localmente en `artifacts/ventas/homolog
 
 ### Implementado
 
-- Configuración General → Ventas incorpora «Carga de comprobantes», con 35 claves confirmadas, agrupadas e indicando alcance, permisos y funciones todavía pendientes. Acceso directo: `/ALFANET/153/configuracion-general/ventas?tab=carga-comprobantes`.
+- Ventas → Configuración (antes Configuración General → Ventas) incorpora «Carga de comprobantes», con 35 claves confirmadas, agrupadas e indicando alcance, permisos y funciones todavía pendientes. Acceso directo: `/ALFANET/153/configuracion-general/ventas?tab=carga-comprobantes`.
 - Edición sobre `TA_CONFIGURACION`, únicamente claves modificadas, transacción y auditoría central, validación por tipo, versión para conflictos concurrentes y revalidación de administrador central y base activa. No cambia Portal Cliente/ARCA/POS/Mercado Pago al guardar esta pestaña.
 - Inventario consultable de claves del VB6 sin exponer valores sensibles ni presentarlas como implementadas. `USAPROFORMA` (POS) y `UsaFacturaProforma` (Carga/legacy) son claves diferentes.
 - Corregida la búsqueda de cliente: el evento de selección nula de cada tecla ya no borra el texto enlazado. Misma corrección en búsqueda de factura asociada. CUIT normalizado con o sin guiones/puntos/espacios; comodines como texto literal; coincidencia exacta prioritaria.

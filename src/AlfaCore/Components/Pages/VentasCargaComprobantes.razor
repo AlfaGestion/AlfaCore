@@ -714,7 +714,7 @@
         {
             var path = new Uri(Navigation.Uri).AbsolutePath;
             var indice = path.IndexOf("/ventas/carga-comprobantes", StringComparison.OrdinalIgnoreCase);
-            return (indice >= 0 ? path[..indice] : string.Empty) + "/configuracion-general/ventas?tab=mail";
+            return (indice >= 0 ? path[..indice] : string.Empty) + "/ventas/configuracion?tab=mail";
         }
     }
 

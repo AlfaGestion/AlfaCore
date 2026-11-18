@@ -211,6 +211,22 @@ que respetar esta regla.
 - "Ver todos los números" de Conversaciones sigue en `CONV_ADMINISTRADORES`; "Configurar Conversaciones" ya no
   sale de ahí sino del permiso explícito (o `TA_USUARIOS.Administrador`).
 
+### Dónde va cada pantalla en el menú (obligatorio, 2026-11-18)
+
+- **Nada suelto.** Toda pantalla cuelga de un módulo (`PadreClave` con módulo o grupo); nunca de la raíz ni solo
+  del engranaje de Configuración (el engranaje es un buscador, no un lugar).
+- **Lo que comparte con Alfa sigue la estructura de Alfa** (`TA_MENU`): Archivos > Maestros / Tablas (D0103) /
+  Precios (D0105) / Seguridad (D0150) / Interfaces (D0160), Utilidades (D98), etc. Antes de ubicarla, mirar dónde
+  está esa opción en Alfa.
+- **Lo nuevo de la web va en su módulo** (Ventas, Conversaciones, Gestión contable…) o, si es de seguridad, en
+  Archivos > Seguridad. Si no encaja en ninguno, se crea un módulo; no se cuelga de cualquier lado.
+- **La configuración de un módulo es una pestaña "Configuración" del módulo** (`/ventas/configuracion`,
+  `/articulos/configuracion`, `/contabilidad/configuracion`). Configuración General queda solo para lo de la
+  empresa (datos, logo, correo). Si una ruta se muda, la vieja redirige con `ModuleTopNavPresets.RedirigirRutaMudada`.
+- **Las pestañas de un módulo son solo suyas**: no poner pestañas que saltan a otro módulo.
+- No reusar una clave de Alfa para otra cosa. Hay casos viejos (D010180 Logística, D016002 Catálogo, D016003
+  Carrito, D9808 Calendario) que no se cambian porque son la clave de módulos facturados en `ALFA_CENTRAL.Modulos`.
+
 ### Estructura obligatoria del script (5 pasos, en este orden)
 
 1. **Guardia** — si no existe `ALFACORE_MENU_WEB`, hacer `RETURN`
