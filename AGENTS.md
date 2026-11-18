@@ -197,6 +197,20 @@ pasa a `ALFACORE_TAREAS_WEB` (solo a usuarios que ya tienen permisos web explíc
 en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Esa protección es una red de seguridad: los scripts nuevos igual tienen
 que respetar esta regla.
 
+### Regla única de permisos, permisos explícitos y perfiles (2026-11-18)
+
+- **Una sola regla** en `PermissionService` (la usan el menú y `HasAccessAsync`): sin ninguna fila en
+  `ALFACORE_TAREAS_WEB` el usuario ve todo; con alguna, solo lo tildado. Si falla la lectura, se niega.
+- **Permisos de acción** (partes de un módulo, sin pantalla propia): se definen en `PermisosWebCatalogo` y
+  tienen fila en `ALFACORE_MENU_WEB` **sin `RutaWeb`** con `PadreClave` del módulo (aparecen en Autorización de
+  tareas pero no en el menú). Los **explícitos** (`Explicito: true`, por ejemplo `D010185-WEB-CONV-CONFIG`)
+  se guardan en `ALFACORE_PERMISOS_WEB_EXPLICITOS`: nunca se dan por "ve todo" y no convierten al usuario en
+  restringido. Consultarlos con `IPermissionService.HasAccessAsync(clave)`.
+- **Perfiles** (`ALFACORE_PERFILES_WEB*`): un perfil por usuario. Sus claves se copian a las tablas de permisos
+  con `IdPerfil` (NULL = propio). No escribir filas con `IdPerfil` fuera de `AutorizacionTareasService`.
+- "Ver todos los números" de Conversaciones sigue en `CONV_ADMINISTRADORES`; "Configurar Conversaciones" ya no
+  sale de ahí sino del permiso explícito (o `TA_USUARIOS.Administrador`).
+
 ### Estructura obligatoria del script (5 pasos, en este orden)
 
 1. **Guardia** — si no existe `ALFACORE_MENU_WEB`, hacer `RETURN`

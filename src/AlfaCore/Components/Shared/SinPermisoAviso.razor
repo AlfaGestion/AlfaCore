@@ -1,0 +1,21 @@
+@* Aviso de pantalla sin permiso: en vez de mandar al usuario a otra pantalla sin explicar,
+   le dice qué le falta y a quién pedírselo (2026-11-18). *@
+@inject AlfaCore.Services.IRouteContextService RouteContext
+
+<section class="sin-permiso" role="alert">
+    <i class="bi bi-shield-lock sin-permiso__icono" aria-hidden="true"></i>
+    <h2>@Titulo</h2>
+    <p>@Mensaje</p>
+    <p class="sin-permiso__ayuda">Pedíselo a un administrador: se da en <strong>Seguridad → Autorización de tareas</strong> (o con un perfil).</p>
+    @if (!string.IsNullOrWhiteSpace(VolverA))
+    {
+        <a class="btn btn--primary" href="@RouteContext.BuildRoute(VolverA)"><i class="bi bi-arrow-left"></i> @VolverTexto</a>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Titulo { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Mensaje { get; set; } = string.Empty;
+    [Parameter] public string? VolverA { get; set; }
+    [Parameter] public string VolverTexto { get; set; } = "Volver";
+}

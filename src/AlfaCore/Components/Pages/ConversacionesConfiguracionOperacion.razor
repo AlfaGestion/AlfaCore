@@ -36,8 +36,8 @@
         break;
 
     case "administradores":
-        <ConversacionesConfigPagina Titulo="Administradores" Descripcion="Ven y pueden responder por cualquier número de WhatsApp, sin importar a cuáles estén vinculados.">
-            <Estado><AlfaTag Tone="AlfaTagTone.Neutral">@Administradores.Count administrador(es)</AlfaTag></Estado>
+        <ConversacionesConfigPagina Titulo="Ven todos los números" Descripcion="Estos usuarios ven y pueden responder por cualquier número de WhatsApp, sin importar a cuáles estén vinculados. Esto no les da permiso para configurar: eso es el permiso «Configurar Conversaciones» en Seguridad → Autorización de tareas.">
+            <Estado><AlfaTag Tone="AlfaTagTone.Neutral">@Administradores.Count usuario(s)</AlfaTag></Estado>
             <ChildContent>
                 <ConversacionesConfigTarjeta Titulo="Usuarios">
                     @if (UsuariosSistema.Count == 0)

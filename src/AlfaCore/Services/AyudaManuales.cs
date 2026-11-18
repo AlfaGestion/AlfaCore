@@ -62,6 +62,7 @@ public static class AyudaManuales
         ("/compras/reportes","reportes","Buscar y generar"),
         ("/compras/actividad","reportes","Actividad de compras"),
         ("/seguridad/autorizacion-tareas","seguridad","Autorización de tareas"),
+        ("/seguridad/perfiles","seguridad","Perfiles de permisos"),
         ("/stock/reportes","stock","Reportes de stock"),
         ("/stock/movimientos","stock","Cargar un movimiento") });
 

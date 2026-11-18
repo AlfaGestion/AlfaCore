@@ -55,6 +55,8 @@ public static class ConfiguracionCatalogo
             "/usuarios", "bi-people", ["usuarios"], "usuario login acceso", Principal: true),
         new("autorizacion-tareas", "Permisos por tarea", "Qué puede hacer cada usuario en cada módulo.", AreaUsuarios,
             "/seguridad/autorizacion-tareas", "bi-shield-lock", ["seguridad", "usuarios"], "permisos tareas roles autorizacion", Principal: true),
+        new("perfiles-permisos", "Perfiles de permisos", "Grupos de permisos (Vendedor, Administración...) que se asignan a los usuarios.", AreaUsuarios,
+            "/seguridad/perfiles", "bi-people-fill", ["seguridad", "usuarios"], "perfiles roles grupos permisos"),
 
         new("ventas", "Ventas", "Parámetros de facturación y ventas.", AreaComercial,
             "/configuracion-general/ventas", "bi-receipt", ["ventas"], "facturacion comprobantes precios", Principal: true),
@@ -93,7 +95,7 @@ public static class ConfiguracionCatalogo
             "/conversaciones/configuracion?seccion=automatizacion&subseccion=horario", "bi-clock", ["conversaciones"], "horario fuera de horario mensaje automatico"),
         new("conv-reglas", "Reglas por palabras clave", "Respuestas, derivaciones y prioridad sin IA.", AreaConversaciones,
             "/conversaciones/configuracion?seccion=automatizacion&subseccion=reglas", "bi-signpost-split", ["conversaciones"], "palabras clave derivar"),
-        new("conv-administradores", "Administradores de conversaciones", "Quién ve y responde por todos los números.", AreaConversaciones,
+        new("conv-administradores", "Ven todos los números", "Quién ve y responde por todos los números de WhatsApp.", AreaConversaciones,
             "/conversaciones/configuracion?seccion=operacion-accesos&subseccion=administradores", "bi-person-gear", ["conversaciones"], "accesos supervisores"),
 
         new("reuniones-publicas", "Reuniones públicas", "Tipos de reunión y capacitación que los clientes pueden reservar.", AreaAgenda,
@@ -121,6 +123,15 @@ public static class ConfiguracionCatalogo
             .Where(e => rutas.Contains(NormalizarRuta(e.RutaBase)) || modulos.Contains(e.Modulo))
             .ToList();
     }
+
+    /// <summary>
+    /// Saca las entradas de Configuración de Conversaciones si el usuario no puede configurarla (permiso
+    /// "Configurar Conversaciones" o administrador del sistema): el engranaje no ofrece lo que no se puede abrir.
+    /// </summary>
+    public static IReadOnlyList<ConfiguracionEntrada> SegunPermisoConversaciones(IReadOnlyList<ConfiguracionEntrada> visibles, bool puedeConfigurarConversaciones)
+        => puedeConfigurarConversaciones
+            ? visibles
+            : visibles.Where(e => !string.Equals(e.RutaBase, "/conversaciones/configuracion", StringComparison.OrdinalIgnoreCase)).ToList();
 
     /// <summary>Entradas para "Este módulo", la principal primero.</summary>
     public static IReadOnlyList<ConfiguracionEntrada> DelModulo(IEnumerable<ConfiguracionEntrada> visibles, string? moduloActual)

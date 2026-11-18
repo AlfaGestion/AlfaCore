@@ -38,6 +38,15 @@
 
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
+@if (_sinPermiso)
+{
+    <SinPermisoAviso Titulo="No tenés permiso para configurar Conversaciones"
+                     Mensaje="Para cambiar canales, números, el asistente IA o las reglas hace falta el permiso «Configurar Conversaciones» o ser administrador del sistema."
+                     VolverA="/conversaciones"
+                     VolverTexto="Volver a Conversaciones" />
+}
+else
+{
 <section class="page-grid settings-page">
     <AlfaNotification Message="@_feedback" OnDismiss="DismissFeedback" />
 
@@ -1032,6 +1041,7 @@
                        OnConfirm="ConfirmCancelStartedConfigurationAsync"
                        OnCancel="CloseCancelStartedDialog" />
 </section>
+}
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
@@ -1073,6 +1083,7 @@
     private Func<Task>? _pendingNavigation;
     private bool _discardChangesDialogOpen;
     private bool _navigationReady;
+    private bool _sinPermiso;
     private string? _internalNavigationUri;
 
     private enum SettingsEditorMode
@@ -1264,7 +1275,7 @@
         [
             new("prioridades", "Prioridades"),
             new("accesos-numero", "Accesos por número"),
-            new("administradores", "Administradores")
+            new("administradores", "Ven todos los números")
         ]),
         new("soporte", "Soporte",
         [
@@ -1350,7 +1361,9 @@
 
             if (!await AuthorizationSvc.CanManageAsync(expectedBaseId, _lifetimeCts.Token))
             {
-                Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"), replace: true);
+                // Se explica en pantalla en vez de mandarlo a la bandeja sin decir nada.
+                _sinPermiso = true;
+                await InvokeAsync(StateHasChanged);
                 return;
             }
 
@@ -4873,7 +4886,7 @@
             "No se pudieron guardar los administradores de conversaciones.");
 
         _feedback = result.Success
-            ? AppUiMessage.Success("Administradores guardados", "Los usuarios marcados ya pueden ver y responder por cualquier número.")
+            ? AppUiMessage.Success("Guardado", "Los usuarios marcados ya pueden ver y responder por cualquier número.")
             : result.Feedback;
 
         if (result.Success)
@@ -6212,7 +6225,7 @@
             "automatizacion" => $"{CountActiveAutomations()} automatización(es) activa(s)",
             "informes" => "Informe mensual por cliente",
             "respuestas-rapidas" => "Textos guardados para el chat",
-            "operacion-accesos" => $"{_administradores.Count} administrador(es)",
+            "operacion-accesos" => $"{_administradores.Count} usuario(s) ven todos los números",
             "soporte" => HasWebhookToken ? "Webhook SaaS configurado" : "Webhook Token no configurado",
             _ => string.Empty
         };

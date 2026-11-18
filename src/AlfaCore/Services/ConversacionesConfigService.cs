@@ -2370,9 +2370,16 @@ public sealed class ConversacionesConfigService(
             await cn.OpenAsync(token);
             await using var tx = await cn.BeginTransactionAsync(token);
 
+            // Solo se reemplazan los marcados a mano: quienes lo tienen por su perfil (IdPerfil con
+            // valor, script 2026-11-18-001) se manejan desde Seguridad > Perfiles.
             const string sqlDelete = """
-                DELETE FROM dbo.CONV_ADMINISTRADORES
-                WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                IF COL_LENGTH(N'dbo.CONV_ADMINISTRADORES', N'IdPerfil') IS NULL
+                    DELETE FROM dbo.CONV_ADMINISTRADORES
+                    WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                ELSE
+                    EXEC sys.sp_executesql N'DELETE FROM dbo.CONV_ADMINISTRADORES
+                        WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema AND IdPerfil IS NULL;',
+                        N'@Sistema nvarchar(50)', @Sistema = @Sistema;
                 """;
             await using (var cmd = new SqlCommand(sqlDelete, cn, (SqlTransaction)tx))
             {
@@ -2384,7 +2391,11 @@ public sealed class ConversacionesConfigService(
             {
                 const string sqlInsert = """
                     INSERT INTO dbo.CONV_ADMINISTRADORES (Usuario, Sistema)
-                    VALUES (@Usuario, @Sistema);
+                    SELECT @Usuario, @Sistema
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM dbo.CONV_ADMINISTRADORES
+                        WHERE UPPER(LTRIM(RTRIM(Usuario))) = UPPER(@Usuario)
+                          AND UPPER(LTRIM(RTRIM(Sistema))) = UPPER(@Sistema));
                     """;
                 await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
                 cmd.Parameters.AddWithValue("@Usuario", usuario);

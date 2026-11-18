@@ -125,6 +125,19 @@
     border-color: rgba(244, 63, 94, .2);
 }
 
+.auth-badge--perfil {
+    background: rgba(56, 189, 248, .12);
+    color: #8fd8ff;
+    border-color: rgba(56, 189, 248, .25);
+}
+
+.auth-badge--explicito {
+    background: rgba(168, 85, 247, .12);
+    color: #d4b0ff;
+    border-color: rgba(168, 85, 247, .25);
+}
+
+
 /* ── Children: indentation + tree connector lines ────────────────────── */
 
 .auth-tree-node__children {

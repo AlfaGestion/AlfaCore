@@ -38,3 +38,34 @@ Escribí en la barra superior parte del nombre de la opción, por ejemplo «cobr
 - **Grabar** guarda los cambios del usuario.
 - **Cancelar** descarta todo lo que no grabaste y vuelve a mostrar lo que estaba guardado.
 - Mientras haya cambios sin grabar no podés consultar otro usuario. Primero grabá o cancelá.
+
+**Quién ve qué (la regla)**
+
+- Un usuario **sin ninguna opción tildada ve todo** el menú web. Apenas le tildás una y grabás, pasa a ver **solo lo tildado**. La pantalla te avisa antes de grabar cuando eso cambia.
+- Algunas opciones dicen **Solo si se tilda** (por ejemplo **Configurar Conversaciones** y **Ver todos los números**). Esas las tiene únicamente quien las tenga tildadas: no se dan por "ver todo" y tampoco cuentan para la regla anterior, así que tildarlas no le esconde el resto del menú. Al tildar un módulo entero tampoco se tildan solas: se marcan una por una.
+- Conversaciones tiene tres partes que se dan por separado: **Plantillas de WhatsApp**, **Configurar Conversaciones** (canales, números, asistente IA y reglas; también la tiene el administrador del sistema) y **Ver todos los números** (ver y responder los chats de todos los números).
+- Si alguien entra a una pantalla para la que no tiene permiso, ve un aviso que le dice qué permiso le falta.
+
+**Perfil del usuario**
+
+En el panel de la derecha, **Perfil** asigna un perfil (ver *Perfiles de permisos*). Las opciones del perfil se suman a las del usuario y aparecen tildadas con la marca **Perfil**: no se pueden destildar desde acá; se cambian en el perfil. Elegí **Sin perfil** para sacárselo y grabá.
+
+## Perfiles de permisos
+
+Un perfil es un grupo de permisos con nombre (por ejemplo **Vendedor** o **Administración**) que se asigna a los usuarios. Así no hace falta tildar opción por opción en cada uno: cuando cambiás el perfil, el cambio les llega a todos los que lo tienen.
+
+**Crear un perfil**
+
+1. Entrá a **Seguridad → Perfiles** y pulsá **Nuevo perfil**.
+2. Poné el **Nombre** y, si querés, una **Descripción**.
+3. Tildá las opciones del árbol. Podés buscar una opción escribiendo parte de su nombre.
+4. Pulsá **Grabar**.
+
+**Asignarlo a un usuario**
+
+En **Seguridad → Autorización de tareas**, consultá el usuario, elegí el perfil en **Perfil** y grabá. Cada usuario tiene un perfil como máximo; además puede tener opciones propias.
+
+**Cambiar o eliminar un perfil**
+
+- Elegí el perfil en la lista, cambiá lo que necesites y pulsá **Grabar**: se aplica en el momento a todos sus usuarios (la pantalla dice quiénes lo tienen).
+- **Eliminar** borra el perfil. Sus usuarios se quedan sin perfil y conservan solo sus opciones propias.
