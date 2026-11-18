@@ -5,10 +5,12 @@
         <ChildContent>
             @if (_manual is { } manual)
             {
-                <AlfaTabs Items="@Temas" ActiveKey="@manual.Tema.Clave" ActiveKeyChanged="CambiarTema" AriaLabel="Manuales de ayuda" />
-                <div class="ayuda-contextual__modos">
-                    <AlfaButton Variant="@(!_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>_chat=false">Guías</AlfaButton>
-                    <AlfaButton Variant="@(_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" Icon="bi bi-stars" OnClick="AbrirChat">Preguntar a IA</AlfaButton>
+                <div class="ayuda-contextual__barra">
+                    <AlfaSelect Label="Manual" Value="@manual.Tema.Clave" ValueChanged="CambiarTema" Options="@Temas" Class="ayuda-contextual__manual" />
+                    <div class="ayuda-contextual__modos">
+                        <AlfaButton Variant="@(!_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>_chat=false">Guías</AlfaButton>
+                        <AlfaButton Variant="@(_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" Icon="bi bi-stars" OnClick="AbrirChat">Preguntar a IA</AlfaButton>
+                    </div>
                 </div>
                 @if (Open && _chatIniciado)
                 {
@@ -18,35 +20,43 @@
                 }
                 @if (!_chat)
                 {
-                <AlfaInput Label="Buscar en esta ayuda" Placeholder="Importar, duplicados, saldo, retenciones…" Value="@_buscar" ValueChanged="Buscar" MaxLength="200" />
+                <AlfaInput Label="Buscar en toda la ayuda" Placeholder="Qué querés hacer: facturar, dar de alta un cliente, cerrar la caja…" Value="@_buscar" ValueChanged="Buscar" MaxLength="200" />
                 <div class="ayuda-contextual__layout">
                     <nav class="ayuda-contextual__indice" aria-label="Tareas del manual">
-                        <small>@Articulos.Count tarea(s)</small>
-                        @foreach (var articulo in Articulos)
+                        <small>@ResumenIndice</small>
+                        @foreach (var r in Resultados)
                         {
-                            <AlfaButton Variant="@(Articulo?.Id==articulo.Id && !_completo ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>Elegir(articulo.Id)">@articulo.Titulo</AlfaButton>
+                            <AlfaButton Variant="@(EsElegido(r) ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>ElegirResultado(r.Tema.Clave,r.Articulo.Id)">
+                                <span class="ayuda-contextual__item">
+                                    <span>@r.Articulo.Titulo</span>
+                                    @if (Buscando && r.Tema.Clave!=manual.Tema.Clave)
+                                    {
+                                        <small>@r.Tema.Nombre</small>
+                                    }
+                                </span>
+                            </AlfaButton>
                         }
                     </nav>
-                    <article class="ayuda-contextual__contenido" aria-label="Contenido de la ayuda" @key="(_manual.Tema.Clave,_completo,Articulo?.Id)">
+                    <article class="ayuda-contextual__contenido" aria-label="Contenido de la ayuda" @key="(_manual.Tema.Clave,_completo,Elegido?.Tema.Clave,Elegido?.Articulo.Id)">
                         @if (_completo)
                         {
                             @((MarkupString)AyudaManuales.Html(manual.Contenido))
                         }
-                        else if (Articulo is { } elegido)
+                        else if (Elegido is { } elegido)
                         {
-                            <h2>@elegido.Titulo</h2>
-                            @((MarkupString)AyudaManuales.Html(elegido.Contenido))
+                            <h2>@elegido.Articulo.Titulo</h2>
+                            @((MarkupString)AyudaManuales.Html(elegido.Articulo.Contenido))
                         }
                         else
                         {
-                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No encontramos esa explicación" Message="Probá otra palabra o abrí el manual completo. Esta ayuda muestra los procedimientos documentados del sistema." />
+                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No encontramos esa explicación" Message="Probá con otras palabras, elegí otro manual o tocá «Preguntar a IA». Esta ayuda muestra los procedimientos documentados del sistema." />
                         }
                     </article>
                 </div>
                 }
                 @if (!_chat)
                 {
-                    <small class="ayuda-contextual__fuente">Fuente: manual de @manual.Tema.Nombre. La ayuda no registra ni modifica operaciones.</small>
+                    <small class="ayuda-contextual__fuente">Fuente: manual de @(_completo ? manual.Tema.Nombre : Elegido?.Tema.Nombre ?? manual.Tema.Nombre). La ayuda no registra ni modifica operaciones.</small>
                 }
             }
         </ChildContent>
@@ -62,16 +72,23 @@
 
 @code {
     [Parameter] public bool Open { get; set; }
-    [Parameter] public string Tema { get; set; }="conciliacion";
+    [Parameter] public string Tema { get; set; }="general";
     [Parameter] public string? SeccionInicial { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
-    private static readonly IReadOnlyList<AlfaTabItem> Temas=AyudaManuales.Temas.Select(t=>new AlfaTabItem(t.Clave,t.Nombre)).ToArray();
+    // Selector agrupado por módulo: con un manual por módulo, una pestaña por manual no entra en pantalla.
+    private static readonly IReadOnlyList<AlfaSelectOption> Temas=AyudaManuales.Temas.Select(t=>new AlfaSelectOption(t.Clave,t.Nombre,Group:t.Grupo)).ToArray();
     private AyudaManual? _manual;
     private string? _parametroAnterior;
-    private string _buscar="",_seleccion="";
+    private string _buscar="",_seleccion="",_temaSeleccion="";
     private bool _completo,_estabaAbierto,_chat,_chatIniciado;
-    private IReadOnlyList<AyudaArticulo> Articulos=>_manual is null ? [] : AyudaManuales.Buscar(_manual,_buscar);
-    private AyudaArticulo? Articulo=>Articulos.FirstOrDefault(a=>a.Id==_seleccion) ?? Articulos.FirstOrDefault();
+    private bool Buscando=>!string.IsNullOrWhiteSpace(_buscar);
+    private string ResumenIndice=>Buscando ? $"{Resultados.Count} resultado(s) en toda la ayuda" : $"{Resultados.Count} tarea(s)";
+    // Sin texto: las tareas del manual elegido. Con texto: lo que coincide en toda la ayuda, primero el manual elegido.
+    private IReadOnlyList<AyudaResultado> Resultados=>_manual is null ? []
+        : Buscando ? AyudaManuales.BuscarEnTodo(_buscar,_manual.Tema.Clave)
+        : _manual.Articulos.Select(a=>new AyudaResultado(_manual.Tema,a)).ToArray();
+    private AyudaResultado? Elegido=>Resultados.FirstOrDefault(r=>r.Articulo.Id==_seleccion && (_temaSeleccion.Length==0 || r.Tema.Clave==_temaSeleccion)) ?? Resultados.FirstOrDefault();
+    private bool EsElegido(AyudaResultado r)=>!_completo && Elegido is { } e && e.Tema.Clave==r.Tema.Clave && e.Articulo.Id==r.Articulo.Id;
     protected override void OnParametersSet()
     {
         if(Open && (!_estabaAbierto || Tema!=_parametroAnterior))
@@ -83,11 +100,12 @@
     }
     private void CambiarTema(string? tema)
     {
-        _manual=AyudaManuales.Obtener(AyudaManuales.Temas.Any(t=>t.Clave==tema) ? tema! : "conciliacion");
-        _buscar="";_seleccion="";_completo=false;
+        _manual=AyudaManuales.Obtener(AyudaManuales.Temas.Any(t=>t.Clave==tema) ? tema! : "general");
+        _buscar="";_seleccion="";_temaSeleccion="";_completo=false;
     }
     private void AbrirChat() { _chatIniciado=true;_chat=true; }
     private void AbrirFuente(AyudaFuente fuente) { CambiarTema(fuente.Tema);Elegir(fuente.Articulo);_chat=false; }
-    private void Buscar(string? texto) { _buscar=texto ?? "";_completo=false; }
-    private void Elegir(string id) { _seleccion=id;_completo=false; }
+    private void Buscar(string? texto) { _buscar=texto ?? "";_seleccion="";_temaSeleccion="";_completo=false; }
+    private void Elegir(string id) { _seleccion=id;_temaSeleccion="";_completo=false; }
+    private void ElegirResultado(string tema,string id) { _seleccion=id;_temaSeleccion=tema;_completo=false; }
 }

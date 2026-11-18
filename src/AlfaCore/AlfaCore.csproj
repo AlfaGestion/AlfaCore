@@ -41,6 +41,22 @@
     <EmbeddedResource Include="Docs\manual_stock_movimientos.md" />
     <EmbeddedResource Include="Docs\manual_punto_venta_salon.md" />
     <EmbeddedResource Include="Docs\manual_punto_venta_mostrador.md" />
+    <EmbeddedResource Include="Docs\manual_archivos.md" />
+    <EmbeddedResource Include="Docs\manual_auditoria_usuarios.md" />
+    <EmbeddedResource Include="Docs\manual_compras.md" />
+    <EmbeddedResource Include="Docs\manual_carga_compras.md" />
+    <EmbeddedResource Include="Docs\manual_ventas.md" />
+    <EmbeddedResource Include="Docs\manual_catalogos_interfaces.md" />
+    <EmbeddedResource Include="Docs\manual_cierre_caja.md" />
+    <EmbeddedResource Include="Docs\manual_utilidades.md" />
+    <EmbeddedResource Include="Docs\manual_conversaciones.md" />
+    <EmbeddedResource Include="Docs\manual_alfaknowledge_conversaciones.md" />
+    <EmbeddedResource Include="Docs\manual_conversaciones_chat_web.md" />
+    <EmbeddedResource Include="Docs\manual_crm.md" />
+    <EmbeddedResource Include="Docs\manual_calendario_eventos_repetidos.md" />
+    <EmbeddedResource Include="Docs\manual_tickets_horas.md" />
+    <EmbeddedResource Include="Docs\manual_novedades.md" />
+    <EmbeddedResource Include="Docs\manual_logistica.md" />
   </ItemGroup>
 
   <ItemGroup>

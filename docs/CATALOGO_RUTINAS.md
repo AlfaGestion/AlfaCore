@@ -81,7 +81,7 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/AyudaManuales.cs`
 - Propósito: catálogo cerrado de manuales embebidos (`src/AlfaCore/Docs/manual_*.md`) y mapa pantalla → manual y artículo que abre el ícono de ayuda (`Pantallas`, `TemaParaRuta`, `SeccionParaRuta`).
 - Datos que usa: recursos Markdown embebidos; no lee base de datos ni rutas aportadas por el usuario.
-- Observaciones: cada `##`/`###` de un manual es un artículo. Al documentar una pantalla nueva, agregar su ruta a `Pantallas`; `AyudaContextualTests` falla si el artículo no existe en el manual.
+- Observaciones: un manual por módulo (`AyudaTema.Grupo` = módulo del menú; la ventana de ayuda los muestra en un selector agrupado). Cada `##`/`###` con texto propio es un artículo (los títulos que solo agrupan y el «Índice» no). `BuscarEnTodo` busca en todos los manuales (primero el actual). Al crear una pantalla, documentarla en el manual de su módulo y agregar su ruta a `Pantallas` (lo específico antes que lo general; `$` al final = la ruta termina ahí). `AyudaContextualTests` falla si el artículo no existe o si una pestaña de módulo o una entrada del engranaje no tiene ayuda. El chat con IA (`AyudaIaService`) usa los mismos manuales.
 
 ### FiltroPeriodo
 

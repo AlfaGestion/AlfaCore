@@ -1,6 +1,27 @@
 # Seguridad
 
-Pantallas para administrar quién puede usar cada opción de AlfaCore. Los cambios se aplican sobre la base activa.
+Pantallas para administrar quién puede usar cada opción de AlfaCore. Los cambios se aplican sobre la base activa. Está en **Archivos → Seguridad**, como en Alfa Gestión, y sus pestañas son Usuarios, Autorización de tareas, Perfiles y Accesos a Conversaciones. El **Reporte de auditoría** también está en Archivos → Seguridad y tiene su propio manual (Auditoría).
+
+## Usuarios
+
+Alta, edición y baja de los usuarios que entran al sistema.
+
+**Crear un usuario**
+
+1. Pulsá **Nuevo usuario**.
+2. Completá **Nombre** (con ese nombre ingresa al sistema) y **Email**.
+3. Definí la contraseña inicial. Si marcás **Clave próximo inicio**, el usuario tiene que cambiarla la primera vez que entra.
+4. Pulsá **Guardar**.
+
+Después, en **Autorización de tareas**, definí qué puede usar (o asignale un perfil).
+
+**Editar o dar de baja**
+
+Hacé clic en el usuario para abrir su ficha y editarla. **Dar de baja** lo deja inactivo: no puede ingresar, pero su historial se conserva. Para varios usuarios, marcalos y usá **Dar de baja** desde la selección.
+
+**Buscar y filtrar**
+
+El buscador filtra por nombre o email. El embudo permite ver activos o inactivos; el filtro **Activos** viene aplicado.
 
 ## Autorización de tareas
 

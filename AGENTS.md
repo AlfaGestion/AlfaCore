@@ -224,6 +224,7 @@ que respetar esta regla.
   `/articulos/configuracion`, `/contabilidad/configuracion`). Configuración General queda solo para lo de la
   empresa (datos, logo, correo). Si una ruta se muda, la vieja redirige con `ModuleTopNavPresets.RedirigirRutaMudada`.
 - **Las pestañas de un módulo son solo suyas**: no poner pestañas que saltan a otro módulo.
+- **Toda pantalla nueva lleva su ayuda**: una sección `##` (y `###` por acción) en el manual de su módulo (`src/AlfaCore/Docs/manual_*.md`) y su ruta en `AyudaManuales.Pantallas`. Es lo que leen los clientes y el chat de ayuda con IA; `AyudaContextualTests` lo controla.
 - No reusar una clave de Alfa para otra cosa. Hay casos viejos (D010180 Logística, D016002 Catálogo, D016003
   Carrito, D9808 Calendario) que no se cambian porque son la clave de módulos facturados en `ALFA_CENTRAL.Modulos`.
 

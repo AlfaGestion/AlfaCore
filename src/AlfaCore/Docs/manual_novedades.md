@@ -1,6 +1,14 @@
-# Novedades y Comunicados
+# Informes y comunicados
 
-## Dónde se ven
+El módulo **Informes** tiene dos pestañas: **Artículos** (documentos e informes de la empresa) y **Comunicados** (avisos para el equipo).
+
+## Artículos e informes
+
+En **Informes → Artículos** se escriben documentos internos (procedimientos, informes, notas) con un editor de texto. Al crear uno, elegí una plantilla (**Seleccione una plantilla**) y, si querés, **Agregar portada**. El documento guarda sus **Versiones** anteriores y admite **Comentarios** del equipo.
+
+## Novedades y comunicados
+
+### Dónde se ven
 
 - **Campana (barra superior):** cuando hay algo nuevo aparece con un punto azul. Al tocarlo se
   abre completo.
@@ -27,10 +35,3 @@ en la página.
 
 Un comunicado publicado muestra el aviso "Ya está publicado": lo que se guarde se actualiza
 enseguida para todos. **Vista previa** muestra cómo lo va a ver el usuario.
-
-## Novedades de AlfaCore (para el equipo de desarrollo)
-
-No se cargan desde la pantalla. Cada versión suma una entrada en `NovedadesSistemaCatalogo`
-(`src/AlfaCore/Models/NovedadesSistemaModels.cs`) y su contenido en
-`src/AlfaCore/App_Data/novedades-sistema/` (HTML con los mismos bloques del editor; capturas en
-`wwwroot/img/novedades/`). Llegan a todas las empresas con el deploy.
