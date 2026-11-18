@@ -179,6 +179,7 @@ public static class ModuleTopNavPresets
             ("usuarios", "Usuarios", "/usuarios"),
             ("autorizacion", "Autorización de tareas", "/seguridad/autorizacion-tareas"),
             ("perfiles", "Perfiles", "/seguridad/perfiles"),
+            ("accesos-conversaciones", "Accesos a Conversaciones", "/seguridad/accesos-conversaciones"),
             ("auditoria", "Reporte de auditoría", "/auditoria")
         ]);
 

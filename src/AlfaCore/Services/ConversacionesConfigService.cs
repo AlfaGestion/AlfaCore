@@ -1859,6 +1859,60 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar el número de WhatsApp.", ct);
     }
 
+    public Task SaveWhatsAppNumeroUsuariosAsync(int idNumero, IReadOnlyList<string> usuarios, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(usuarios);
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveWhatsAppNumeroUsuarios", async token =>
+        {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
+            if (idNumero <= 0)
+                throw new InvalidOperationException("Elegí el número de WhatsApp.");
+
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (sistema.Length == 0)
+                throw new InvalidOperationException("No se pudo determinar el sistema del usuario actual.");
+
+            var lista = usuarios
+                .Select(u => (u ?? string.Empty).Trim())
+                .Where(u => u.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            await using (var cmd = new SqlCommand("""
+                DELETE FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS
+                WHERE IdNumero = @IdNumero AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """, cn, (SqlTransaction)tx))
+            {
+                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            foreach (var usuario in lista)
+            {
+                await using var cmd = new SqlCommand("""
+                    INSERT INTO dbo.CONV_WHATSAPP_NUMERO_USUARIOS (IdNumero, Usuario, Sistema)
+                    VALUES (@IdNumero, @Usuario, @Sistema);
+                    """, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                cmd.Parameters.AddWithValue("@Usuario", usuario);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+            await appEvents.LogAuditAsync("Conversaciones", "SaveWhatsAppNumeroUsuarios", "CONV_WHATSAPP_NUMERO_USUARIOS",
+                idNumero.ToString(CultureInfo.InvariantCulture), "Usuarios del número de WhatsApp actualizados.",
+                new { IdNumero = idNumero, Usuarios = lista }, token);
+            return true;
+        }, "No se pudieron guardar los usuarios del número.", ct);
+    }
+
     public async Task<ConversacionWhatsAppNumeroDto> UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(
         int idBase,
         ConversacionWhatsAppNumeroDto numero,

@@ -1,0 +1,270 @@
+@page "/seguridad/accesos-conversaciones"
+@page "/{idweb}/{idbase:int}/seguridad/accesos-conversaciones"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
+@inject AlfaCore.Services.IConversacionesAuthorizationService AuthorizationSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ITenantIdentityReadiness TenantIdentityReadiness
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+@* Quién ve todos los números de WhatsApp y qué usuarios atienden cada número. Antes estaba en
+   Conversaciones → Configuración → Operación y accesos; se movió a Seguridad (2026-11-18) para que todos
+   los permisos estén en un mismo lugar. *@
+
+<PageTitle>Accesos a Conversaciones | Alfa Gestión</PageTitle>
+
+@if (_sinPermiso)
+{
+    <SinPermisoAviso Titulo="No tenés permiso para cambiar los accesos a Conversaciones"
+                     Mensaje="Hace falta el permiso «Configurar Conversaciones» o ser administrador del sistema."
+                     VolverA="/seguridad/autorizacion-tareas"
+                     VolverTexto="Volver a Autorización de tareas" />
+}
+else
+{
+<div class="gd-page gd gd-legacy accesos-conv-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_loading)
+    {
+        <div class="accesos-conv__estado"><i class="bi bi-hourglass-split"></i> Cargando...</div>
+    }
+    else
+    {
+        <ConversacionesConfigPagina Titulo="Ven todos los números"
+                                    Descripcion="Estos usuarios ven y responden las conversaciones de cualquier número de WhatsApp, sin importar a qué números estén asignados. No les da permiso para configurar Conversaciones.">
+            <Estado><AlfaTag Tone="AlfaTagTone.Neutral">@_verTodos.Count usuario(s)</AlfaTag></Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta Titulo="Usuarios">
+                    @if (_usuarios.Count == 0)
+                    {
+                        <AlfaEmptyState Title="No hay usuarios activos" Message="No hay usuarios activos en este sistema." />
+                    }
+                    else
+                    {
+                        <div class="cfg-checks" role="group" aria-label="Usuarios que ven todos los números">
+                            @foreach (var usuario in _usuarios)
+                            {
+                                <div class="cfg-check-tile">
+                                    <AlfaCheckbox Value="@_verTodos.Contains(usuario.Nombre)"
+                                                  ValueChanged="@((bool? v) => ToggleVerTodos(usuario.Nombre, v == true))">
+                                        @usuario.Nombre
+                                    </AlfaCheckbox>
+                                </div>
+                            }
+                        </div>
+                    }
+                </ConversacionesConfigTarjeta>
+                <ConversacionesConfigAyuda>
+                    <ol>
+                        <li>Pensado para quien coordina la atención: supervisores o encargados de WhatsApp.</li>
+                        <li>Es lo mismo que el permiso «Ver todos los números» de Autorización de tareas: se puede marcar en cualquiera de los dos lugares. Si alguien lo tiene por su perfil, se le saca desde Perfiles.</li>
+                    </ol>
+                </ConversacionesConfigAyuda>
+                <ConversacionesConfigBarraGuardar HayCambios="@VerTodosConCambios" Busy="@_busy"
+                                                  OnGuardar="GuardarVerTodosAsync" OnDescartar="DescartarVerTodos" />
+            </ChildContent>
+        </ConversacionesConfigPagina>
+
+        <ConversacionesConfigPagina Titulo="Quién atiende cada número"
+                                    Descripcion="Marcá qué usuarios ven y responden las conversaciones de cada número de WhatsApp. Si un número no tiene ningún usuario marcado, lo ven todos.">
+            @if (_numeros.Count == 0)
+            {
+                <ConversacionesConfigTarjeta>
+                    <AlfaEmptyState Title="No hay números de WhatsApp conectados" Message="Cuando se conecte un número en Conversaciones → Configuración → Canales, vas a poder asignarle usuarios acá." />
+                </ConversacionesConfigTarjeta>
+            }
+            else
+            {
+                @foreach (var numero in _numeros)
+                {
+                    var seleccion = _porNumero[numero.IdNumero];
+                    <ConversacionesConfigTarjeta Titulo="@ConversacionesConfiguracion.GetNumeroDisplayName(numero)"
+                                                 Descripcion="@(seleccion.Count == 0 ? "Sin usuarios marcados: lo ven todos." : $"Lo atienden {seleccion.Count} usuario(s) y los que ven todos los números.")">
+                        <div class="cfg-checks" role="group" aria-label="@($"Usuarios del número {ConversacionesConfiguracion.GetNumeroDisplayName(numero)}")">
+                            @foreach (var usuario in _usuarios)
+                            {
+                                <div class="cfg-check-tile">
+                                    <AlfaCheckbox Value="@seleccion.Contains(usuario.Nombre)"
+                                                  ValueChanged="@((bool? v) => ToggleNumero(numero.IdNumero, usuario.Nombre, v == true))">
+                                        @usuario.Nombre
+                                    </AlfaCheckbox>
+                                </div>
+                            }
+                        </div>
+                        <ConversacionesConfigBarraGuardar HayCambios="@NumeroConCambios(numero.IdNumero)" Busy="@_busy"
+                                                          OnGuardar="() => GuardarNumeroAsync(numero.IdNumero)"
+                                                          OnDescartar="() => DescartarNumero(numero.IdNumero)" />
+                    </ConversacionesConfigTarjeta>
+                }
+            }
+        </ConversacionesConfigPagina>
+    }
+</div>
+}
+
+@code {
+    /// <summary>Base de la dirección (/{idweb}/{idbase}/...): las lecturas se validan contra ella, como en Configuración.</summary>
+    private int? BaseIdRuta => idbase is > 0 ? idbase : null;
+
+    private IReadOnlyList<UsuarioSistemaDto> _usuarios = [];
+    private IReadOnlyList<ConversacionWhatsAppNumeroDto> _numeros = [];
+    private HashSet<string> _verTodos = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _verTodosOriginal = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, HashSet<string>> _porNumero = [];
+    private readonly Dictionary<int, HashSet<string>> _porNumeroOriginal = [];
+    private bool _loading = true;
+    private bool _busy;
+    private bool _sinPermiso;
+    private AppUiMessage? _feedback;
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    private bool VerTodosConCambios => !_verTodos.SetEquals(_verTodosOriginal);
+
+    private bool NumeroConCambios(int idNumero)
+        => _porNumero.TryGetValue(idNumero, out var actual)
+           && _porNumeroOriginal.TryGetValue(idNumero, out var original)
+           && !actual.SetEquals(original);
+
+    protected override async Task OnInitializedAsync()
+    {
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "seguridad",
+            Title = "Accesos a Conversaciones",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildSeguridad(RouteContext, Nav, "accesos-conversaciones")
+        });
+
+        // La pantalla puede armarse con el formulario de ingreso encima: al entrar el usuario se vuelve a evaluar.
+        AppUserSession.StateChanged += OnSesionCambio;
+        await InicializarAsync();
+    }
+
+    private void OnSesionCambio() => _ = InvokeAsync(async () =>
+    {
+        await InicializarAsync();
+        StateHasChanged();
+    });
+
+    private async Task InicializarAsync()
+    {
+        _loading = true;
+        _sinPermiso = false;
+        try
+        {
+            // Esperar a que la sesión y la base de la dirección estén listas antes de mirar permisos: si no,
+            // recién entrando el usuario todavía no está cargado y parecería que no tiene permiso.
+            await SessionInitialization.WaitUntilReadyAsync();
+            await TenantIdentityReadiness.WaitForTenantIdentityReadyAsync();
+            if (!AppUserSession.IsAuthenticated)
+                return;
+
+            if (!await AuthorizationSvc.CanManageAsync(BaseIdRuta))
+            {
+                _sinPermiso = true;
+                return;
+            }
+
+            await CargarAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        AppUserSession.StateChanged -= OnSesionCambio;
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private async Task CargarAsync()
+    {
+        var usuarios = await UiOps.RunAsync(() => ConfigSvc.GetUsuariosSistemaAsync(BaseIdRuta), "No se pudieron cargar los usuarios.");
+        var numeros = await UiOps.RunAsync(() => ConfigSvc.GetWhatsAppNumerosAsync(BaseIdRuta), "No se pudieron cargar los números de WhatsApp.");
+        var verTodos = await UiOps.RunAsync(() => ConfigSvc.GetConversacionAdministradoresAsync(BaseIdRuta), "No se pudo cargar quién ve todos los números.");
+        _feedback = usuarios.Feedback ?? numeros.Feedback ?? verTodos.Feedback;
+
+        _usuarios = usuarios.Value ?? [];
+        _numeros = (numeros.Value ?? []).Where(n => n.Activo).ToList();
+        _verTodosOriginal = new HashSet<string>(verTodos.Value ?? [], StringComparer.OrdinalIgnoreCase);
+        _verTodos = new HashSet<string>(_verTodosOriginal, StringComparer.OrdinalIgnoreCase);
+
+        _porNumero.Clear();
+        _porNumeroOriginal.Clear();
+        foreach (var numero in _numeros)
+        {
+            _porNumeroOriginal[numero.IdNumero] = new HashSet<string>(numero.Usuarios, StringComparer.OrdinalIgnoreCase);
+            _porNumero[numero.IdNumero] = new HashSet<string>(numero.Usuarios, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void ToggleVerTodos(string usuario, bool marcado)
+    {
+        if (marcado) _verTodos.Add(usuario); else _verTodos.Remove(usuario);
+    }
+
+    private void DescartarVerTodos() => _verTodos = new HashSet<string>(_verTodosOriginal, StringComparer.OrdinalIgnoreCase);
+
+    private async Task GuardarVerTodosAsync()
+    {
+        _busy = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => ConfigSvc.SaveConversacionAdministradoresAsync(_verTodos.ToList()), "No se pudo guardar quién ve todos los números.");
+            if (!result.Success)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            _verTodosOriginal = new HashSet<string>(_verTodos, StringComparer.OrdinalIgnoreCase);
+            _feedback = AppUiMessage.Success("Guardado", "Los usuarios marcados ya ven y responden por cualquier número.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ToggleNumero(int idNumero, string usuario, bool marcado)
+    {
+        var seleccion = _porNumero[idNumero];
+        if (marcado) seleccion.Add(usuario); else seleccion.Remove(usuario);
+    }
+
+    private void DescartarNumero(int idNumero)
+        => _porNumero[idNumero] = new HashSet<string>(_porNumeroOriginal[idNumero], StringComparer.OrdinalIgnoreCase);
+
+    private async Task GuardarNumeroAsync(int idNumero)
+    {
+        _busy = true;
+        try
+        {
+            var usuarios = _porNumero[idNumero].ToList();
+            var result = await UiOps.RunAsync(() => ConfigSvc.SaveWhatsAppNumeroUsuariosAsync(idNumero, usuarios), "No se pudieron guardar los usuarios del número.");
+            if (!result.Success)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            _porNumeroOriginal[idNumero] = new HashSet<string>(usuarios, StringComparer.OrdinalIgnoreCase);
+            _feedback = AppUiMessage.Success("Guardado", usuarios.Count == 0
+                ? "El número quedó sin usuarios asignados: lo ven todos."
+                : "Los usuarios marcados ya atienden ese número.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

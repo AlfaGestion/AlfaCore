@@ -5,6 +5,9 @@
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
+@inject AlfaCore.Services.IConversacionesAuthorizationService AuthorizationSvc
+@inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
 @inject NavigationManager Nav
 @inject Microsoft.JSInterop.IJSRuntime Js
 @implements IDisposable
@@ -139,11 +142,84 @@
                     <AlfaEmptyState Title="Sin informe para este período" Message="Elegí un mes y tocá Generar, o abrí un informe guardado." />
                 </ConversacionesConfigTarjeta>
             }
+
+            @* Estilo del resumen que redacta la IA. Antes estaba en Configuración → Informes (2026-11-18). *@
+            @if (_estilo is not null && _estiloOriginal is not null)
+            {
+                <ConversacionesConfigTarjeta Titulo="Estilo del informe"
+                                             Descripcion="Definís solo el tono del resumen que redacta la IA; el formato (viñetas, largo, no inventar, sin saludo ni firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío se usa el texto por defecto.">
+                    <ConversacionesConfigTexto Id="informe-instrucciones" Label="Instrucciones de tono y estilo" Filas="4"
+                                               Placeholder="@ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"
+                                               Value="@_estilo.InformeInstrucciones" ValueChanged="@((string? v) => _estilo.InformeInstrucciones = v ?? string.Empty)" />
+                    <ConversacionesConfigBarraGuardar HayCambios="@EstiloConCambios" Busy="@_guardandoEstilo"
+                                                      OnGuardar="GuardarEstiloAsync" OnDescartar="DescartarEstilo" />
+                </ConversacionesConfigTarjeta>
+            }
         </ChildContent>
     </ConversacionesConfigPagina>
 </div>
 
 @code {
+    // Estilo del informe (solo para quien puede configurar Conversaciones).
+    private ConversacionAutomatizacionesConfigDto? _estilo;
+    private ConversacionAutomatizacionesConfigDto? _estiloOriginal;
+    private bool _guardandoEstilo;
+
+    private bool EstiloConCambios
+        => _estilo is not null && _estiloOriginal is not null
+           && !string.Equals((_estilo.InformeInstrucciones ?? string.Empty).Trim(), (_estiloOriginal.InformeInstrucciones ?? string.Empty).Trim(), StringComparison.Ordinal);
+
+    private async Task CargarEstiloAsync()
+    {
+        _estilo = null;
+        _estiloOriginal = null;
+        try
+        {
+            // Con la sesión todavía cargando parecería que no puede configurar.
+            await SessionInitialization.WaitUntilReadyAsync();
+            var baseId = CurrentExpectedBaseIdOrNull();
+            if (!await AuthorizationSvc.CanManageAsync(baseId))
+                return;
+
+            _estilo = await ConfigSvc.GetAutomatizacionesConfigAsync(baseId);
+            _estiloOriginal = await ConfigSvc.GetAutomatizacionesConfigAsync(baseId);
+        }
+        catch
+        {
+            // Sin el estilo la pantalla de informes sigue funcionando; el error ya queda registrado por el servicio.
+            _estilo = null;
+            _estiloOriginal = null;
+        }
+    }
+
+    private void DescartarEstilo()
+    {
+        if (_estilo is not null && _estiloOriginal is not null)
+            _estilo.InformeInstrucciones = _estiloOriginal.InformeInstrucciones;
+    }
+
+    private async Task GuardarEstiloAsync()
+    {
+        if (_estilo is null)
+            return;
+
+        _guardandoEstilo = true;
+        try
+        {
+            await ConfigSvc.SaveAutomatizacionesConfigAsync(_estilo, ConversacionAutomatizacionSeccion.Informe);
+            _estiloOriginal!.InformeInstrucciones = _estilo.InformeInstrucciones;
+            SetFeedback(true, "Se guardó el estilo del informe. Se usa al generar o regenerar un informe.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(false, ex.Message);
+        }
+        finally
+        {
+            _guardandoEstilo = false;
+        }
+    }
+
     // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
     // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
     // condición borraba el header de la página nueva (se veía un instante el sidebar legacy).
@@ -227,6 +303,7 @@
         }
 
         _tenantLoadLease = lease;
+        await CargarEstiloAsync();
         await CargarListaAsync();
         if (IsTenantLoadCurrent(lease) && generation == _loadGeneration)
             await AutoAbrirPeriodoAsync();

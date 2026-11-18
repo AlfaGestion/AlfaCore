@@ -8,7 +8,9 @@ namespace AlfaCore.Services;
 public sealed class ConversacionesRespuestasRapidasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IConversacionesRespuestasRapidasService
+    IAppEventService appEvents,
+    IConversacionesAuthorizationService conversacionesAuthorization,
+    IPermissionService permissions) : IConversacionesRespuestasRapidasService
 {
     private const string ModuleName = "Conversaciones";
     private const int LargoMaximoTexto = 4096; // límite de un mensaje de texto de WhatsApp
@@ -36,6 +38,7 @@ public sealed class ConversacionesRespuestasRapidasService(
     public Task<ConversacionRespuestaRapidaDto> GuardarAsync(ConversacionRespuestaRapidaDto respuesta, string? usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync("GuardarRespuestaRapida", async token =>
         {
+            await EnsurePuedeEditarAsync(token);
             ArgumentNullException.ThrowIfNull(respuesta);
             var atajo = ConversacionRespuestasRapidas.NormalizarAtajo(respuesta.Atajo);
             if (atajo.Length == 0)
@@ -96,6 +99,7 @@ public sealed class ConversacionesRespuestasRapidasService(
     public Task EliminarAsync(int idRespuesta, string? usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync("EliminarRespuestaRapida", async token =>
         {
+            await EnsurePuedeEditarAsync(token);
             if (idRespuesta <= 0)
                 throw new InvalidOperationException("No se recibió la respuesta.");
 
@@ -123,6 +127,16 @@ public sealed class ConversacionesRespuestasRapidasService(
     {
         var v = (value ?? string.Empty).Trim();
         return v.Length == 0 ? null : v.Length > largo ? v[..largo] : v;
+    }
+
+    /// <summary>Editar respuestas rápidas: quien puede configurar Conversaciones o tiene el permiso "Respuestas rápidas".</summary>
+    private async Task EnsurePuedeEditarAsync(CancellationToken ct)
+    {
+        if (await conversacionesAuthorization.CanManageAsync(ct)
+            || await permissions.HasAccessAsync(PermisosWebCatalogo.ConversacionesRespuestas, ct))
+            return;
+
+        throw new InvalidOperationException("No tenés permiso para editar las respuestas rápidas. Pedíselo a un administrador (Seguridad → Autorización de tareas).");
     }
 
     private async Task<T> ExecuteLoggedAsync<T>(string action, Func<CancellationToken, Task<T>> operation, string userMessage, CancellationToken ct)

@@ -40,14 +40,21 @@ public static class PermisosWebCatalogo
     public const string ConversacionesPlantillas = "D010185-WEB-CONV-PLANTILLAS";
     public const string ConversacionesConfigurar = "D010185-WEB-CONV-CONFIG";
     public const string ConversacionesVerTodos = "D010185-WEB-CONV-TODOS";
+    public const string ConversacionesRespuestas = "D010185-WEB-CONV-RESPUESTAS";
 
     /// <summary>Seguridad &gt; Perfiles de permisos.</summary>
     public const string PerfilesMenu = "D015-WEB-PERFILES";
+
+    /// <summary>Seguridad &gt; Accesos a Conversaciones (quién ve todos los números y quién atiende cada número).</summary>
+    public const string AccesosConversacionesMenu = "D015-WEB-ACCESOS-CONV";
 
     public static IReadOnlyList<PermisoWebAccion> Acciones { get; } =
     [
         new(ConversacionesPlantillas, Conversaciones, "Plantillas de WhatsApp",
             "Crear, editar y mandar a aprobar plantillas de WhatsApp.",
+            Explicito: false, PermisoWebAlmacen.Tareas),
+        new(ConversacionesRespuestas, Conversaciones, "Respuestas rápidas",
+            "Crear y editar las respuestas rápidas del chat (se usan escribiendo ::), sin poder cambiar el resto de la configuración.",
             Explicito: false, PermisoWebAlmacen.Tareas),
         new(ConversacionesConfigurar, Conversaciones, "Configurar Conversaciones",
             "Canales, números, asistente IA y reglas. Se da solo si se tilda (o si el usuario es administrador del sistema).",

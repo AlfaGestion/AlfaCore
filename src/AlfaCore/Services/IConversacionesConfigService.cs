@@ -74,6 +74,9 @@ public interface IConversacionesConfigService
     Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, int? expectedBaseId, CancellationToken ct = default);
     Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroByInstanceNameAsync(string instanceName, CancellationToken ct = default);
     Task SaveWhatsAppNumeroAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default);
+
+    /// <summary>Reemplaza solo los usuarios que atienden un número (no toca nombre, estado ni sesión).</summary>
+    Task SaveWhatsAppNumeroUsuariosAsync(int idNumero, IReadOnlyList<string> usuarios, CancellationToken ct = default);
     Task<ConversacionWhatsAppNumeroDto> UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(
         int idBase,
         ConversacionWhatsAppNumeroDto numero,

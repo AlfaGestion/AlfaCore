@@ -48,8 +48,11 @@ public class PermisosWebTests
     public void Catalogo_TodasLasAccionesCuelganDeConversaciones_YEstanEnElScript()
     {
         // Solo el código del script, sin los comentarios (que sí nombran TA_MENU/TA_TAREAS para explicar).
-        var script = string.Join(Environment.NewLine, File.ReadAllLines(Path.Combine(RepoRoot(), "src", "AlfaCore", "App_Data", "updates", "2026-11-18-001__seguridad_permisos_perfiles_menu_web.sql"))
-            .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal)));
+        var updates = Path.Combine(RepoRoot(), "src", "AlfaCore", "App_Data", "updates");
+        var script = string.Join(Environment.NewLine,
+            new[] { "2026-11-18-001__seguridad_permisos_perfiles_menu_web.sql", "2026-11-18-002__seguridad_accesos_conversaciones_menu_web.sql" }
+                .SelectMany(f => File.ReadAllLines(Path.Combine(updates, f)))
+                .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal)));
         foreach (var accion in PermisosWebCatalogo.Acciones)
         {
             Assert.Equal(PermisosWebCatalogo.Conversaciones, accion.PadreClave);
@@ -57,6 +60,7 @@ public class PermisosWebTests
             Assert.True(accion.Clave.Length <= 50, accion.Clave);
         }
         Assert.Contains(PermisosWebCatalogo.PerfilesMenu, script);
+        Assert.Contains(PermisosWebCatalogo.AccesosConversacionesMenu, script);
         Assert.DoesNotContain("TA_TAREAS", script);
         Assert.DoesNotContain("TA_MENU", script);
     }
@@ -126,6 +130,26 @@ public class PermisosWebTests
         Assert.DoesNotContain(sin, e => e.RutaBase == "/conversaciones/configuracion");
         Assert.Contains(sin, e => e.RutaBase == "/seguridad/perfiles");
         Assert.Same(todas, ConfiguracionCatalogo.SegunPermisoConversaciones(todas, puedeConfigurarConversaciones: true));
+    }
+
+    [Fact]
+    public void BuscadorDeConfiguracion_NoApuntaASeccionesQueSeMudaron()
+    {
+        // Operación y accesos pasó a Seguridad e Informes a su pestaña (2026-11-18).
+        Assert.DoesNotContain(ConfiguracionCatalogo.Entradas, e => e.Ruta.Contains("seccion=operacion-accesos", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(ConfiguracionCatalogo.Entradas, e => e.Ruta.Contains("seccion=informes", StringComparison.OrdinalIgnoreCase));
+        var accesos = Assert.Single(ConfiguracionCatalogo.Entradas, e => e.RutaBase == "/seguridad/accesos-conversaciones");
+        Assert.Equal(ConfiguracionCatalogo.AreaUsuarios, accesos.Area);
+        Assert.Contains(ConfiguracionCatalogo.Entradas, e => e.Ruta == "/conversaciones/configuracion?seccion=respuestas-rapidas");
+    }
+
+    [Fact]
+    public void RespuestasRapidas_EsUnPermisoComunDeConversaciones()
+    {
+        var accion = PermisosWebCatalogo.Buscar(PermisosWebCatalogo.ConversacionesRespuestas);
+        Assert.NotNull(accion);
+        Assert.False(accion!.Explicito);
+        Assert.Equal(PermisoWebAlmacen.Tareas, accion.Almacen);
     }
 
     private static MenuAutorizacionItemDto Nodo(string clave, string? ruta, params MenuAutorizacionItemDto[] hijos)

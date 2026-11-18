@@ -51,6 +51,14 @@ Criterio aplicado:
 - Datos que usa: `ALFACORE_MENU_WEB`, `ALFACORE_TAREAS_WEB`, `ALFACORE_PERMISOS_WEB_EXPLICITOS`, `ALFACORE_PERFILES_WEB`, `ALFACORE_PERFILES_WEB_CLAVES`, `ALFACORE_PERFILES_WEB_USUARIOS`, `CONV_ADMINISTRADORES`, `TA_USUARIOS`, `V_TA_UnidadNegocio`, `V_TA_CAJAS`, `V_TA_DEPOSITO`.
 - Observaciones: los permisos del perfil se copian marcados con `IdPerfil` (NULL = propio) y se resincronizan al cambiar el perfil; filtra por módulos contratados. Árbol compartido de las pantallas en `Models/MenuAutorizacionArbol.cs`; aviso de pantalla sin permiso en `Components/Shared/SinPermisoAviso.razor`.
 
+### AccesosConversaciones
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/AccesosConversaciones.razor`
+- Propósito: Seguridad > Accesos a Conversaciones: quién ve todos los números de WhatsApp y qué usuarios atienden cada número (antes en Conversaciones > Configuración > Operación y accesos).
+- Datos que usa: `CONV_ADMINISTRADORES`, `CONV_WHATSAPP_NUMERO_USUARIOS`, `CONV_WHATSAPP_NUMEROS`, `TA_USUARIOS` (vía `IConversacionesConfigService`).
+- Observaciones: requiere "Configurar Conversaciones" o administrador del sistema; lee con la base de la ruta y guarda solo los usuarios de cada número (`SaveWhatsAppNumeroUsuariosAsync`). Un número sin usuarios lo ven todos.
+
 ### Launcher
 
 - Tipo: Page

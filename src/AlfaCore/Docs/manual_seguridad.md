@@ -69,3 +69,17 @@ En **Seguridad → Autorización de tareas**, consultá el usuario, elegí el pe
 
 - Elegí el perfil en la lista, cambiá lo que necesites y pulsá **Grabar**: se aplica en el momento a todos sus usuarios (la pantalla dice quiénes lo tienen).
 - **Eliminar** borra el perfil. Sus usuarios se quedan sin perfil y conservan solo sus opciones propias.
+
+## Accesos a Conversaciones
+
+Define quién ve las conversaciones de WhatsApp. Antes estaba en Conversaciones → Configuración → Operación y accesos.
+
+**Ven todos los números**
+
+Marcá a quienes coordinan la atención (supervisores, encargados). Ven y responden las conversaciones de cualquier número. No les da permiso para configurar Conversaciones. Es lo mismo que el permiso **Ver todos los números** de Autorización de tareas.
+
+**Quién atiende cada número**
+
+Para cada número de WhatsApp, marcá qué usuarios lo atienden y pulsá **Guardar**. Un número sin ningún usuario marcado lo ven todos.
+
+Para cambiar estos accesos hace falta el permiso **Configurar Conversaciones** o ser administrador del sistema.

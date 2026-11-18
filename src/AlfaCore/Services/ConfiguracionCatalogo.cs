@@ -83,7 +83,7 @@ public static class ConfiguracionCatalogo
             "plan de cuentas digitos niveles estructura codificacion indices ajuste centros de costo ejercicio fecha operativa " +
             string.Join(" ", ConfiguracionContableService.Definiciones.Select(d => $"{d.Clave} {d.Titulo}")), Principal: true),
 
-        new("conversaciones", "Conversaciones", "Canales, asistente IA, automatizaciones y accesos.", AreaConversaciones,
+        new("conversaciones", "Conversaciones", "Canales, asistente IA, automatizaciones y respuestas rápidas.", AreaConversaciones,
             "/conversaciones/configuracion", "bi-chat-left-text", ["conversaciones"], "whatsapp instagram facebook mercado libre", Principal: true),
         new("conv-whatsapp", "WhatsApp", "Conectar números de WhatsApp con Meta y ver su uso.", AreaConversaciones,
             "/conversaciones/configuracion?seccion=canales&subseccion=whatsapp-api", "bi-whatsapp", ["conversaciones"], "numero meta cloud api coexistence"),
@@ -95,8 +95,10 @@ public static class ConfiguracionCatalogo
             "/conversaciones/configuracion?seccion=automatizacion&subseccion=horario", "bi-clock", ["conversaciones"], "horario fuera de horario mensaje automatico"),
         new("conv-reglas", "Reglas por palabras clave", "Respuestas, derivaciones y prioridad sin IA.", AreaConversaciones,
             "/conversaciones/configuracion?seccion=automatizacion&subseccion=reglas", "bi-signpost-split", ["conversaciones"], "palabras clave derivar"),
-        new("conv-administradores", "Ven todos los números", "Quién ve y responde por todos los números de WhatsApp.", AreaConversaciones,
-            "/conversaciones/configuracion?seccion=operacion-accesos&subseccion=administradores", "bi-person-gear", ["conversaciones"], "accesos supervisores"),
+        new("conv-respuestas", "Respuestas rápidas", "Textos guardados que se usan en el chat escribiendo ::.", AreaConversaciones,
+            "/conversaciones/configuracion?seccion=respuestas-rapidas", "bi-lightning", ["conversaciones"], "atajos textos predefinidos"),
+        new("conv-accesos", "Accesos a Conversaciones", "Quién ve todos los números y qué usuarios atienden cada número de WhatsApp.", AreaUsuarios,
+            "/seguridad/accesos-conversaciones", "bi-person-gear", ["conversaciones", "seguridad"], "accesos supervisores administradores numeros usuarios ver todos"),
 
         new("reuniones-publicas", "Reuniones públicas", "Tipos de reunión y capacitación que los clientes pueden reservar.", AreaAgenda,
             "/calendario/reuniones", "bi-calendar-plus", ["calendario"], "capacitacion reserva turno agenda", Principal: true),

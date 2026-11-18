@@ -3,6 +3,7 @@
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
 @inject AlfaCore.Services.IConversacionesAuthorizationService AuthorizationSvc
+@inject AlfaCore.Services.IPermissionService Permisos
 @inject AlfaCore.Services.IConversacionAsistenteService AsistenteSvc
 @inject AlfaCore.Services.IWhatsAppWebSessionService WhatsAppWebSessionSvc
 @inject AlfaCore.Services.IAnyDeskLocalSettingsService AnyDeskSvc
@@ -41,7 +42,7 @@
 @if (_sinPermiso)
 {
     <SinPermisoAviso Titulo="No tenés permiso para configurar Conversaciones"
-                     Mensaje="Para cambiar canales, números, el asistente IA o las reglas hace falta el permiso «Configurar Conversaciones» o ser administrador del sistema."
+                     Mensaje="Para cambiar canales, números, el asistente IA o las reglas hace falta el permiso «Configurar Conversaciones» o ser administrador del sistema. Para editar solo las respuestas rápidas alcanza con el permiso «Respuestas rápidas»."
                      VolverA="/conversaciones"
                      VolverTexto="Volver a Conversaciones" />
 }
@@ -166,7 +167,7 @@ else
     <div class="settings-workspace">
         <nav class="settings-nav" aria-label="Secciones de Configuración">
             <div class="settings-nav__title">Configuración</div>
-            @foreach (var item in SettingsNavItems)
+            @foreach (var item in NavItems)
             {
                 <button type="button" class="@GetPrimaryTabClass(item.Key)" aria-expanded="@(item.Children.Count > 0 ? IsCategoryExpanded(item.Key) : null)" @onclick="() => SelectPrimaryTab(item.Key)">
                     @if (item.Children.Count > 0)
@@ -199,7 +200,7 @@ else
         <p>Estado general de canales, automatizaciones e integraciones.</p>
     </header>
     <div class="settings-summary-grid">
-        @foreach (var item in SettingsNavItems.Where(i => i.Key != "resumen"))
+        @foreach (var item in NavItems.Where(i => i.Key != "resumen"))
         {
             <button type="button" class="settings-summary-card" @onclick="() => SelectPrimaryTab(item.Key)">
                 <span class="settings-summary-card__label">@item.Label</span>
@@ -653,17 +654,7 @@ else
         <ConversacionesConfiguracionRespuestasRapidas />
     }
 
-    @if (_activePrimaryTab == "informes")
-    {
-        <ConversacionesConfiguracionAutomatizacion Config="_automatizacionesConfig"
-                                                   Original="_automatizacionesOriginal"
-                                                   Seccion="@ConversacionesConfiguracionAutomatizacion.SeccionInforme"
-                                                   Busy="@(Loading || Saving)"
-                                                   OnGuardar="() => SaveAutomatizacionesAsync(ConversacionAutomatizacionSeccion.Informe)"
-                                                   OnDescartar="CancelAutomatizacionesEdit" />
-    }
-
-    @if (_activePrimaryTab == "automatizacion" && _activeSecondaryTab != "reglas")
+    @if (_activePrimaryTab == "automatizacion" && _activeSecondaryTab is not ("reglas" or "prioridades"))
     {
         <ConversacionesConfiguracionAutomatizacion Config="_automatizacionesConfig"
                                                    Original="_automatizacionesOriginal"
@@ -687,21 +678,12 @@ else
                                            OnCancelar="CancelarEdicionRegla" />
     }
 
-    @if (_activePrimaryTab == "operacion-accesos")
+    @if (_activePrimaryTab == "automatizacion" && _activeSecondaryTab == "prioridades")
     {
-        <ConversacionesConfiguracionOperacion Seccion="@_activeSecondaryTab"
-                                              Prioridad="_prioridadConfig"
+        <ConversacionesConfiguracionOperacion Prioridad="_prioridadConfig"
                                               Clasificaciones="_clasificaciones"
-                                              UsuariosSistema="_usuariosSistema"
-                                              Administradores="_administradores"
-                                              AdministradoresConCambios="@IsAdministradoresDirty"
-                                              Numeros="_numeros"
                                               Busy="@(Loading || Saving)"
-                                              OnGuardarPrioridad="SavePrioridadAsync"
-                                              OnGuardarAdministradores="SaveAdministradoresAsync"
-                                              OnDescartarAdministradores="CancelAdministradoresEdit"
-                                              OnToggleAdministrador="@(((string Usuario, bool Seleccionado) cambio) => ToggleAdministrador(cambio.Usuario, cambio.Seleccionado))"
-                                              OnIrACanal="@((string subseccion) => SelectSecondaryTab("canales", subseccion))" />
+                                              OnGuardarPrioridad="SavePrioridadAsync" />
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "numeros")
@@ -980,7 +962,7 @@ else
                            OnCancel="CancelStopWhatsAppWebSession" />
     }
 
-    @if (_activePrimaryTab == "soporte")
+    @if (_activePrimaryTab == "soporte" && EsSuperAdmin)
     {
         <ConversacionesConfiguracionSoporte Seccion="@_activeSecondaryTab"
                                             EsSaaS="@AppMode.IsSaaSMode"
@@ -1151,8 +1133,6 @@ else
         => _selectedBusinessNumeroId.HasValue
             ? ActiveBusinessNumeros.FirstOrDefault(n => n.IdNumero == _selectedBusinessNumeroId.Value)
             : null;
-    private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
-    private HashSet<string> _administradoresOriginal = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
     private string _activePrimaryTab = "resumen";
     private string _activeChannelTab = "whatsapp";
@@ -1236,6 +1216,16 @@ else
     private sealed record SettingsSubnavItem(string Key, string Label);
     private sealed record SettingsNavItem(string Key, string Label, IReadOnlyList<SettingsSubnavItem> Children);
 
+    /// <summary>Solo tiene el permiso "Respuestas rápidas": ve únicamente esa sección.</summary>
+    private bool _soloRespuestas;
+
+    private bool EsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
+
+    /// <summary>Secciones que este usuario ve: Soporte solo el superadmin; con solo "Respuestas rápidas", solo esa.</summary>
+    private IReadOnlyList<SettingsNavItem> NavItems => _soloRespuestas
+        ? SettingsNavItems.Where(i => i.Key == "respuestas-rapidas").ToList()
+        : SettingsNavItems.Where(i => i.Key != "soporte" || EsSuperAdmin).ToList();
+
     private static readonly IReadOnlyList<SettingsNavItem> SettingsNavItems =
     [
         new("resumen", "Resumen", []),
@@ -1267,16 +1257,12 @@ else
             new("reglas", "Reglas"),
             new("auto-cierre", "Auto-cierre"),
             new("sla", "SLA"),
+            new("prioridades", "Prioridades de atención"),
             new("encuesta", "Encuesta de satisfacción")
         ]),
         new("respuestas-rapidas", "Respuestas rápidas", []),
-        new("informes", "Informes", []),
-        new("operacion-accesos", "Operación y accesos",
-        [
-            new("prioridades", "Prioridades"),
-            new("accesos-numero", "Accesos por número"),
-            new("administradores", "Ven todos los números")
-        ]),
+        // "Operación y accesos" pasó a Seguridad > Accesos a Conversaciones y "Informes" (estilo del informe
+        // mensual) a la pestaña Informes (2026-11-18). Soporte lo ve solo el superadmin de ALFA NET.
         new("soporte", "Soporte",
         [
             new("estado-webhooks", "Estado de webhooks"),
@@ -1361,8 +1347,20 @@ else
 
             if (!await AuthorizationSvc.CanManageAsync(expectedBaseId, _lifetimeCts.Token))
             {
-                // Se explica en pantalla en vez de mandarlo a la bandeja sin decir nada.
-                _sinPermiso = true;
+                // Con solo "Respuestas rápidas" entra a esa sección; sin ningún permiso se explica en pantalla
+                // en vez de mandarlo a la bandeja sin decir nada.
+                if (await Permisos.HasAccessAsync(AlfaCore.Services.PermisosWebCatalogo.ConversacionesRespuestas, _lifetimeCts.Token))
+                {
+                    _soloRespuestas = true;
+                    ApplyStartupQuery();
+                    Loading = false;
+                    _navigationReady = true;
+                    UpdatePageHeader();
+                }
+                else
+                {
+                    _sinPermiso = true;
+                }
                 await InvokeAsync(StateHasChanged);
                 return;
             }
@@ -1468,7 +1466,24 @@ else
         var legacyWhatsAppQrOnboarding =
             string.Equals(query.TryGetValue("onboarding", out var onboarding) ? onboarding.ToString() : string.Empty, "whatsapp-qr", StringComparison.OrdinalIgnoreCase);
 
-        var category = SettingsNavItems.FirstOrDefault(item =>
+        // Links viejos: Informes y Operación y accesos se mudaron de pantalla.
+        if (string.Equals(seccion, "informes", StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones/informes"), replace: true);
+            return;
+        }
+        if (string.Equals(seccion, "operacion-accesos", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(subseccion, "prioridades", StringComparison.OrdinalIgnoreCase))
+                (seccion, subseccion) = ("automatizacion", "prioridades");
+            else
+            {
+                Nav.NavigateTo(RouteContext.BuildRoute("/seguridad/accesos-conversaciones"), replace: true);
+                return;
+            }
+        }
+
+        var category = NavItems.FirstOrDefault(item =>
             string.Equals(item.Key, seccion, StringComparison.OrdinalIgnoreCase));
 
         if (category is not null)
@@ -1497,7 +1512,7 @@ else
             return;
         }
 
-        _activePrimaryTab = "resumen";
+        _activePrimaryTab = NavItems[0].Key;
         _activeSecondaryTab = "resumen";
     }
 
@@ -2773,7 +2788,7 @@ else
     private Task SelectPrimaryTab(string tab)
         => RequestNavigationAsync(() =>
         {
-            var category = SettingsNavItems.First(item => item.Key == tab);
+            var category = NavItems.FirstOrDefault(item => item.Key == tab) ?? NavItems[0];
             NavigateToSettingsState(category.Key, category.Children.FirstOrDefault()?.Key);
             return Task.CompletedTask;
         });
@@ -2782,7 +2797,7 @@ else
     {
         var wasActive = string.Equals(_activePrimaryTab, tab, StringComparison.OrdinalIgnoreCase);
         _activePrimaryTab = tab;
-        var category = SettingsNavItems.First(x => x.Key == tab);
+        var category = NavItems.FirstOrDefault(x => x.Key == tab) ?? NavItems[0];
         if (category.Children.Count > 0)
         {
             if (wasActive && _expandedSettingsCategories.Contains(tab))
@@ -2897,15 +2912,10 @@ else
            || (_businessNumeroDraft is not null && SelectedBusinessNumero is not null && !WhatsAppNumeroEquals(_businessNumeroDraft, SelectedBusinessNumero))
            || (_addingApiNumero && !WhatsAppNumeroEquals(_nuevoNumero, new ConversacionWhatsAppNumeroDto { Activo = true }))
            || (_reglaEdicion is not null && _reglaOriginal is not null && !ReglaEquals(_reglaEdicion, _reglaOriginal))
-           || IsAdministradoresDirty
            || IsAutomatizacionesDirty;
 
     private bool HasSecretReplacementChanges
         => _replaceAccessToken || _replaceVerifyToken || _replaceAppSecret;
-
-    private bool IsAdministradoresDirty
-        => !_administradores.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-            .SequenceEqual(_administradoresOriginal.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
 
     private bool IsAutomatizacionesDirty
         => !AutomatizacionesEquals(_automatizacionesConfig, _automatizacionesOriginal);
@@ -2951,7 +2961,6 @@ else
         _reglaEdicion = null;
         _reglaOriginal = null;
         _reglaEsNueva = false;
-        _administradores = CloneAdministradores(_administradoresOriginal);
         _automatizacionesConfig = CloneAutomatizaciones(_automatizacionesOriginal);
         UpdatePageHeader();
     }
@@ -3201,19 +3210,6 @@ else
 
         await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
 
-        var administradoresResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetConversacionAdministradoresAsync(CurrentExpectedBaseIdOrNull()),
-            "No se pudieron cargar los administradores de conversaciones.");
-
-        if (administradoresResult.Success && administradoresResult.Value is not null)
-        {
-            _administradoresOriginal = CloneAdministradores(administradoresResult.Value);
-            _administradores = CloneAdministradores(administradoresResult.Value);
-        }
-        else
-        {
-            _feedback ??= administradoresResult.Feedback;
-        }
 
         await LoadReglasAsync();
 
@@ -4750,9 +4746,6 @@ else
            && left.InformeInstrucciones == right.InformeInstrucciones
            && left.ConfigSource == right.ConfigSource;
 
-    private static HashSet<string> CloneAdministradores(IEnumerable<string> source)
-        => new(source, StringComparer.OrdinalIgnoreCase);
-
     private static List<string> CloneUrgencyTechnicians(IEnumerable<string>? source)
         => NormalizeUrgencyTechnicians(source);
 
@@ -4861,38 +4854,6 @@ else
         Saving = false;
         UpdatePageHeader();
         await InvokeAsync(StateHasChanged);
-    }
-
-    private void ToggleAdministrador(string usuario, bool isChecked)
-    {
-        if (isChecked)
-            _administradores.Add(usuario);
-        else
-            _administradores.Remove(usuario);
-    }
-
-    private void CancelAdministradoresEdit()
-    {
-        _administradores = CloneAdministradores(_administradoresOriginal);
-    }
-
-    private async Task SaveAdministradoresAsync()
-    {
-        Saving = true;
-        _feedback = null;
-
-        var result = await UiOps.RunAsync(
-            () => ConfigSvc.SaveConversacionAdministradoresAsync(_administradores.ToList()),
-            "No se pudieron guardar los administradores de conversaciones.");
-
-        _feedback = result.Success
-            ? AppUiMessage.Success("Guardado", "Los usuarios marcados ya pueden ver y responder por cualquier número.")
-            : result.Feedback;
-
-        if (result.Success)
-            _administradoresOriginal = CloneAdministradores(_administradores);
-
-        Saving = false;
     }
 
     private async Task SavePrioridadAsync()
@@ -6181,7 +6142,7 @@ else
         if (_activePrimaryTab == "resumen")
             return "Conversaciones · Configuración";
 
-        var category = SettingsNavItems.FirstOrDefault(x => x.Key == _activePrimaryTab);
+        var category = NavItems.FirstOrDefault(x => x.Key == _activePrimaryTab);
         var subsection = category?.Children.FirstOrDefault(x => x.Key == GetActiveSecondaryTab());
         var context = subsection?.Label ?? category?.Label ?? "Configuración";
 
@@ -6223,9 +6184,7 @@ else
             "canales" => $"{_numeros.Count} número(s) registrados",
             "asistente-ia" => _automatizacionesConfig.BotActivo ? "Asistente activo" : "Asistente apagado",
             "automatizacion" => $"{CountActiveAutomations()} automatización(es) activa(s)",
-            "informes" => "Informe mensual por cliente",
             "respuestas-rapidas" => "Textos guardados para el chat",
-            "operacion-accesos" => $"{_administradores.Count} usuario(s) ven todos los números",
             "soporte" => HasWebhookToken ? "Webhook SaaS configurado" : "Webhook Token no configurado",
             _ => string.Empty
         };
@@ -6236,9 +6195,7 @@ else
             "canales" => $"WhatsApp: {GetStatusLabel(_config.IsReadyForMetaSetup)} · Instagram: {GetStatusLabel(_instagramConfig.IsReadyForMetaSetup)}",
             "automatizacion" => $"{_reglas.Count} regla(s) cargada(s) · SLA: {(_automatizacionesConfig.SlaActivo ? "Activo" : "Inactivo")}",
             "asistente-ia" => $"Personalidad: {(!string.IsNullOrWhiteSpace(_automatizacionesConfig.AsistenteComportamiento) ? "cargada" : "pendiente")} · AlfaKnowledge: {(_alfaKnowledgeConfig.IsConfigured ? "conectado" : "sin conectar")}",
-            "informes" => string.IsNullOrWhiteSpace(_automatizacionesConfig.InformeInstrucciones) ? "Estilo por defecto" : "Estilo personalizado",
             "respuestas-rapidas" => "En el chat se usan escribiendo ::",
-            "operacion-accesos" => $"{_numeros.Count(x => x.Usuarios.Count > 0)} número(s) con usuarios asignados",
             "soporte" => "Estado calculado con la configuración actualmente cargada",
             _ => string.Empty
         };
