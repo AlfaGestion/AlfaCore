@@ -3,6 +3,8 @@
 @implements IDisposable
 @inject ConciliacionBancariaService Servicio
 @inject IAppUiOperationService UiOps
+@inject NavigationManager Nav
+@inject IRouteContextService RouteContext
 <AlfaDialog CloseOnBackdrop="false" Open="@(ImportacionId.HasValue)" Title="Asiento de gastos e impuestos bancarios" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
     <ChildContent>
     @if(ImportacionId.HasValue) {
@@ -17,6 +19,11 @@
                 y los @calculo.Movimientos.Count movimientos quedan conciliados.</p>
             @foreach(var error in calculo.Errores) { <p class="gastos__error" role="alert">@error</p> }
             @foreach(var aviso in calculo.Avisos) { <p class="gastos__aviso">@aviso</p> }
+            @if(_prep.ConfigDesdePlan) {
+                <p class="gastos__aviso">No hay un modelo de asiento «GASTOS BANCARIOS» completo ni configuración guardada: las cuentas con propuesta se buscaron en el plan de cuentas. Revisalas antes de generar; al generar quedan guardadas.
+                    Si querés definirlas con un modelo (Alfa Gestión también lo usa), creá el asiento y guardalo como modelo (por defecto se llama «GASTOS BANCARIOS»; se cambia con CONCILIACION-GASTOS-MODELO).
+                    <button type="button" class="btn btn--secondary" @onclick="IrAModelos">Ir a Asientos (modelos)</button></p>
+            }
             @if(_prep.ConfigDesdeModelo) { <p class="gastos__aviso">Las cuentas se tomaron del asiento modelo de Alfa Gestión. Al generar el asiento quedan guardadas en la configuración propia de AlfaCore.</p> }
             <div class="gastos__conceptos">
                 @foreach(var concepto in calculo.Conceptos.Where(c=>c.Importe>0||c.Clave!=ConciliacionGastosBancarios.Ganancias)) {
@@ -29,8 +36,9 @@
             </div>
             <div class="gastos__totales">
                 <span>Banco (Haber): <strong>@Dinero(calculo.Total)</strong></span>
-                <span>Libro de IVA Compras: neto gravado @Dinero(libro.NetoGravado) · IVA @Dinero(libro.Iva) · no gravado @Dinero(libro.NetoNoGravado) · percepción IVA @Dinero(libro.PercepcionIva) · Ing. Brutos @Dinero(libro.PercepcionIibb)@(libro.PercepcionGanancias>0 ? $" · Ganancias {Dinero(libro.PercepcionGanancias)}" : "")</span>
+                <span>@(_libroIva ? "Libro de IVA Compras" : "Sin Libro de IVA"): neto gravado @Dinero(libro.NetoGravado) · IVA @Dinero(libro.Iva) · no gravado @Dinero(libro.NetoNoGravado) · percepción IVA @Dinero(libro.PercepcionIva) · Ing. Brutos @Dinero(libro.PercepcionIibb)@(libro.PercepcionGanancias>0 ? $" · Ganancias {Dinero(libro.PercepcionGanancias)}" : "")</span>
             </div>
+            <AlfaCheckbox Value="@_libroIva" ValueChanged="v=>_libroIva=v==true" Disabled="@_busy">Incluir en el Libro de IVA Compras@(ConciliacionGastosBancarios.UsaLibroIva(calculo) ? " (el asiento tiene IVA, percepciones o retenciones)" : " (opcional)")</AlfaCheckbox>
             <div class="gastos__cabecera">
                 <AlfaInput Label="Fecha del asiento" Type="date" Value="@_fecha" ValueChanged="v=>_fecha=v ?? string.Empty" Disabled="@_busy" />
                 <AlfaSelect Label="Unidad de negocio" Value="@_unidad" ValueChanged="CambiarUnidad" Options="@Unidades" Placeholder="Seleccionar unidad" Disabled="@_busy" />
@@ -52,6 +60,7 @@
     private long? _anterior;
     private ConciliacionGastosPreparacion? _prep;
     private readonly Dictionary<string,string> _cuentas=[];
+    private bool _libroIva;
     private string _fecha="",_unidad="",_talonario="",_detalle="";
     private Guid _operacion=Guid.NewGuid();
     private bool _busy;
@@ -72,6 +81,7 @@
         try {
             var prep=await Servicio.PrepararGastosAsync(id,_cts.Token);
             foreach(var (clave,cuenta) in prep.Config.Cuentas)_cuentas[clave]=cuenta;
+            _libroIva=ConciliacionGastosBancarios.UsaLibroIva(prep.Calculo);
             _fecha=prep.FechaSugerida.ToString("yyyy-MM-dd");
             _detalle=$"{prep.Config.Detalle} {prep.FechaSugerida:dd-MM-yyyy} {prep.CuentaBancoNombre}".Trim();
             if(_detalle.Length>200)_detalle=_detalle[..200];
@@ -79,12 +89,13 @@
         } catch(OperationCanceledException) { } catch(Exception ex) { _feedback=UiOps.BuildMessage(ex,"Asiento de gastos bancarios"); } finally { _busy=false; }
     }
     private void CambiarUnidad(string? unidad) { _unidad=unidad ?? "";var tal=TalonariosUnidad;_talonario=tal.Count==1 ? tal[0].Talonario.ToString() : ""; }
+    private void IrAModelos() => Nav.NavigateTo(RouteContext.BuildRoute("/contabilidad/asientos"));
     private async Task Cerrar() { if(!_busy)await OnClose.InvokeAsync(); }
     private async Task Confirmar() {
         if(!PuedeConfirmar||_prep is null||ImportacionId is not { } id||!int.TryParse(_talonario,out var tal)||!DateTime.TryParse(_fecha,CultureInfo.InvariantCulture,DateTimeStyles.None,out var fecha))return;
         _busy=true;_feedback=null;
         try {
-            var resultado=await Servicio.GenerarGastosAsync(new(_operacion,id,_prep.Calculo.Huella,fecha,_unidad,tal,_detalle.Trim(),new Dictionary<string,string>(_cuentas)),_cts.Token);
+            var resultado=await Servicio.GenerarGastosAsync(new(_operacion,id,_prep.Calculo.Huella,fecha,_unidad,tal,_detalle.Trim(),new Dictionary<string,string>(_cuentas),_libroIva),_cts.Token);
             await OnSaved.InvokeAsync(resultado);
         } catch(OperationCanceledException) { } catch(Exception ex) { _feedback=UiOps.BuildMessage(ex,"Asiento de gastos bancarios"); } finally { _busy=false; }
     }

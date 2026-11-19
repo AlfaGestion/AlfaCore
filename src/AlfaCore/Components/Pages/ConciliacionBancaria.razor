@@ -186,6 +186,7 @@
                                 <AlfaSelect Label="Unidad de negocio" Value="@_liqUnidad" ValueChanged="CambiarUnidadLiquidacion" Options="@UnidadesLiq" Placeholder="Seleccionar unidad" Disabled="@_busy" />
                                 <AlfaSelect Label="@($"Talonario {cat.Tc}")" Value="@_liqTalonario" ValueChanged="v => _liqTalonario = v ?? string.Empty" Options="@TalonariosLiq" Placeholder="Seleccionar talonario" Disabled="@_busy" />
                                 <AlfaInput Label="Detalle del asiento" Value="@_liqDetalle" ValueChanged="v => _liqDetalle = v ?? string.Empty" MaxLength="150" Disabled="@_busy" />
+                                <AlfaCheckbox Value="@_liqLibroIva" ValueChanged="v => _liqLibroIva = v == true" Disabled="@_busy">Incluir el IVA de la comisión en el Libro de IVA Compras</AlfaCheckbox>
                                 <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || _liqUnidad.Length == 0 || _liqTalonario.Length == 0)" OnClick="GenerarLiquidacion">Generar @l.Dias.Count asientos</AlfaButton>
                             </div>
                             <p>Se genera un asiento @cat.Tc por día y los créditos de NAVE de ese día quedan conciliados contra el renglón del banco. Cada día se graba por separado: si alguno falla, los anteriores quedan hechos.</p>
@@ -849,6 +850,7 @@
     private LiquidacionCatalogo? _liqCatalogo;
     private string _liqUnidad = "", _liqTalonario = "", _liqDetalle = "Liquidación NAVE";
     private Guid _liqOperacion = Guid.NewGuid();
+    private bool _liqLibroIva = true;
     private async Task PrepararLiquidacion(CancellationToken ct)
     {
         _liquidacion = _resumenDetalle is not null && _filtro.HasValue ? await Servicio.PrepararLiquidacionAsync(_resumenDetalle.DetalleId,_filtro,ct) : null;
@@ -878,7 +880,7 @@
     private Task GenerarLiquidacion() => Operar(async ct =>
     {
         if (_resumenDetalle is null || !_filtro.HasValue || !int.TryParse(_liqTalonario,out var talonario)) return;
-        var r = await Servicio.GenerarLiquidacionAsync(new(_liqOperacion,_filtro.Value,_resumenDetalle.DetalleId,_liqUnidad,talonario,_liqDetalle),ct);
+        var r = await Servicio.GenerarLiquidacionAsync(new(_liqOperacion,_filtro.Value,_resumenDetalle.DetalleId,_liqUnidad,talonario,_liqDetalle,_liqLibroIva),ct);
         ct.ThrowIfCancellationRequested();
         var lista = r.Generados.Count == 0 ? "" : $" Primero: {r.Generados[0].Comprobante}; último: {r.Generados[^1].Comprobante}.";
         _feedback = new AppUiMessage
