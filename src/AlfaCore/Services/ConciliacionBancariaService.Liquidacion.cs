@@ -19,7 +19,8 @@ public sealed record LiquidacionDia(DateTime Fecha,IReadOnlyList<LiquidacionLine
 }
 public sealed record LiquidacionCuenta(string Codigo,string Descripcion,string Relacionada);
 public sealed record LiquidacionPropuesta(long DetalleId,string CuentaBanco,string CuentaComision,string CuentaIva,IReadOnlyList<LiquidacionDia> Dias,
-    IReadOnlyDictionary<string,string> CuentasPorMedio,IReadOnlyList<LiquidacionCuenta> CuentasTarjeta,IReadOnlyList<string> Errores,IReadOnlyList<string> Avisos)
+    IReadOnlyDictionary<string,string> CuentasPorMedio,IReadOnlyList<LiquidacionCuenta> CuentasTarjeta,IReadOnlyList<string> Errores,IReadOnlyList<string> Avisos,
+    IReadOnlyList<LiquidacionCuenta> CuentasGasto)
 {
     public decimal Bruto=>Dias.Sum(d=>d.Bruto);
     public decimal Comision=>Dias.Sum(d=>d.Comision);
@@ -55,6 +56,25 @@ public sealed partial class ConciliacionBancariaService
             if(clave.Length==0) throw new InvalidOperationException("Medio de pago no válido.");
             if(cuenta.Length==0) mapa.Remove(clave); else mapa[clave]=cuenta;
             await GuardarConfigJsonAsync(cn,ClaveCuentasMedio,mapa,"Cuenta del plan de cuentas de cada medio de pago del procesador (se acredita por el bruto al liquidar)",token);
+            return 0;
+        },ct);
+
+    /// <summary>Guarda las cuentas del asiento de liquidación para la comisión (gasto) y el IVA de la comisión (crédito fiscal).</summary>
+    public Task GuardarCuentasComisionAsync(string comision,string iva,CancellationToken ct=default)
+        => Ejecutar("LiquidacionCuentasComision",async(cn,token)=>
+        {
+            var tc=await LeerComprobanteAsync(cn,null,ClaveLiquidacionComprobante,"CC",token);
+            var validas=(await AsientoCatalogoEnConexionAsync(cn,null,token,tc)).Cuentas.Select(c=>c.Codigo).ToHashSet();
+            foreach(var (clave,valor,desc) in new[]{(ClaveCuentaComision,comision.Trim(),"Cuenta de gasto por comisión del procesador de cobro (asiento de liquidación)"),
+                (ClaveCuentaIva,iva.Trim(),"Cuenta de IVA crédito fiscal del IVA de la comisión del procesador de cobro (asiento de liquidación y Libro de IVA Compras)")})
+            {
+                if(valor.Length>0&&!validas.Contains(valor)) throw new InvalidOperationException("Elegí una cuenta activa, contable y en pesos del plan de cuentas.");
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    IF EXISTS(SELECT 1 FROM dbo.TA_CONFIGURACION WITH(UPDLOCK,HOLDLOCK) WHERE CLAVE=@clave)
+                        UPDATE dbo.TA_CONFIGURACION SET VALOR=@valor,FechaHora_Modificacion=GETDATE() WHERE CLAVE=@clave;
+                    ELSE INSERT dbo.TA_CONFIGURACION(GRUPO,CLAVE,VALOR,DESCRIPCION) VALUES('CAJA',@clave,@valor,@desc);
+                    """,new{clave,valor,desc},cancellationToken:token));
+            }
             return 0;
         },ct);
 
@@ -167,7 +187,10 @@ public sealed partial class ConciliacionBancariaService
             if(t is not null&&t.Relacionada.Length>0&&t.Relacionada!=banco) avisos.Add($"La cuenta {t.Codigo} {t.Descripcion} tiene como cuenta relacionada {t.Relacionada}, pero el extracto es de {banco}.");
         }
         if(dias.Count==0) errores.Add("No hay créditos del extracto que coincidan con el detalle: no hay nada para liquidar.");
-        return new(detalle,banco,comision,cuentaIva,dias,new Dictionary<string,string>(mapa),tarjetas,errores,avisos);
+        // Cuentas elegibles para comisión e IVA: las mismas que acepta el grabado (activas, contables, en pesos).
+        var tc=await LeerComprobanteAsync(cn,null,ClaveLiquidacionComprobante,"CC",ct);
+        var cuentasGasto=(await AsientoCatalogoEnConexionAsync(cn,null,ct,tc)).Cuentas.Select(c=>new LiquidacionCuenta(c.Codigo,c.Descripcion,"")).ToList();
+        return new(detalle,banco,comision,cuentaIva,dias,new Dictionary<string,string>(mapa),tarjetas,errores,avisos,cuentasGasto);
     }
 
     private static readonly decimal[] AlicuotasIva=[21m,10.5m,27m,5m,2.5m];

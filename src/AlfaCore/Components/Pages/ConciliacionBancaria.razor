@@ -166,6 +166,12 @@
                     {
                         <h4>Asientos de liquidación propuestos (@l.Dias.Count días)</h4>
                         <p>Por cada día de acreditación: <strong>Debe</strong> @l.CuentaBanco (neto), @(l.CuentaComision.Length > 0 ? l.CuentaComision : "cuenta de comisión sin definir") (comisión) y @(l.CuentaIva.Length > 0 ? l.CuentaIva : "cuenta de IVA crédito fiscal sin definir") (IVA de la comisión, que además se registra en el Libro de IVA Compras); <strong>Haber</strong> la cuenta de cada medio de pago por el bruto. Solo se incluyen los cobros que el banco acreditó y coinciden al centavo. Todavía no se graba nada.</p>
+                        <div class="conciliacion-campos">
+                            <AlfaSelect Label="Cuenta de comisión (gasto)" Value="@l.CuentaComision" ValueChanged="v => GuardarCuentasComision(v,l.CuentaIva)"
+                                Options="@OpcionesGasto" Placeholder="Elegir cuenta" Disabled="@_busy" />
+                            <AlfaSelect Label="Cuenta de IVA crédito fiscal" Value="@l.CuentaIva" ValueChanged="v => GuardarCuentasComision(l.CuentaComision,v)"
+                                Options="@OpcionesGasto" Placeholder="Elegir cuenta" Disabled="@_busy" />
+                        </div>
                         @foreach (var e in l.Errores) { <p role="alert">@e</p> }
                         @foreach (var a in l.Avisos) { <p role="status">@a</p> }
                         <div class="conciliacion-resumen">
@@ -886,6 +892,12 @@
         await PrepararLiquidacion(ct);
     });
     private IReadOnlyList<AlfaSelectOption> OpcionesTarjeta => _liquidacion?.CuentasTarjeta.Select(c => new AlfaSelectOption(c.Codigo,$"{c.Codigo} — {c.Descripcion}")).ToList() ?? [];
+    private IReadOnlyList<AlfaSelectOption> OpcionesGasto => _liquidacion?.CuentasGasto.Select(c => new AlfaSelectOption(c.Codigo,$"{c.Codigo} — {c.Descripcion}")).ToList() ?? [];
+    private Task GuardarCuentasComision(string? comision,string? iva) => Operar(async ct =>
+    {
+        await Servicio.GuardarCuentasComisionAsync(comision ?? "",iva ?? "",ct);
+        await PrepararLiquidacion(ct);
+    });
     private string CuentaDeMedio(string medio)
         => _liquidacion?.Dias.SelectMany(d => d.Lineas).FirstOrDefault(l => l.Medio == medio)?.Cuenta
            ?? _liquidacion?.CuentasPorMedio.GetValueOrDefault(AlfaCore.Services.ConciliacionGastosBancarios.Normalizar(medio)) ?? "";
