@@ -22,6 +22,8 @@ public sealed class HistorialPrecioFiltro
     public decimal UmbralAlerta { get; set; } = 30;
     public bool SoloActivos { get; set; } = true;
     public string TipoAlerta { get; set; } = string.Empty;
+    /// <summary>Cambios del maestro: vacío = todos, ALTA, BAJA o el nombre de la columna de V_MA_ARTICULOS.</summary>
+    public string DatoMaestro { get; set; } = string.Empty;
     public string Orden { get; set; } = string.Empty;
     public int Pagina { get; set; } = 1;
     public int TamanoPagina { get; set; } = 50;
@@ -194,4 +196,53 @@ public sealed class HistorialPrecioFichaDto
     public HistorialPrecioPuntoDto? Actual { get; init; }
     public IReadOnlyList<HistorialPrecioPuntoDto> Puntos { get; init; } = [];
     public bool Truncado { get; init; }
+    /// <summary>Null si la base no tiene instalado el registro de cambios del maestro.</summary>
+    public IReadOnlyList<HistorialMaestroCambioDto>? CambiosMaestro { get; init; }
+}
+
+public static class HistorialMaestroAcciones
+{
+    public const string Alta = "A";
+    public const string Modificacion = "M";
+    public const string Baja = "B";
+}
+
+/// <summary>Un dato del maestro que cambió, o un alta o baja (ALFACORE_ARTICULOS_AUDITORIA).</summary>
+public sealed class HistorialMaestroCambioDto
+{
+    public long Id { get; set; }
+    public DateTime FechaHora { get; set; }
+    public string IdArticulo { get; set; } = string.Empty;
+    public string Codigo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public string Accion { get; set; } = HistorialMaestroAcciones.Modificacion;
+    public string Campo { get; set; } = string.Empty;
+    public string Anterior { get; set; } = string.Empty;
+    public string Nuevo { get; set; } = string.Empty;
+    /// <summary>Nombre del rubro, marca o proveedor cuando el dato es un código.</summary>
+    public string AnteriorNombre { get; set; } = string.Empty;
+    public string NuevoNombre { get; set; } = string.Empty;
+    public string Usuario { get; set; } = string.Empty;
+    public string Programa { get; set; } = string.Empty;
+    public string Equipo { get; set; } = string.Empty;
+    public string LoginSql { get; set; } = string.Empty;
+    public bool Existe { get; set; }
+}
+
+public sealed record HistorialMaestroConteo(string Codigo, int Cantidad);
+
+public sealed class HistorialMaestroDto
+{
+    /// <summary>False si la base todavía no corrió la actualización que crea el registro.</summary>
+    public bool Instalado { get; init; }
+    public bool Activo { get; init; }
+    /// <summary>Desde cuándo se registran cambios en esta base.</summary>
+    public DateTime? RegistraDesde { get; init; }
+    public int Cambios { get; init; }
+    public int Articulos { get; init; }
+    public int Altas { get; init; }
+    public int Bajas { get; init; }
+    public IReadOnlyList<HistorialMaestroConteo> Datos { get; init; } = [];
+    public IReadOnlyList<HistorialMaestroConteo> Usuarios { get; init; } = [];
+    public HistorialPrecioPagina<HistorialMaestroCambioDto> Pagina { get; init; } = new();
 }
