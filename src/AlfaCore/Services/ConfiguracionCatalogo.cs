@@ -55,33 +55,35 @@ public static class ConfiguracionCatalogo
             "/usuarios", "bi-people", ["usuarios"], "usuario login acceso", Principal: true),
         new("autorizacion-tareas", "Permisos por tarea", "Qué puede hacer cada usuario en cada módulo.", AreaUsuarios,
             "/seguridad/autorizacion-tareas", "bi-shield-lock", ["seguridad", "usuarios"], "permisos tareas roles autorizacion", Principal: true),
+        new("perfiles-permisos", "Perfiles de permisos", "Grupos de permisos (Vendedor, Administración...) que se asignan a los usuarios.", AreaUsuarios,
+            "/seguridad/perfiles", "bi-people-fill", ["seguridad", "usuarios"], "perfiles roles grupos permisos"),
 
         new("ventas", "Ventas", "Parámetros de facturación y ventas.", AreaComercial,
-            "/configuracion-general/ventas", "bi-receipt", ["ventas"], "facturacion comprobantes precios", Principal: true),
+            "/ventas/configuracion", "bi-receipt", ["ventas"], "facturacion comprobantes precios", Principal: true),
         new("carga-comprobantes", "Carga de comprobantes", "Precios, IVA, descuentos, proforma y fechas operativas.", AreaComercial,
-            "/configuracion-general/ventas?tab=carga-comprobantes", "bi-file-earmark-plus", ["ventas"],
+            "/ventas/configuracion?tab=carga-comprobantes", "bi-file-earmark-plus", ["ventas"],
             string.Join(" ", ConfiguracionCargaComprobantesService.Definiciones.Select(d => $"{d.Clave} {d.Titulo}"))),
         new("ventas-arca", "Facturación electrónica", "Emisores, certificados, ambiente y puntos electrónicos.", AreaComercial,
-            "/configuracion-general/ventas?tab=factura", "bi-cloud-check", ["ventas"], "arca afip cae homologacion certificado"),
+            "/ventas/configuracion?tab=factura", "bi-cloud-check", ["ventas"], "arca afip cae homologacion certificado"),
         new("ventas-padron", "Padrón ARCA", "Consulta y alta de clientes por CUIT.", AreaComercial,
-            "/configuracion-general/ventas?tab=padron", "bi-person-vcard", ["ventas"], "cuit padron alta cliente"),
+            "/ventas/configuracion?tab=padron", "bi-person-vcard", ["ventas"], "cuit padron alta cliente"),
         new("ventas-pos", "Configuración Punto de Venta", "Mostrador, medios de pago y proforma del POS.", AreaComercial,
-            "/configuracion-general/ventas?tab=puntoventa", "bi-shop", ["ventas"], "pos punto venta proforma medios pago"),
+            "/ventas/configuracion?tab=puntoventa", "bi-shop", ["ventas"], "pos punto venta proforma medios pago"),
         new("puntos-venta", "Puntos de venta", "Puntos de venta, cajas y comprobantes habilitados.", AreaComercial,
             "/ventas/puntos-venta", "bi-shop", ["ventas"], "pos mostrador caja arca afip"),
         new("articulos", "Artículos", "Parámetros de artículos y stock.", AreaComercial,
-            "/configuracion-general/articulos", "bi-box-seam", ["articulos", "stock"], "productos stock codigos perecederos vencimiento", Principal: true),
+            "/articulos/configuracion", "bi-box-seam", ["articulos", "stock"], "productos stock codigos perecederos vencimiento", Principal: true),
         new("cotizaciones", "Cotizaciones", "Formato, textos y condiciones de las cotizaciones.", AreaComercial,
             "/cotizaciones/configuracion", "bi-file-earmark-ruled", ["cotizaciones", "crm"], "presupuesto cotizacion", Principal: true),
         new("catalogo", "Catálogo", "Catálogos públicos, links y visibilidad de precios.", AreaComercial,
             "/catalogo/configuracion", "bi-grid-3x3-gap", ["catalogo", "catalogos"], "catalogo publico precios link", Principal: true),
 
         new("gestion-contable", "Gestión contable", "Plan de cuentas, índices de ajuste, centros de costo y fechas del ejercicio.", AreaContable,
-            "/configuracion-general/contable", "bi-journal-bookmark", ["configuracion-general", "contabilidad"],
+            "/contabilidad/configuracion", "bi-journal-bookmark", ["contabilidad"],
             "plan de cuentas digitos niveles estructura codificacion indices ajuste centros de costo ejercicio fecha operativa " +
             string.Join(" ", ConfiguracionContableService.Definiciones.Select(d => $"{d.Clave} {d.Titulo}")), Principal: true),
 
-        new("conversaciones", "Conversaciones", "Canales, asistente IA, automatizaciones y accesos.", AreaConversaciones,
+        new("conversaciones", "Conversaciones", "Canales, asistente IA, automatizaciones y respuestas rápidas.", AreaConversaciones,
             "/conversaciones/configuracion", "bi-chat-left-text", ["conversaciones"], "whatsapp instagram facebook mercado libre", Principal: true),
         new("conv-whatsapp", "WhatsApp", "Conectar números de WhatsApp con Meta y ver su uso.", AreaConversaciones,
             "/conversaciones/configuracion?seccion=canales&subseccion=whatsapp-api", "bi-whatsapp", ["conversaciones"], "numero meta cloud api coexistence"),
@@ -93,8 +95,10 @@ public static class ConfiguracionCatalogo
             "/conversaciones/configuracion?seccion=automatizacion&subseccion=horario", "bi-clock", ["conversaciones"], "horario fuera de horario mensaje automatico"),
         new("conv-reglas", "Reglas por palabras clave", "Respuestas, derivaciones y prioridad sin IA.", AreaConversaciones,
             "/conversaciones/configuracion?seccion=automatizacion&subseccion=reglas", "bi-signpost-split", ["conversaciones"], "palabras clave derivar"),
-        new("conv-administradores", "Administradores de conversaciones", "Quién ve y responde por todos los números.", AreaConversaciones,
-            "/conversaciones/configuracion?seccion=operacion-accesos&subseccion=administradores", "bi-person-gear", ["conversaciones"], "accesos supervisores"),
+        new("conv-respuestas", "Respuestas rápidas", "Textos guardados que se usan en el chat escribiendo ::.", AreaConversaciones,
+            "/conversaciones/configuracion?seccion=respuestas-rapidas", "bi-lightning", ["conversaciones"], "atajos textos predefinidos"),
+        new("conv-accesos", "Accesos a Conversaciones", "Quién ve todos los números y qué usuarios atienden cada número de WhatsApp.", AreaUsuarios,
+            "/seguridad/accesos-conversaciones", "bi-person-gear", ["conversaciones", "seguridad"], "accesos supervisores administradores numeros usuarios ver todos"),
 
         new("reuniones-publicas", "Reuniones públicas", "Tipos de reunión y capacitación que los clientes pueden reservar.", AreaAgenda,
             "/calendario/reuniones", "bi-calendar-plus", ["calendario"], "capacitacion reserva turno agenda", Principal: true),
@@ -121,6 +125,15 @@ public static class ConfiguracionCatalogo
             .Where(e => rutas.Contains(NormalizarRuta(e.RutaBase)) || modulos.Contains(e.Modulo))
             .ToList();
     }
+
+    /// <summary>
+    /// Saca las entradas de Configuración de Conversaciones si el usuario no puede configurarla (permiso
+    /// "Configurar Conversaciones" o administrador del sistema): el engranaje no ofrece lo que no se puede abrir.
+    /// </summary>
+    public static IReadOnlyList<ConfiguracionEntrada> SegunPermisoConversaciones(IReadOnlyList<ConfiguracionEntrada> visibles, bool puedeConfigurarConversaciones)
+        => puedeConfigurarConversaciones
+            ? visibles
+            : visibles.Where(e => !string.Equals(e.RutaBase, "/conversaciones/configuracion", StringComparison.OrdinalIgnoreCase)).ToList();
 
     /// <summary>Entradas para "Este módulo", la principal primero.</summary>
     public static IReadOnlyList<ConfiguracionEntrada> DelModulo(IEnumerable<ConfiguracionEntrada> visibles, string? moduloActual)

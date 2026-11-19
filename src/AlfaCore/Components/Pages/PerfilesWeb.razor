@@ -1,0 +1,322 @@
+@page "/seguridad/perfiles"
+@page "/{idweb}/{idbase:int}/seguridad/perfiles"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IAutorizacionTareasService AutorizacionSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Perfiles de permisos | Alfa Gestión</PageTitle>
+
+<div class="gd-page gd gd-legacy perfiles-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <div class="perfiles-layout">
+        <aside class="perfiles-lista panel-card">
+            <div class="perfiles-lista__header">
+                <h3 class="panel-card__title">Perfiles</h3>
+                <p class="panel-card__subtitle">Un perfil es un grupo de permisos (por ejemplo Vendedor o Administración) que se asigna a los usuarios en Autorización de tareas.</p>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="perfiles-vacio"><i class="bi bi-hourglass-split"></i> Cargando...</div>
+            }
+            else if (_perfiles.Count == 0)
+            {
+                <div class="perfiles-vacio"><span>Todavía no hay perfiles. Tocá <strong>Nuevo perfil</strong> para crear el primero.</span></div>
+            }
+            else
+            {
+                <ul class="perfiles-lista__items">
+                    @foreach (var perfil in _perfiles)
+                    {
+                        <li>
+                            <button type="button" class="perfil-item @(perfil.IdPerfil == _idPerfil ? "is-active" : string.Empty)"
+                                    disabled="@_dirty" @onclick="() => AbrirAsync(perfil.IdPerfil)">
+                                <span class="perfil-item__nombre">@perfil.Nombre</span>
+                                <span class="perfil-item__meta">@perfil.Claves.Count opciones · @Usuarios(perfil.Usuarios.Count)</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+        </aside>
+
+        <section class="perfiles-editor panel-card">
+            @if (!_editando)
+            {
+                <div class="perfiles-vacio">Elegí un perfil de la lista o creá uno nuevo.</div>
+            }
+            else
+            {
+                <div class="perfiles-editor__campos">
+                    <div class="field">
+                        <label>Nombre</label>
+                        <input type="text" maxlength="80" placeholder="Por ejemplo: Vendedor" value="@_nombre"
+                               @oninput="e => { _nombre = e.Value?.ToString() ?? string.Empty; MarkDirty(); }" />
+                    </div>
+                    <div class="field">
+                        <label>Descripción</label>
+                        <input type="text" maxlength="300" placeholder="Para qué sirve (opcional)" value="@_descripcion"
+                               @oninput="e => { _descripcion = e.Value?.ToString() ?? string.Empty; MarkDirty(); }" />
+                    </div>
+                </div>
+
+                <div class="perfiles-editor__usuarios">
+                    @if (_usuariosPerfil.Count == 0)
+                    {
+                        <span>Ningún usuario tiene este perfil. Se asigna en <a href="@RouteContext.BuildRoute("/seguridad/autorizacion-tareas")">Autorización de tareas</a>.</span>
+                    }
+                    else
+                    {
+                        <span><strong>Lo tienen:</strong> @string.Join(", ", _usuariosPerfil). Los cambios se les aplican al grabar.</span>
+                    }
+                </div>
+
+                <div class="perfiles-editor__toolbar">
+                    <input type="search" placeholder="Buscar opción..." value="@_buscar"
+                           @oninput="e => { _buscar = e.Value?.ToString() ?? string.Empty; Rebuild(); }" />
+                    <span class="perfiles-editor__contador">@_tildadas tildadas</span>
+                </div>
+
+                <div class="perfiles-arbol">
+                    @foreach (var item in _visible)
+                    {
+                        <AutorizacionTareasTreeNode Item="item"
+                                                    ExpandedKeys="_expanded"
+                                                    ToggleExpand="ToggleExpand"
+                                                    ToggleAuthorization="Toggle" />
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private const string MenuSistema = "ALFA";
+    private const string PermisosSistema = "CN000PR";
+
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+    private List<PerfilWebResumenDto> _perfiles = [];
+    private List<MenuAutorizacionItemDto> _tree = [];
+    private List<MenuAutorizacionItemDto> _visible = [];
+    private IReadOnlyList<string> _usuariosPerfil = [];
+    private int? _idPerfil;
+    private string _nombre = string.Empty;
+    private string _descripcion = string.Empty;
+    private string _buscar = string.Empty;
+    private bool _editando;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _dirty;
+    private int _tildadas;
+    private AppUiMessage? _feedback;
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    private string HeaderSnapshot() => $"{_editando}|{_dirty}|{_busy}|{_idPerfil}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdatePageHeader();
+        await RecargarListaAsync();
+        _loading = false;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "seguridad",
+            Title = "Perfiles de permisos",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildSeguridad(RouteContext, Nav, "perfiles"),
+            Actions =
+            [
+                new() { Key = "nuevo", Label = "Nuevo perfil", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || _dirty, OnClick = () => InvokeAsync(async () => { await NuevoAsync(); StateHasChanged(); }) },
+                new() { Key = "grabar", Label = "Grabar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Disabled = _busy || !_editando || !_dirty, OnClick = () => InvokeAsync(async () => { await GrabarAsync(); StateHasChanged(); }) },
+                new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Disabled = _busy || !_dirty, OnClick = () => InvokeAsync(async () => { await CancelarAsync(); StateHasChanged(); }) },
+                new() { Key = "eliminar", Label = "Eliminar", Icon = "bi-trash", Style = PageHeaderActionStyle.Ghost, Disabled = _busy || _dirty || _idPerfil is null, OnClick = () => InvokeAsync(async () => { await EliminarAsync(); StateHasChanged(); }) },
+            ],
+        });
+    }
+
+    private static string Usuarios(int n) => n == 1 ? "1 usuario" : $"{n} usuarios";
+
+    private async Task RecargarListaAsync()
+    {
+        var result = await UiOps.RunAsync(() => AutorizacionSvc.GetPerfilesAsync(PermisosSistema), "No se pudieron cargar los perfiles.");
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _perfiles = (result.Value ?? Array.Empty<PerfilWebResumenDto>()).ToList();
+    }
+
+    private Task NuevoAsync() => CargarAsync(null);
+
+    private Task AbrirAsync(int idPerfil) => _dirty ? Task.CompletedTask : CargarAsync(idPerfil);
+
+    private async Task CargarAsync(int? idPerfil)
+    {
+        _busy = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => AutorizacionSvc.GetPerfilArbolAsync(MenuSistema, PermisosSistema, idPerfil), "No se pudo cargar el perfil.");
+            if (!result.Success)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            var dto = result.Value!;
+            _idPerfil = dto.Perfil?.IdPerfil;
+            _nombre = dto.Perfil?.Nombre ?? string.Empty;
+            _descripcion = dto.Perfil?.Descripcion ?? string.Empty;
+            _usuariosPerfil = dto.Perfil?.Usuarios ?? [];
+            _tree = MenuAutorizacionArbol.CloneTree(dto.Items);
+            _expanded.Clear();
+            foreach (var item in _tree)
+                _expanded.Add(item.Clave);
+            _buscar = string.Empty;
+            _editando = true;
+            _dirty = idPerfil is null;
+            Rebuild();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task GrabarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre))
+        {
+            _feedback = AppUiMessage.Error("Falta el nombre", "Poné un nombre al perfil (por ejemplo Vendedor o Administración).");
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var claves = MenuAutorizacionArbol.AuthorizedKeys(_tree).ToArray();
+            var result = await UiOps.RunAsync(() => AutorizacionSvc.GuardarPerfilAsync(new GuardarPerfilWebRequest
+            {
+                IdPerfil = _idPerfil,
+                MenuSistema = MenuSistema,
+                Sistema = PermisosSistema,
+                Nombre = _nombre,
+                Descripcion = _descripcion,
+                Claves = claves
+            }), "No se pudo guardar el perfil.");
+            if (!result.Success)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            _idPerfil = result.Value;
+            _dirty = false;
+            await RecargarListaAsync();
+            _usuariosPerfil = _perfiles.FirstOrDefault(p => p.IdPerfil == _idPerfil)?.Usuarios ?? [];
+            _feedback = AppUiMessage.Success("Perfil guardado", _usuariosPerfil.Count == 0
+                ? $"Se guardó el perfil {_nombre.Trim()}. Asignalo a los usuarios en Autorización de tareas."
+                : $"Se guardó el perfil {_nombre.Trim()} y se aplicó a {Usuarios(_usuariosPerfil.Count)}.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CancelarAsync()
+    {
+        if (_idPerfil is int id)
+            await CargarAsync(id);
+        else
+        {
+            _editando = false;
+            _dirty = false;
+        }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_idPerfil is not int id)
+            return;
+
+        _busy = true;
+        try
+        {
+            var nombre = _nombre;
+            var result = await UiOps.RunAsync(() => AutorizacionSvc.EliminarPerfilAsync(MenuSistema, PermisosSistema, id), "No se pudo eliminar el perfil.");
+            if (!result.Success)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            _editando = false;
+            _idPerfil = null;
+            _dirty = false;
+            await RecargarListaAsync();
+            _feedback = AppUiMessage.Success("Perfil eliminado", $"Se eliminó el perfil {nombre}. Sus usuarios conservan solo sus permisos propios.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task ToggleExpand(string key)
+    {
+        if (!_expanded.Remove(key))
+            _expanded.Add(key);
+        return Task.CompletedTask;
+    }
+
+    private Task Toggle(MenuAutorizacionToggleRequest request)
+    {
+        MenuAutorizacionArbol.Toggle(_tree, _visible, request.Clave, request.Checked);
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private void MarkDirty()
+    {
+        _dirty = true;
+        Rebuild();
+    }
+
+    private void Rebuild()
+    {
+        _visible = MenuAutorizacionArbol.Filter(_tree, _buscar);
+        MenuAutorizacionArbol.NormalizePartial(_visible);
+        _tildadas = MenuAutorizacionArbol.AuthorizedKeys(_tree).Count();
+        if (!string.IsNullOrWhiteSpace(_buscar))
+        {
+            foreach (var key in _visible.SelectMany(MenuAutorizacionArbol.DescendantKeys))
+                _expanded.Add(key);
+        }
+    }
+}

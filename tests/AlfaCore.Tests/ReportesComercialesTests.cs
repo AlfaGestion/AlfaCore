@@ -31,6 +31,9 @@ public sealed class ReportesComercialesTests
         ((CargaComprobantesUiTests.EventOnlyProxy)(object)menus).Handler=(m,_)=>m.Name switch
         { "GetModulesAsync"=>Task.FromResult<IReadOnlyList<ShellModuleDto>>([]),"GetSearchItemsAsync"=>Task.FromResult<IReadOnlyList<ShellMenuSearchItemDto>>([]),_=>null };
         services.AddSingleton(menus);
+        var convAuth=DispatchProxy.Create<IConversacionesAuthorizationService,CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)convAuth).Handler=(m,_)=>m.Name=="CanManageAsync"?Task.FromResult(true):null;
+        services.AddSingleton(convAuth);
         var capture=new Capture();services.AddSingleton<IComponentActivator>(capture);
         using var provider=services.BuildServiceProvider();await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
         await renderer.Dispatcher.InvokeAsync(async()=>

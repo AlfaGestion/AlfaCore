@@ -2,7 +2,7 @@
 
 ## Accesos y alcance
 
-Configuración General → Ventas → Carga de comprobantes, o `/ALFANET/153/configuracion-general/ventas?tab=carga-comprobantes` en la base utilizada para pruebas. Se reutiliza la página y el menú existentes; no se crea otra clave de menú ni otra tabla de parámetros.
+Ventas → Configuración → Carga de comprobantes, o `/ALFANET/153/ventas/configuracion?tab=carga-comprobantes` en la base utilizada para pruebas. Se reutiliza la página y el menú existentes; no se crea otra clave de menú ni otra tabla de parámetros.
 
 El editor reúne 35 claves confirmadas de `TA_CONFIGURACION`, agrupadas por precios, IVA, descuentos, proforma, orígenes/stock, contabilidad y electrónica. Cada campo indica alcance y limitaciones. Las credenciales, certificados, emisores por unidad y configuración específica de POS permanecen en sus pestañas existentes, accesibles desde este panel.
 

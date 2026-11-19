@@ -1,5 +1,20 @@
 # Rediseño Conversaciones → Configuración (AlfaDesign)
 
+## 2026-11-18 — Configuración solo con lo de canales y atención
+
+Navegación actual: `Resumen | Canales | Asistente IA | Automatización | Respuestas rápidas | Soporte`.
+
+- **Operación y accesos** salió de Configuración: "Ven todos los números" y "Usuarios por número" están en
+  **Seguridad → Accesos a Conversaciones** (`AccesosConversaciones.razor`); **Prioridades** pasó a
+  Automatización → "Prioridades de atención" (`…Operacion` quedó solo con eso).
+- **Informes** salió de Configuración: el estilo del informe mensual se edita en la pestaña Informes
+  (`ConversacionesInformes.razor`, solo para quien puede configurar).
+- **Soporte** lo ve solo el superadmin de ALFA NET.
+- Permiso **Respuestas rápidas** (`D010185-WEB-CONV-RESPUESTAS`): con ese permiso y sin "Configurar
+  Conversaciones" la página muestra solo esa sección.
+- Links viejos `?seccion=informes` y `?seccion=operacion-accesos` redirigen a la pantalla nueva.
+
+
 **Estado del documento:** MIGRACIÓN EN CURSO (C3 — Asistente IA, 2026-10-05)
 **C0 — Baseline + contrato de producto:** COMPLETADO (commit `3fd78b5`)
 **C1 — Shell + Information Architecture + navegación interna:** COMPLETADO (commit `2d56b70`, pusheado a `origin/main`)

@@ -2613,7 +2613,7 @@ else
         "carga-viajes" => "bi-truck",
         "compras" => "bi-cart-fill",
         "ventas" => "bi-graph-up-arrow",
-        "usuarios" => "bi-people-fill",
+        "usuarios" => "bi-shield-lock-fill",
         "seguridad" => "bi-shield-lock-fill",
         _ => "bi-grid-3x3-gap-fill"
     };
@@ -3963,36 +3963,31 @@ else
                 : string.Empty;
             _loginPassword = string.Empty;
             _internalLoginDraftPrimed = true;
+
+            // Con /{idweb}/{idbase} en la URL, la ruta manda: si se elige otra base y la URL sigue
+            // con la anterior, EnsureActiveSessionFromRouteAsync vuelve a activar la base de la ruta
+            // y la elegida "no queda" (caso /ALFANET/113 -> Seleccionar ALFA NET - PRUEBAS). Se
+            // cambia el idbase de la URL (mismo resto de ruta, sin recarga).
+            if (TryGetRouteBaseId(out var routeBaseId) && routeBaseId != selectedSession.BaseId && selectedSession.BaseId > 0)
+            {
+                var relativa = Nav.ToBaseRelativePath(Nav.Uri);
+                var corte = relativa.IndexOfAny(['?', '#']);
+                var ruta = corte >= 0 ? relativa[..corte] : relativa;
+                var segmentos = ruta.Split('/');
+                var idxBase = Array.FindIndex(segmentos, s => s.Length > 0) + 1;
+                if (idxBase > 0 && idxBase < segmentos.Length && segmentos[idxBase] == routeBaseId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                {
+                    segmentos[idxBase] = selectedSession.BaseId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    _drawerRouteBaseId = selectedSession.BaseId;
+                    Nav.NavigateTo(string.Join('/', segmentos));
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
         }
         catch
         {
         }
-
-        // La ruta /{idweb}/{idbase} manda sobre la sesión activa (ConexionClienteService.
-        // ResolveRouteSessionOverride), así que para que el cambio sea real hay que reescribir
-        // el idbase de la URL conservando el resto de la ruta. También se cierra el drawer:
-        // antes quedaba abierto y parecía que no había pasado nada.
-        _drawerOpen = false;
-
-        if (AppMode.IsSaaSMode
-            && TryGetRouteBaseId(out var currentRouteBaseId)
-            && currentRouteBaseId != selectedSession.BaseId
-            && selectedSession.BaseId > 0)
-        {
-            var relative = Nav.ToBaseRelativePath(Nav.Uri);
-            var suffixIndex = relative.IndexOfAny(['?', '#']);
-            var suffix = suffixIndex >= 0 ? relative[suffixIndex..] : string.Empty;
-            var segments = (suffixIndex >= 0 ? relative[..suffixIndex] : relative)
-                .Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length >= 2)
-            {
-                segments[1] = selectedSession.BaseId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                Nav.NavigateTo("/" + string.Join('/', segments) + suffix, replace: true);
-                return;
-            }
-        }
-
-        await InvokeAsync(StateHasChanged);
     }
 
     private string GetLoginRememberStorageKey()
@@ -4179,7 +4174,8 @@ else
         "interfaces/carrito-compras" => "Carrito de compras",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
-        "usuarios" => "Usuarios",
+        // Usuarios es una pantalla de Seguridad (comparte sus pestañas).
+        "usuarios" => "Seguridad",
         "seguridad" => "Seguridad",
         "contactos" => "Contactos",
         "cotizaciones" => "Cotizaciones",

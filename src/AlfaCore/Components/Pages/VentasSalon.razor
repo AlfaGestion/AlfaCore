@@ -40,6 +40,28 @@
             }
             else
             {
+                <div class="salon-caja-menu">
+                    <button type="button" class="btn btn--ghost btn--sm salon-caja-menu__boton" @onclick="AlternarMenuCaja" aria-expanded="@_menuCaja" title="Apertura y cierre de caja, cambio de turno, ingresos y egresos">
+                        <i class="bi bi-cash-stack"></i> Caja <i class="bi bi-chevron-down"></i>
+                    </button>
+                    @if (_menuCaja)
+                    {
+                        <button type="button" class="salon-caja-menu__fondo" aria-label="Cerrar menú de caja" @onclick="() => _menuCaja = false"></button>
+                        <div class="salon-caja-menu__panel">
+                            <button type="button" @onclick="@(() => IrACaja("apertura"))"><i class="bi bi-unlock"></i> Abrir caja</button>
+                            <button type="button" @onclick="@(() => IrACaja("cortex"))"><i class="bi bi-clipboard-check"></i> Corte X</button>
+                            <button type="button" @onclick="@(() => IrACaja("turno"))"><i class="bi bi-arrow-left-right"></i> Cambio de turno</button>
+                            <button type="button" @onclick="@(() => IrACaja("cierre"))"><i class="bi bi-lock"></i> Cierre de caja del día</button>
+                            <hr />
+                            <button type="button" @onclick="@(() => IrACaja("movimientos"))"><i class="bi bi-cash-coin"></i> Ingresos / egresos de caja</button>
+                            <button type="button" @onclick="@(() => IrACaja("detalle"))"><i class="bi bi-journal-text"></i> Detalle de caja</button>
+                            <button type="button" @onclick="@(() => IrACaja("saldos"))"><i class="bi bi-wallet2"></i> Saldos por caja</button>
+                            <button type="button" @onclick="@(() => IrACaja("reimprimir"))"><i class="bi bi-printer"></i> Reimprimir comprobantes</button>
+                            <hr />
+                            <a href="@RouteCtx.BuildRoute($"/ventas/punto-venta/informe?idPuntoVenta={IdPuntoVentaQuery}")"><i class="bi bi-bar-chart"></i> Informe del punto de venta</a>
+                        </div>
+                    }
+                </div>
                 <a class="btn btn--ghost btn--sm" href="@RouteCtx.BuildRoute($"/ventas/punto-venta/cocina?idPuntoVenta={IdPuntoVentaQuery}")" title="Pantalla de cocina y barra">
                     <i class="bi bi-fire"></i> Cocina
                 </a>
@@ -498,6 +520,21 @@
     private string _formObservaciones = string.Empty;
     private string _formMotivo = string.Empty;
 
+    private bool _menuCaja;
+    private bool _posicionarMenuCaja;
+
+    private void AlternarMenuCaja()
+    {
+        _menuCaja = !_menuCaja;
+        _posicionarMenuCaja = _menuCaja;
+    }
+
+    private void IrACaja(string accion)
+    {
+        _menuCaja = false;
+        Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPuntoVenta={IdPuntoVentaQuery}&caja={accion}&volver=salon"));
+    }
+
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _timerCts;
 
@@ -533,10 +570,16 @@
         IniciarRefresco();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
             UpdatePageHeader();
+
+        if (_posicionarMenuCaja && _menuCaja)
+        {
+            _posicionarMenuCaja = false;
+            try { await Js.InvokeVoidAsync("alfaPosSalon.posicionMenu", ".salon-caja-menu__boton", ".salon-caja-menu__panel"); } catch { }
+        }
     }
 
     public async ValueTask DisposeAsync()

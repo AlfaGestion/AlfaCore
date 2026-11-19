@@ -1980,6 +1980,35 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public async Task Assistant_PrecioSinIdentificar_SinAlta_NoOfreceRegistrarlo()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"tipo\\\":\\\"RESUELVE\\\",\\\"puede_responder\\\":true,\\\"pide_precio\\\":true,\\\"respuesta\\\":\\\"ok\\\"}\"}}]}");
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.", "Info real.", "GENERAL_AVISA", "Hola, a cuánto el bidón?", [],
+                precioRequiereIdentificacion: true);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
+            Assert.DoesNotContain("ofrecele también registrarlo", system);
+            Assert.Contains("no le ofrezcas registrarlo", system);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
     public async Task Assistant_ChatWeb_ConHerramientaDeContacto_LeIndicaPedirloSinFrenarLaCharla()
     {
         var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -3228,6 +3257,7 @@ public sealed class ConversacionesAutomationPipelineTests
         public virtual Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroByInstanceNameAsync(string instanceName, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveWhatsAppNumeroAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task SaveWhatsAppNumeroUsuariosAsync(int idNumero, IReadOnlyList<string> usuarios, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionWhatsAppNumeroDto> UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(int idBase, ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default) => throw new NotSupportedException();

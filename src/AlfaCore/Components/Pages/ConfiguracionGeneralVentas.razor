@@ -1,3 +1,5 @@
+@page "/ventas/configuracion"
+@page "/{idweb}/{idbase:int}/ventas/configuracion"
 @page "/configuracion-general/ventas"
 @page "/{idweb}/{idbase:int}/configuracion-general/ventas"
 @using AlfaCore.Models
@@ -858,7 +860,13 @@
         };
     }
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        // Antes estaba en Configuración General; ahora es la pestaña Configuración de Ventas.
+        if (AlfaCore.Services.ModuleTopNavPresets.RedirigirRutaMudada(Nav, "/configuracion-general/ventas", "/ventas/configuracion"))
+            return;
+        UpdatePageHeader();
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -1022,12 +1030,12 @@
 
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
-        ModuleKey = "configuracion-general",
-        Title = "Ventas",
+        ModuleKey = "ventas",
+        Title = "Configuración",
         Search = _subtab == SubtabCarga ? new PageHeaderSearchConfig { Text = _buscarOpcion, Placeholder = "Buscar opción de carga: precio, IVA, descuento…", OnTextChanged = texto => InvokeAsync(() => { _buscarOpcion = texto; UpdatePageHeader(); StateHasChanged(); }) } : null,
-        Breadcrumb = ["Configuración General", "Ventas"],
+        Breadcrumb = ["Ventas", "Configuración"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "ventas"),
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildVentas(RouteContext, Nav, "configuracion"),
         Actions =
         [
             new PageHeaderAction

@@ -25,6 +25,44 @@ public static class ModuleTopNavPresets
             ("informesia", "InformesIA", "/compras/informesia")
         ]);
 
+    /// <summary>
+    /// Barra única de la operación de Compras (carga, ver comprobantes, pagos y retenciones, orden de pago y ver
+    /// órdenes de pago). Con ?directo=1 (instalación solo de carga) queda solo la carga y conserva el parámetro.
+    /// </summary>
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildComprasOperacion(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+    {
+        var directo = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query)
+            .TryGetValue("directo", out var d) && d == "1";
+        (string Key, string Label, string Route)[] items = directo
+            ?
+            [
+                ("carga", "Carga de comprobantes", "/compras/carga"),
+                ("visor", "Ver comprobantes", "/compras/carga/visor"),
+                ("pagos", "Pagos y retenciones", "/compras/carga/pagos")
+            ]
+            :
+            [
+                ("inicio", "Inicio de Compras", "/compras"),
+                ("carga", "Carga de comprobantes", "/compras/carga"),
+                ("visor", "Ver comprobantes", "/compras/carga/visor"),
+                ("pagos", "Pagos y retenciones", "/compras/carga/pagos"),
+                ("orden", "Orden de pago", "/compras/pagos/orden-de-pago"),
+                ("ordenes", "Ver órdenes de pago", "/compras/pagos/ordenes")
+            ];
+        return items.Select(item =>
+        {
+            var url = routeContext.BuildRoute(item.Route) + (directo ? "?directo=1" : "");
+            return new PageHeaderTopNavItem
+            {
+                Key = item.Key,
+                Label = item.Label,
+                Url = url,
+                Active = string.Equals(item.Key, activeKey, StringComparison.OrdinalIgnoreCase),
+                OnClick = () => { nav.NavigateTo(url); return Task.CompletedTask; }
+            };
+        }).ToList();
+    }
+
     public static IReadOnlyList<PageHeaderTopNavItem> BuildVentas(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [
@@ -38,7 +76,8 @@ public static class ModuleTopNavPresets
             ("articulos", "Artículos", "/ventas/articulos"),
             ("comparativo", "Comparativo", "/ventas/comparativo"),
             ("vendedores", "Vendedores", "/ventas/vendedores"),
-            ("unidades-negocio", "U. de negocio", "/ventas/unidades-negocio")
+            ("unidades-negocio", "U. de negocio", "/ventas/unidades-negocio"),
+            ("configuracion", "Configuración", "/ventas/configuracion")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildPuntoVenta(IRouteContextService routeContext, NavigationManager nav, string activeKey)
@@ -65,7 +104,8 @@ public static class ModuleTopNavPresets
             ("paquete-estudio", "Paquete estudio", "/contabilidad/paquete-estudio"),
             ("estudio-contable", "Estudio contable", "/contabilidad/estudio-contable"),
             ("fechas-cierre", "Fechas de cierre", "/contabilidad/fechas-de-cierre"),
-            ("control-arca", "Control ARCA", "/contabilidad/control-arca")
+            ("control-arca", "Control ARCA", "/contabilidad/control-arca"),
+            ("configuracion", "Configuración", "/contabilidad/configuracion")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCajaBancos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
@@ -109,9 +149,8 @@ public static class ModuleTopNavPresets
             ("resumen", "Resumen", "/auditoria"),
             ("errores", "Errores", "/auditoria/errores"),
             ("usuarios", "Actividad de usuarios", "/auditoria/usuarios"),
-            ("comprobantes", "Comprobantes", "/auditoria/comprobantes"),
-            ("usuarios-sistema", "Usuarios", "/usuarios"),
-            ("autorizacion", "Autorización", "/seguridad/autorizacion-tareas")
+            // Usuarios y Autorización son de Seguridad: no se repiten acá para no saltar de módulo.
+            ("comprobantes", "Comprobantes", "/auditoria/comprobantes")
         ]);
 
     // Mismas entradas que el sidebar legacy de Actualización de Costos.
@@ -160,7 +199,9 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("articulos", "Artículos", "/articulos"),
-            ("listas", "Listas de precios", "/articulos/listas-precios")
+            ("listas", "Listas de precios", "/articulos/listas-precios"),
+            ("historial", "Historial de precios", "/articulos/historial-precios"),
+            ("configuracion", "Configuración", "/articulos/configuracion")
         ]);
 
     // Tablas de referencia (antes sin menú propio: se llegaba desde Archivos).
@@ -178,7 +219,10 @@ public static class ModuleTopNavPresets
         [
             ("usuarios", "Usuarios", "/usuarios"),
             ("autorizacion", "Autorización de tareas", "/seguridad/autorizacion-tareas"),
-            ("auditoria", "Reporte de auditoría", "/auditoria")
+            ("perfiles", "Perfiles", "/seguridad/perfiles"),
+            ("accesos-conversaciones", "Accesos a Conversaciones", "/seguridad/accesos-conversaciones")
+            // El Reporte de auditoría está en Archivos > Seguridad del menú (como en Alfa), pero tiene sus propias
+            // pestañas (Resumen, Errores, Actividad, Comprobantes): no se pone acá para no cambiar de barra al tocarla.
         ]);
 
     // Centro de ayuda.
@@ -237,19 +281,15 @@ public static class ModuleTopNavPresets
         [
             ("empresa", "Empresa", "/configuracion-general"),
             ("logo", "Logo y Estilo", "/configuracion-general/logo"),
-            ("email", "Email", "/configuracion-general/email"),
-            ("ventas", "Ventas", "/configuracion-general/ventas"),
-            ("articulos", "Artículos", "/configuracion-general/articulos"),
-            ("contable", "Gestión contable", "/configuracion-general/contable")
+            ("email", "Email", "/configuracion-general/email")
+            // La configuración de Ventas, Artículos y Gestión contable está en la pestaña "Configuración" de cada módulo.
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionWebPortal(IRouteContextService routeContext, NavigationManager nav)
         => Build(routeContext, nav, "identidad",
         [
-            ("identidad", "Identidad", "/configuracion-web-portal"),
-            ("empresa", "Configuración general", "/configuracion-general"),
-            ("logo", "Logo de impresión", "/configuracion-general/logo"),
-            ("email", "Email saliente", "/configuracion-general/email")
+            // Solo lo suyo: Configuración General (empresa, logo, correo) es otra opción de Utilidades > Configuración.
+            ("identidad", "Portal web", "/configuracion-web-portal")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildAdministrar(IRouteContextService routeContext, NavigationManager nav, string activeKey)
@@ -271,6 +311,24 @@ public static class ModuleTopNavPresets
             ("disenador", "Diseñador", "/documentos/disenador"),
             ("configuracion", "Configuración", "/documentos/configuracion")
         ]);
+
+    /// <summary>
+    /// Si la pantalla se abrió por una ruta que se mudó (link o favorito viejo), navega a la nueva
+    /// conservando la base (/{idweb}/{idbase}) y la query. Devuelve true si redirigió.
+    /// </summary>
+    public static bool RedirigirRutaMudada(NavigationManager nav, string rutaVieja, string rutaNueva)
+    {
+        var rel = nav.ToBaseRelativePath(nav.Uri);
+        var corte = rel.IndexOfAny(['?', '#']);
+        var path = (corte < 0 ? rel : rel[..corte]).TrimEnd('/');
+        var resto = corte < 0 ? string.Empty : rel[corte..];
+        var vieja = rutaVieja.Trim('/');
+        if (!path.Equals(vieja, StringComparison.OrdinalIgnoreCase)
+            && !path.EndsWith("/" + vieja, StringComparison.OrdinalIgnoreCase))
+            return false;
+        nav.NavigateTo(path[..^vieja.Length] + rutaNueva.Trim('/') + resto, replace: true);
+        return true;
+    }
 
     private static IReadOnlyList<PageHeaderTopNavItem> Build(
         IRouteContextService routeContext,

@@ -21,8 +21,10 @@ public sealed class AyudaContextualTests
     [InlineData("tarjetas","sucursal")]
     [InlineData("salon","agotado")]
     [InlineData("salon","comandera")]
+    [InlineData("salon","cambio de turno")]
     [InlineData("mostrador","corte x")]
     [InlineData("mostrador","consumidor final")]
+    [InlineData("mostrador","caja recaudadora")]
     public void ManualesIncluidosBuscanSinAcentosYNoExponenOtrosArchivos(string tema,string consulta)
     {
         var manual=AyudaManuales.Obtener(tema);
@@ -53,6 +55,47 @@ public sealed class AyudaContextualTests
         Assert.Equal("cobranzas",AyudaManuales.TemaParaRuta("/caja-bancos/cobranzas"));
         Assert.Equal("general",AyudaManuales.TemaParaRuta("/inicio"));
         Assert.Null(AyudaManuales.SeccionParaRuta("/inicio"));
+        // Lo específico gana a lo general aunque la ruta corta esté contenida en la larga.
+        Assert.Equal("compras",AyudaManuales.TemaParaRuta("/ALFANET/1/compras/articulos"));
+        Assert.Equal("archivos",AyudaManuales.TemaParaRuta("/ALFANET/1/articulos"));
+        Assert.Equal("auditoria",AyudaManuales.TemaParaRuta("/auditoria/usuarios"));
+        Assert.Equal("seguridad",AyudaManuales.TemaParaRuta("/usuarios"));
+        Assert.Equal("utilidades",AyudaManuales.TemaParaRuta("/ALFANET/1/configuracion"));
+        Assert.Equal("conversaciones",AyudaManuales.TemaParaRuta("/conversaciones/configuracion"));
+    }
+
+    [Fact]
+    public void CadaPestanaDeModuloYCadaConfiguracionTieneSuAyuda()
+    {
+        // Toda pantalla a la que se llega por una pestaña de módulo o desde el engranaje abre su sección de ayuda.
+        var presets=File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Services","ModuleTopNavPresets.cs"));
+        var rutas=System.Text.RegularExpressions.Regex.Matches(presets,@"\(""[^""]+"",\s*""[^""]+"",\s*""(/[^""]+)""\)")
+            .Select(m=>m.Groups[1].Value)
+            .Concat(ConfiguracionCatalogo.Entradas.Select(e=>e.RutaBase))
+            .Where(r=>!r.StartsWith("/admin",StringComparison.Ordinal) && r!="/ayuda")
+            .Distinct().ToList();
+        Assert.NotEmpty(rutas);
+        var sinAyuda=rutas.Where(r=>AyudaManuales.TemaParaRuta(r)=="general" && AyudaManuales.SeccionParaRuta(r) is null).ToList();
+        Assert.True(sinAyuda.Count==0,"Pantallas sin ayuda: "+string.Join(", ",sinAyuda));
+    }
+
+    [Fact]
+    public void ElBuscadorEncuentraEnTodosLosManuales()
+    {
+        var resultados=AyudaManuales.BuscarEnTodo("chequera","general");
+        Assert.Contains(resultados,r=>r.Tema.Clave=="archivos");
+        var propios=AyudaManuales.BuscarEnTodo("retencion","cobranzas");
+        Assert.Equal("cobranzas",propios[0].Tema.Clave);
+        Assert.Empty(AyudaManuales.BuscarEnTodo("zzzzNoExisteEstaTarea"));
+        // Los títulos que solo agrupan o el índice de un manual no son tareas.
+        Assert.DoesNotContain(AyudaManuales.Temas.SelectMany(t=>AyudaManuales.Obtener(t.Clave).Articulos),a=>a.Id=="indice" || a.Contenido.Length==0);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir=new DirectoryInfo(AppContext.BaseDirectory);
+        while(dir is not null && !File.Exists(Path.Combine(dir.FullName,"AlfaCore.sln")))dir=dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("No se encontró AlfaCore.sln.");
     }
 
     [Fact]

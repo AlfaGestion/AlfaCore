@@ -14,7 +14,7 @@ public sealed class AyudaIaTests
     [InlineData("/ALFANET/106/caja-bancos/conciliacion-bancaria","conciliacion")]
     [InlineData("/ALFANET/106/caja-bancos/cobranzas","cobranzas")]
     [InlineData("/ALFANET/106/consultas?directo=1","consultas")]
-    [InlineData("/ALFANET/106/clientes","general")]
+    [InlineData("/ALFANET/106/clientes","archivos")]
     public void AyudaGlobalEligeLaGuiaSegunLaRuta(string ruta,string tema)
         => Assert.Equal(tema,AyudaManuales.TemaParaRuta(ruta));
 

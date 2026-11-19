@@ -1,0 +1,107 @@
+.perfiles-page .perfiles-layout {
+    display: grid;
+    grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .perfiles-page .perfiles-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.perfiles-page .perfiles-lista,
+.perfiles-page .perfiles-editor {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.perfiles-page .perfiles-lista__items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: .5rem;
+}
+
+.perfiles-page .perfil-item {
+    width: 100%;
+    display: grid;
+    gap: .2rem;
+    text-align: left;
+    padding: .7rem .85rem;
+    border-radius: var(--alfa-radius-md, 8px);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 30%, transparent);
+    background: var(--alfa-bg-surface);
+    color: inherit;
+    cursor: pointer;
+}
+
+.perfiles-page .perfil-item.is-active {
+    border-color: var(--alfa-accent);
+    box-shadow: 0 0 0 1px var(--alfa-accent) inset;
+}
+
+.perfiles-page .perfil-item:disabled {
+    cursor: not-allowed;
+    opacity: .6;
+}
+
+.perfiles-page .perfil-item__nombre {
+    font-weight: 600;
+}
+
+.perfiles-page .perfil-item__meta,
+.perfiles-page .perfiles-editor__contador,
+.perfiles-page .perfiles-editor__usuarios {
+    font-size: .85rem;
+    opacity: .8;
+}
+
+.perfiles-page .perfiles-editor__campos {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 1rem;
+}
+
+@media (max-width: 700px) {
+    .perfiles-page .perfiles-editor__campos {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.perfiles-page .perfiles-editor__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.perfiles-page .perfiles-editor__toolbar input {
+    max-width: 22rem;
+    width: 100%;
+}
+
+.perfiles-page .perfiles-arbol {
+    max-height: calc(100vh - 22rem);
+    min-height: 20rem;
+    overflow: auto;
+    padding: .75rem .8rem;
+    border-radius: var(--alfa-radius-md, 8px);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 37%, transparent);
+    background: var(--alfa-bg-surface);
+}
+
+.perfiles-page .perfiles-vacio {
+    min-height: 10rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1rem;
+    border-radius: var(--alfa-radius-md, 8px);
+    border: 1px dashed color-mix(in srgb, var(--alfa-accent) 43%, transparent);
+    opacity: .85;
+}

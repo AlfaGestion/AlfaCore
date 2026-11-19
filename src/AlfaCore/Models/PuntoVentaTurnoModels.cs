@@ -72,6 +72,57 @@ public sealed class PuntoVentaTurnoCierreRequest
     public string Observaciones { get; set; } = string.Empty;
     public string? UsuarioAccion { get; set; }
     public List<PuntoVentaTurnoBilleteDetalleRequest> Billetes { get; set; } = [];
+
+    /// <summary>Efectivo que queda en la caja para el turno siguiente (la apertura lo propone).</summary>
+    public decimal? FondoQueda { get; set; }
+
+    /// <summary>Caja destino de la transferencia (vacia = no se transfiere).</summary>
+    public string? IdCajaDestino { get; set; }
+
+    public List<PuntoVentaTurnoTransferenciaLineaRequest> Transferencia { get; set; } = [];
+}
+
+public sealed class PuntoVentaTurnoTransferenciaLineaRequest
+{
+    public string Cuenta { get; set; } = string.Empty;
+    public string Moneda { get; set; } = string.Empty;
+    public decimal Cotizacion { get; set; } = 1;
+    public decimal Importe { get; set; }
+}
+
+/// <summary>Saldo de un medio de pago (cuenta con MedioDePago CH/DB/EF/TJ) en la caja del turno.</summary>
+public sealed class PuntoVentaTurnoSaldoMedioDto
+{
+    public string Cuenta { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public string MedioDePago { get; set; } = string.Empty;
+    public string Moneda { get; set; } = string.Empty;
+    public decimal Cotizacion { get; set; } = 1;
+    public decimal Saldo { get; set; }
+    public bool EsEfectivoLocal { get; set; }
+}
+
+public sealed class PuntoVentaCajaOpcionDto
+{
+    public string IdCaja { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+}
+
+/// <summary>Datos para armar el cierre: saldos por medio de pago y caja destino propuesta (TPV_CAJADESTINO).</summary>
+public sealed class PuntoVentaTurnoCierrePreviewDto
+{
+    public decimal SaldoTeorico { get; set; }
+    public string IdCajaDestinoSugerida { get; set; } = string.Empty;
+    public List<PuntoVentaCajaOpcionDto> Cajas { get; set; } = [];
+    public List<PuntoVentaTurnoSaldoMedioDto> Saldos { get; set; } = [];
+}
+
+public sealed class PuntoVentaTurnoCierreResultDto
+{
+    public string Comprobante { get; set; } = string.Empty;
+    public string CajaDestino { get; set; } = string.Empty;
+    public decimal ImporteTransferido { get; set; }
+    public decimal Diferencia { get; set; }
 }
 
 /// <summary>Corte X: arqueo parcial que NO cierra el turno. Sirve para relevos de cajero o controles durante el día.</summary>

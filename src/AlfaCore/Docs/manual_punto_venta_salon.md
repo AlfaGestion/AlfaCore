@@ -83,9 +83,27 @@ Cuando un cliente toca **Llamar al mozo** o **Pedir la cuenta** en el celular, a
 ## Precuenta y cobro
 
 - **Precuenta:** imprime el ticket con lo consumido y el total (no es factura) y marca que la mesa pidió la cuenta. Si después agregan algo, la mesa vuelve a quedar abierta sola. También podés tocar **Reabrir**.
-- **Cobrar:** abre el Mostrador con toda la mesa. Lo que se pidió en varias rondas aparece junto (por ejemplo, 3 cafés en una sola línea). Elegí el comprobante y los medios de pago y confirmá como en cualquier venta. Al terminar, la mesa queda libre y volvés al salón.
+- **Cobrar:** abre directamente la ventana de cobranza con toda la mesa. Lo que se pidió en varias rondas aparece junto (por ejemplo, 3 cafés en una sola línea). Elegí los medios de pago y tocá **Aceptar** o **Aceptar e imprimir**. Al terminar (también después de imprimir), la mesa queda libre y volvés al salón.
 
-Para cobrar tiene que estar abierto el turno de la caja, igual que en el Mostrador.
+Para cobrar tiene que estar abierto el turno de la caja. Si está cerrado, primero te pide abrirla y después sigue con el cobro.
+
+Con **Factura proforma** no se consulta a ARCA: no aparece el cartel de facturación electrónica.
+
+## Caja: apertura, cambio de turno y cierre
+
+El botón **Caja** de la barra del salón tiene las mismas opciones que el menú del Mostrador:
+
+- **Abrir caja:** abre el turno con el saldo inicial (podés contar los billetes). Propone el fondo que dejó el turno anterior.
+- **Corte X:** control parcial del efectivo sin cerrar el turno.
+- **Cambio de turno:** cierra el turno actual (arqueo y transferencia) y enseguida abre el siguiente con el fondo que quedó, por ejemplo para el cajero de la tarde.
+- **Cierre de caja del día:** cierra el turno con el arqueo final y transfiere lo cobrado a la caja recaudadora (la configurada; se puede cambiar). Conviene hacerlo con todas las mesas cobradas.
+
+Al cerrar, contá el efectivo y revisá el **Fondo que queda en la caja**: se transfiere lo contado menos ese fondo, y las tarjetas, cheques y débitos completos. Podés corregir cada importe. Al final te muestra el comprobante de la transferencia.
+- **Ingresos / egresos de caja:** retiros o entradas de dinero (pago a un proveedor, cambio, etc.) imputados a una cuenta.
+- **Detalle de caja**, **Saldos por caja** y **Reimprimir comprobantes**.
+- **Informe del punto de venta:** abre el informe de ventas del punto de venta.
+
+Cada opción abre la ventana correspondiente y, al cerrarla, volvés solo al salón.
 
 ## Cambiar, unir o liberar una mesa
 

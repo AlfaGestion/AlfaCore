@@ -1,0 +1,211 @@
+.hpc {
+    --hpc-s1: #3987e5;
+    --hpc-s2: #d95926;
+    --hpc-s3: #199e70;
+    margin: 0;
+    min-width: 0;
+}
+
+html[data-theme="light"] .hpc {
+    --hpc-s1: #2a78d6;
+    --hpc-s2: #eb6834;
+    --hpc-s3: #1baf7a;
+}
+
+.hpc-s1, .hpc-baja { --hpc-color: var(--hpc-s1); }
+.hpc-s2, .hpc-sube { --hpc-color: var(--hpc-s2); }
+.hpc-s3 { --hpc-color: var(--hpc-s3); }
+
+.hpc__leyenda {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-4) var(--alfa-space-12);
+    margin-bottom: var(--alfa-space-8);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.hpc__item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-4);
+}
+
+.hpc__marca {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    flex: none;
+    border-radius: 3px;
+    background: var(--hpc-color);
+}
+
+.hpc__vacio {
+    margin: 0;
+    padding: var(--alfa-space-24) 0;
+    color: var(--alfa-text-secondary);
+    text-align: center;
+}
+
+.hpc__area {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-rows: var(--hpc-alto) 22px;
+}
+
+.hpc__eje {
+    position: relative;
+}
+
+.hpc__eje span {
+    position: absolute;
+    right: 8px;
+    transform: translateY(-50%);
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.hpc__plot {
+    position: relative;
+}
+
+.hpc__plot svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.hpc__grilla {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--alfa-border-subtle);
+}
+
+.hpc__grilla.is-cero {
+    border-top-color: var(--alfa-border-strong);
+}
+
+.hpc__linea {
+    fill: none;
+    stroke: var(--hpc-color);
+    stroke-width: 2px;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.hpc__columna {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    outline: none;
+}
+
+.hpc__barra {
+    position: absolute;
+    left: 50%;
+    width: min(70%, 22px);
+    min-height: 2px;
+    transform: translateX(-50%);
+    background: var(--hpc-color);
+}
+
+.hpc__barra.is-arriba { border-radius: 4px 4px 0 0; }
+.hpc__barra.is-abajo { border-radius: 0 0 4px 4px; }
+
+.hpc__columna:hover .hpc__barra,
+.hpc__columna:focus-visible .hpc__barra {
+    filter: brightness(1.2);
+}
+
+.hpc__guia {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: none;
+    border-left: 1px dashed var(--alfa-border-strong);
+}
+
+.hpc__punto {
+    position: absolute;
+    display: none;
+    width: 9px;
+    height: 9px;
+    border: 2px solid var(--alfa-bg-surface);
+    border-radius: 50%;
+    background: var(--hpc-color);
+    transform: translate(-50%, -50%);
+}
+
+.hpc__tooltip {
+    position: absolute;
+    z-index: 5;
+    top: 4px;
+    left: 100%;
+    display: none;
+    min-width: 170px;
+    padding: var(--alfa-space-8);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-small);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.hpc__columna.is-derecha .hpc__tooltip {
+    left: auto;
+    right: 100%;
+}
+
+.hpc__tooltip span {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-4);
+    margin-top: 2px;
+    color: var(--alfa-text-secondary);
+}
+
+.hpc__tooltip b {
+    margin-left: auto;
+    padding-left: var(--alfa-space-12);
+    color: var(--alfa-text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.hpc__tooltip small {
+    display: block;
+    margin-top: var(--alfa-space-4);
+    color: var(--alfa-text-secondary);
+}
+
+.hpc__columna:hover .hpc__tooltip,
+.hpc__columna:focus-visible .hpc__tooltip,
+.hpc__columna:hover .hpc__guia,
+.hpc__columna:focus-visible .hpc__guia,
+.hpc__columna:hover .hpc__punto,
+.hpc__columna:focus-visible .hpc__punto {
+    display: block;
+}
+
+.hpc__x {
+    position: relative;
+    grid-column: 2;
+}
+
+.hpc__x span {
+    position: absolute;
+    top: 5px;
+    transform: translateX(-50%);
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    white-space: nowrap;
+}

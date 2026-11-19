@@ -1,0 +1,39 @@
+.sin-permiso {
+    box-sizing: border-box;
+    width: min(40rem, 100%);
+    max-width: 40rem;
+    flex: 0 0 auto;
+    align-self: center;
+    justify-self: center;
+    margin: 3rem auto;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .75rem;
+    height: auto;
+    text-align: center;
+    border-radius: var(--alfa-radius-md, 8px);
+    border: 1px dashed color-mix(in srgb, var(--alfa-accent) 43%, transparent);
+    background: var(--alfa-bg-surface);
+}
+
+.sin-permiso h2 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.sin-permiso p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.sin-permiso__icono {
+    font-size: 2rem;
+    color: var(--alfa-accent);
+}
+
+.sin-permiso__ayuda {
+    font-size: .9rem;
+    opacity: .85;
+}

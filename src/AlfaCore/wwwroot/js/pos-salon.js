@@ -65,6 +65,22 @@
     }
 
     window.alfaPosSalon = {
+        // Menu Caja: la barra de acciones tiene scroll horizontal y recortaria un desplegable
+        // absoluto; el panel va fijo en pantalla, debajo del boton.
+        posicionMenu: function (selectorBoton, selectorPanel) {
+            var boton = document.querySelector(selectorBoton);
+            var panel = document.querySelector(selectorPanel);
+            if (!boton || !panel) {
+                return;
+            }
+            var r = boton.getBoundingClientRect();
+            var ancho = panel.offsetWidth || 272;
+            var izquierda = Math.max(8, Math.min(r.left, window.innerWidth - ancho - 8));
+            panel.style.top = (r.bottom + 6) + "px";
+            panel.style.left = izquierda + "px";
+            panel.style.visibility = "visible";
+        },
+
         setEditing: function (canvasId, editing) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) {

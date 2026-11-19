@@ -29,30 +29,40 @@ public sealed class ConversacionesAuthorizationService(
         if (usuario.Length == 0 || sistema.Length == 0)
             return false;
 
+        // Configurar = administrador del sistema o el permiso "Configurar Conversaciones" tildado
+        // (Seguridad > Autorización de tareas o su perfil). "Ver todos los números"
+        // (CONV_ADMINISTRADORES) ya no habilita la configuración: son permisos separados (2026-11-18).
+        // Si la base todavía no tiene la tabla de permisos explícitos, se mantiene la regla anterior.
         const string sql = """
-            SELECT CASE WHEN
-                (
-                    OBJECT_ID(N'dbo.TA_USUARIOS', N'U') IS NOT NULL
-                    AND COL_LENGTH(N'dbo.TA_USUARIOS', N'Administrador') IS NOT NULL
-                    AND EXISTS (
-                        SELECT 1
-                        FROM dbo.TA_USUARIOS u
-                        WHERE UPPER(LTRIM(RTRIM(ISNULL(u.NOMBRE, N'')))) = UPPER(@Usuario)
-                          AND UPPER(LTRIM(RTRIM(ISNULL(u.SISTEMA, N'')))) = UPPER(@Sistema)
-                          AND ISNULL(u.Administrador, 0) <> 0
-                    )
-                )
-                OR
-                (
-                    OBJECT_ID(N'dbo.CONV_ADMINISTRADORES', N'U') IS NOT NULL
-                    AND EXISTS (
-                        SELECT 1
-                        FROM dbo.CONV_ADMINISTRADORES a
-                        WHERE UPPER(LTRIM(RTRIM(ISNULL(a.Usuario, N'')))) = UPPER(@Usuario)
-                          AND UPPER(LTRIM(RTRIM(ISNULL(a.Sistema, N'')))) = UPPER(@Sistema)
-                    )
-                )
-            THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
+            DECLARE @r bit = 0;
+            IF OBJECT_ID(N'dbo.TA_USUARIOS', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.TA_USUARIOS', N'Administrador') IS NOT NULL
+                IF EXISTS (
+                    SELECT 1
+                    FROM dbo.TA_USUARIOS u
+                    WHERE UPPER(LTRIM(RTRIM(ISNULL(u.NOMBRE, N'')))) = UPPER(@Usuario)
+                      AND UPPER(LTRIM(RTRIM(ISNULL(u.SISTEMA, N'')))) = UPPER(@Sistema)
+                      AND ISNULL(u.Administrador, 0) <> 0)
+                    SET @r = 1;
+            IF @r = 0 AND OBJECT_ID(N'dbo.ALFACORE_PERMISOS_WEB_EXPLICITOS', N'U') IS NOT NULL
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM dbo.ALFACORE_PERMISOS_WEB_EXPLICITOS p
+                    WHERE UPPER(LTRIM(RTRIM(p.Usuario))) = UPPER(@Usuario)
+                      AND UPPER(LTRIM(RTRIM(p.Sistema))) = UPPER(@Sistema)
+                      AND UPPER(LTRIM(RTRIM(p.Clave))) = @Clave)
+                    SET @r = 1;
+            END
+            ELSE IF @r = 0 AND OBJECT_ID(N'dbo.CONV_ADMINISTRADORES', N'U') IS NOT NULL
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_ADMINISTRADORES a
+                    WHERE UPPER(LTRIM(RTRIM(ISNULL(a.Usuario, N'')))) = UPPER(@Usuario)
+                      AND UPPER(LTRIM(RTRIM(ISNULL(a.Sistema, N'')))) = UPPER(@Sistema))
+                    SET @r = 1;
+            END
+            SELECT @r;
             """;
 
         await using var cn = new SqlConnection(connectionString);
@@ -60,6 +70,7 @@ public sealed class ConversacionesAuthorizationService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Usuario", usuario);
         cmd.Parameters.AddWithValue("@Sistema", sistema);
+        cmd.Parameters.AddWithValue("@Clave", PermisosWebCatalogo.ConversacionesConfigurar);
         return await cmd.ExecuteScalarAsync(ct) is true;
     }
 

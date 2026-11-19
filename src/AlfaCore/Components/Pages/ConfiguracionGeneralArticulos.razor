@@ -1,3 +1,5 @@
+@page "/articulos/configuracion"
+@page "/{idweb}/{idbase:int}/articulos/configuracion"
 @page "/configuracion-general/articulos"
 @page "/{idweb}/{idbase:int}/configuracion-general/articulos"
 @using AlfaCore.Models
@@ -92,7 +94,13 @@
     private bool _saving;
     private AppUiMessage? _feedback;
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        // Antes estaba en Configuración General; ahora es la pestaña Configuración de su módulo.
+        if (AlfaCore.Services.ModuleTopNavPresets.RedirigirRutaMudada(Nav, "/configuracion-general/articulos", "/articulos/configuracion"))
+            return;
+        UpdatePageHeader();
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -130,10 +138,11 @@
 
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
-        Title = "Artículos",
-        Breadcrumb = ["Configuración General", "Artículos"],
+        ModuleKey = "articulos",
+        Title = "Configuración",
+        Breadcrumb = ["Artículos", "Configuración"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "articulos"),
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildArticulos(RouteContext, Nav, "configuracion"),
         Actions = BuildHeaderActions()
     });
 

@@ -9,12 +9,22 @@
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.IPermissionService Permisos
 @inject NavigationManager Nav
 @implements IDisposable
 @using AlfaCore.Models
 
 <PageTitle>Plantillas de WhatsApp | Alfa Gestión</PageTitle>
 
+@if (_sinPermiso)
+{
+    <SinPermisoAviso Titulo="No tenés permiso para las plantillas de WhatsApp"
+                     Mensaje="Crear, editar y mandar a aprobar plantillas requiere el permiso «Plantillas de WhatsApp» dentro de Conversaciones."
+                     VolverA="/conversaciones"
+                     VolverTexto="Volver a Conversaciones" />
+}
+else
+{
 <section class="templates-v1" @onclick="CloseTemplatesSearchPanel">
     <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
     @if (_loadError is not null)
@@ -393,8 +403,11 @@
         </div>
     </AlfaDialog>
 </section>
+}
 
 @code {
+    private bool _sinPermiso;
+
     // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
     // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
     // condición borraba el header de la página nueva (se veía un instante el sidebar legacy).
@@ -529,6 +542,13 @@
             if (tenantIdentityState == AlfaCore.Services.TenantIdentityState.Unauthenticated)
             {
                 NavigateToLoginPreservingCurrentUrl();
+                return;
+            }
+
+            _sinPermiso = !await Permisos.HasAccessAsync(AlfaCore.Services.PermisosWebCatalogo.ConversacionesPlantillas, _lifetimeCts.Token);
+            if (_sinPermiso)
+            {
+                UpdatePageHeader();
                 return;
             }
 
@@ -854,12 +874,14 @@
 
     private void UpdatePageHeader()
     {
-        var actions = _mode switch
+        // Sin permiso no se ofrecen acciones ni búsqueda: solo el aviso.
+        List<PageHeaderAction> actions = _sinPermiso ? [] : _mode switch
         {
             PageMode.Create => BuildCreateActions(),
             PageMode.Edit => BuildEditActions(),
             _ => BuildBrowseActions()
         };
+        var conBusqueda = _mode == PageMode.Browse && !_sinPermiso;
 
         PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
@@ -873,8 +895,8 @@
             },
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),
-            Search = _mode == PageMode.Browse ? new PageHeaderSearchConfig() : null,
-            SearchContent = _mode == PageMode.Browse ? RenderTemplatesSmartSearch() : null,
+            Search = conBusqueda ? new PageHeaderSearchConfig() : null,
+            SearchContent = conBusqueda ? RenderTemplatesSmartSearch() : null,
             Actions = actions
         });
         _ = InvokeAsync(StateHasChanged);

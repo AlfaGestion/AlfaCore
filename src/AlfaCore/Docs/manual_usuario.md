@@ -461,3 +461,7 @@ La mejor manera de aprovecharlo es usarlo con este criterio:
 
 Este manual general es el punto de partida.  
 Para el uso profundo de cada área, apoyate en los manuales específicos por módulo.
+
+## Tareas
+
+En **Tareas** (desde el menú de usuario o el panel de tareas) cada persona lleva sus pendientes. Pulsá **Nueva tarea**, escribí qué hay que hacer y, si querés, la fecha y el grupo. Las tareas se organizan en **Grupos de tareas**. Marcala como hecha cuando la termines. **Recargar** vuelve a leer la lista.

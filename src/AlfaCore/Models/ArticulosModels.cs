@@ -12,6 +12,8 @@ public sealed class ArticuloFilters
     public string Texto { get; set; } = string.Empty;
     public string RubroCodigo { get; set; } = string.Empty;
     public string MarcaCodigo { get; set; } = string.Empty;
+    /// <summary>Proveedor habitual del artículo (V_MA_ARTICULOS.CUENTAPROVEEDOR).</summary>
+    public string ProveedorCodigo { get; set; } = string.Empty;
     public bool? Activo { get; set; } = true;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;

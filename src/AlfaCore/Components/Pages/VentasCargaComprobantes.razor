@@ -1,6 +1,7 @@
 @page "/ventas/carga-comprobantes"
 @page "/{idweb}/{idbase:int}/ventas/carga-comprobantes"
 @using AlfaCore.Services
+@inject AlfaCore.Services.IPermissionService Permisos
 @inject ICargaComprobantesService Service
 @inject ISessionService Sessions
 @inject IAppUserSessionService Users
@@ -11,6 +12,13 @@
 @implements IDisposable
 
 <PageTitle>Carga de Comprobantes | Alfa Gestión</PageTitle>
+@if (_sinPermiso)
+{
+    <SinPermisoAviso Titulo="No tenés permiso para la carga de comprobantes"
+                     Mensaje="Para facturar desde la carga de comprobantes hace falta el permiso «Carga de comprobantes» de Ventas." />
+}
+else
+{
 
 <div class="gd-page gd cc-page">
     @if (_busy && _procesoFa is null)
@@ -238,8 +246,10 @@
         SecondaryMessage="Se registra el resultado de homologación. La grabación comercial de stock, contabilidad y aplicaciones continúa en desarrollo; el origen conserva sus pendientes."
         ConfirmLabel="Emitir prueba ARCA" OnConfirm="EmitirPruebaAsync" OnCancel="() => _confirmarPrueba = false" />
 }
+}
 
 @code {
+    private bool _sinPermiso;
     private readonly CancellationTokenSource _lifetime = new();
     private CargaComprobantesContexto? _contexto;
     private CargaComprobantesOrigen? _origen;
@@ -714,7 +724,7 @@
         {
             var path = new Uri(Navigation.Uri).AbsolutePath;
             var indice = path.IndexOf("/ventas/carga-comprobantes", StringComparison.OrdinalIgnoreCase);
-            return (indice >= 0 ? path[..indice] : string.Empty) + "/configuracion-general/ventas?tab=mail";
+            return (indice >= 0 ? path[..indice] : string.Empty) + "/ventas/configuracion?tab=mail";
         }
     }
 
@@ -905,6 +915,8 @@
     private async Task InicializarAsync()
     {
         if (_busy || _disposed) return;
+        _sinPermiso = !await Permisos.HasAccessAsync(AlfaCore.Services.CargaComprobantesService.MenuKey, _lifetime.Token);
+        if (_sinPermiso) { UpdateHeader(); return; }
         await RunAsync(async () =>
         {
             var contexto = await Service.GetContextoAsync(_lifetime.Token);
@@ -1102,7 +1114,7 @@
         State = _busy ? PageHeaderState.Loading : _origen is null ? PageHeaderState.List : PageHeaderState.Editing,
         Search = _origen is null && _contexto is not null ? new() : null,
         SearchContent = _origen is null && _contexto is not null ? RenderBusqueda() : null,
-        Actions = _origen is null
+        Actions = _sinPermiso ? [] : _origen is null
             // Menos botones a la vista (2026-10-22): "Cargar selección" aparece al elegir pedidos/remitos y el resto va al menú "…".
             ? [.. (EsFacturacionAutomatica && _seleccionFa.Count > 0
                     ? new PageHeaderAction[]

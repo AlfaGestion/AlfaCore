@@ -1,6 +1,7 @@
 @page "/configuracion"
 @page "/{idweb}/{idbase:int}/configuracion"
 @implements IDisposable
+@inject AlfaCore.Services.IConversacionesAuthorizationService ConversacionesAuth
 @inject AlfaCore.Services.IMenuService MenuSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IPageHeaderService PageHeader
@@ -85,6 +86,7 @@
             var modulos = await MenuSvc.GetModulesAsync();
             var rutas = await MenuSvc.GetSearchItemsAsync();
             _visibles = ConfiguracionCatalogo.Visibles(modulos.Select(m => m.RutaWeb), rutas.Select(r => r.RutaWeb));
+            _visibles = ConfiguracionCatalogo.SegunPermisoConversaciones(_visibles, await ConversacionesAuth.CanManageAsync());
         }
         catch
         {

@@ -25,7 +25,7 @@ public sealed class CargaComprobantesUiTests
         services.AddSingleton<ISessionService>(DispatchProxy.Create<ISessionService, EventOnlyProxy>());
         services.AddSingleton<IAppUserSessionService>(DispatchProxy.Create<IAppUserSessionService, EventOnlyProxy>());
         services.AddSingleton<IPageHeaderService, PageHeaderService>();
-        services.AddSingleton<IAppUiOperationService, AppUiOperationService>();
+        services.AddSingleton<IAppUiOperationService, AppUiOperationService>(); services.AddSingleton<IPermissionService, PlanCuentasAbmSqlTests.Permisos>();
         services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime, EventOnlyProxy>());
         var clientes = DispatchProxy.Create<ICuentasComercialesService, EventOnlyProxy>();
         CuentaComercialSaveRequest? alta = null;
@@ -174,7 +174,7 @@ public sealed class CargaComprobantesUiTests
         services.AddSingleton<ISessionService>(DispatchProxy.Create<ISessionService, EventOnlyProxy>());
         services.AddSingleton<IAppUserSessionService>(DispatchProxy.Create<IAppUserSessionService, EventOnlyProxy>());
         services.AddSingleton<IPageHeaderService, PageHeaderService>();
-        services.AddSingleton<IAppUiOperationService, AppUiOperationService>();
+        services.AddSingleton<IAppUiOperationService, AppUiOperationService>(); services.AddSingleton<IPermissionService, PlanCuentasAbmSqlTests.Permisos>();
         services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime, EventOnlyProxy>());
         services.AddSingleton(DispatchProxy.Create<ICuentasComercialesService, EventOnlyProxy>());
         services.AddSingleton(DispatchProxy.Create<IArcaPadronService, EventOnlyProxy>());
@@ -222,7 +222,7 @@ public sealed class CargaComprobantesUiTests
         services.AddSingleton<ISessionService>(DispatchProxy.Create<ISessionService, EventOnlyProxy>());
         services.AddSingleton<IAppUserSessionService>(DispatchProxy.Create<IAppUserSessionService, EventOnlyProxy>());
         services.AddSingleton<IPageHeaderService, PageHeaderService>();
-        services.AddSingleton<IAppUiOperationService, AppUiOperationService>();
+        services.AddSingleton<IAppUiOperationService, AppUiOperationService>(); services.AddSingleton<IPermissionService, PlanCuentasAbmSqlTests.Permisos>();
         services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime, EventOnlyProxy>());
         var activator = new CapturingActivator();
         services.AddSingleton<IComponentActivator>(activator);

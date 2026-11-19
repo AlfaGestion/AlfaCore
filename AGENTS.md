@@ -197,6 +197,37 @@ pasa a `ALFACORE_TAREAS_WEB` (solo a usuarios que ya tienen permisos web explíc
 en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Esa protección es una red de seguridad: los scripts nuevos igual tienen
 que respetar esta regla.
 
+### Regla única de permisos, permisos explícitos y perfiles (2026-11-18)
+
+- **Una sola regla** en `PermissionService` (la usan el menú y `HasAccessAsync`): sin ninguna fila en
+  `ALFACORE_TAREAS_WEB` el usuario ve todo; con alguna, solo lo tildado. Si falla la lectura, se niega.
+- **Permisos de acción** (partes de un módulo, sin pantalla propia): se definen en `PermisosWebCatalogo` y
+  tienen fila en `ALFACORE_MENU_WEB` **sin `RutaWeb`** con `PadreClave` del módulo (aparecen en Autorización de
+  tareas pero no en el menú). Los **explícitos** (`Explicito: true`, por ejemplo `D010185-WEB-CONV-CONFIG`)
+  se guardan en `ALFACORE_PERMISOS_WEB_EXPLICITOS`: nunca se dan por "ve todo" y no convierten al usuario en
+  restringido. Consultarlos con `IPermissionService.HasAccessAsync(clave)`.
+- **Perfiles** (`ALFACORE_PERFILES_WEB*`): un perfil por usuario. Sus claves se copian a las tablas de permisos
+  con `IdPerfil` (NULL = propio). No escribir filas con `IdPerfil` fuera de `AutorizacionTareasService`.
+- "Ver todos los números" de Conversaciones sigue en `CONV_ADMINISTRADORES`; "Configurar Conversaciones" ya no
+  sale de ahí sino del permiso explícito (o `TA_USUARIOS.Administrador`).
+
+### Dónde va cada pantalla en el menú (obligatorio, 2026-11-18)
+
+- **Nada suelto.** Toda pantalla cuelga de un módulo (`PadreClave` con módulo o grupo); nunca de la raíz ni solo
+  del engranaje de Configuración (el engranaje es un buscador, no un lugar).
+- **Lo que comparte con Alfa sigue la estructura de Alfa** (`TA_MENU`): Archivos > Maestros / Tablas (D0103) /
+  Precios (D0105) / Seguridad (D0150) / Interfaces (D0160), Utilidades (D98), etc. Antes de ubicarla, mirar dónde
+  está esa opción en Alfa.
+- **Lo nuevo de la web va en su módulo** (Ventas, Conversaciones, Gestión contable…) o, si es de seguridad, en
+  Archivos > Seguridad. Si no encaja en ninguno, se crea un módulo; no se cuelga de cualquier lado.
+- **La configuración de un módulo es una pestaña "Configuración" del módulo** (`/ventas/configuracion`,
+  `/articulos/configuracion`, `/contabilidad/configuracion`). Configuración General queda solo para lo de la
+  empresa (datos, logo, correo). Si una ruta se muda, la vieja redirige con `ModuleTopNavPresets.RedirigirRutaMudada`.
+- **Las pestañas de un módulo son solo suyas**: no poner pestañas que saltan a otro módulo.
+- **Toda pantalla nueva lleva su ayuda**: una sección `##` (y `###` por acción) en el manual de su módulo (`src/AlfaCore/Docs/manual_*.md`) y su ruta en `AyudaManuales.Pantallas`. Es lo que leen los clientes y el chat de ayuda con IA; `AyudaContextualTests` lo controla.
+- No reusar una clave de Alfa para otra cosa. Hay casos viejos (D010180 Logística, D016002 Catálogo, D016003
+  Carrito, D9808 Calendario) que no se cambian porque son la clave de módulos facturados en `ALFA_CENTRAL.Modulos`.
+
 ### Estructura obligatoria del script (5 pasos, en este orden)
 
 1. **Guardia** — si no existe `ALFACORE_MENU_WEB`, hacer `RETURN`
