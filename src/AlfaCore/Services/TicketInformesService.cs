@@ -25,6 +25,18 @@ public interface ITicketInformesService
     Task<TicketInformePublicoDto?> ObtenerPublicoAsync(int idInforme, CancellationToken ct = default);
     /// <summary>Anota una apertura del link público.</summary>
     Task RegistrarVistaAsync(int idInforme, string? navegador, CancellationToken ct = default);
+    /// <summary>PDF del informe (A4). Con soloPublicado, solo si está publicado (para la página pública).</summary>
+    Task<byte[]> PdfAsync(int idInforme, bool soloPublicado = false, CancellationToken ct = default);
+    /// <summary>Contacto, mail, teléfono y conversación sugeridos para mandar el informe publicado.</summary>
+    Task<TicketInformeEnvioDto> DatosEnvioAsync(int idInforme, TicketInformeDestino destino, CancellationToken ct = default);
+    Task EnviarMailAsync(TicketInformeMailRequest request, TicketInformeDestino destino, CancellationToken ct = default);
+    /// <summary>Manda el link por la conversación de WhatsApp del ticket (requiere la ventana de 24 h abierta).</summary>
+    Task EnviarWhatsAppAsync(int idInforme, string texto, string usuario, TicketInformeDestino destino, CancellationToken ct = default);
+    /// <summary>Deja en la actividad que se abrió WhatsApp con el link (envío desde el teléfono o WhatsApp Web).</summary>
+    Task RegistrarEnvioManualAsync(int idInforme, string canal, string destinatario, string usuario, CancellationToken ct = default);
+    Task<IReadOnlyList<TicketInformeRespuestaDto>> RespuestasAsync(int idInforme, CancellationToken ct = default);
+    /// <summary>Respuesta del cliente desde la página pública: CONFORME o CONSULTA.</summary>
+    Task ResponderPublicoAsync(int idInforme, string tipo, string? nombre, string? texto, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -35,7 +47,10 @@ public sealed class TicketInformesService(
     IConfiguration configuration,
     ISessionService sessionService,
     ICentralPublicLinkService publicLinks,
-    IConversacionAnalisisService ia) : ITicketInformesService
+    IConversacionAnalisisService ia,
+    IDocumentPdfService? pdfService = null,
+    CorreoSalienteService? correo = null,
+    IConversacionesService? conversaciones = null) : ITicketInformesService
 {
     private const int Timeout = 60;
 
@@ -50,7 +65,7 @@ public sealed class TicketInformesService(
     {
         var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
-        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(N'dbo.TICK_INFORMES', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: ct)) == 0)
+        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(N'dbo.TICK_INFORMES', N'U') IS NULL OR OBJECT_ID(N'dbo.TICK_INFORME_RESPUESTAS', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: ct)) == 0)
         {
             await cn.DisposeAsync();
             throw new InvalidOperationException("Esta base todavía no tiene los informes de tickets. Corré las actualizaciones de AlfaCore.");
@@ -65,8 +80,10 @@ public sealed class TicketInformesService(
             SELECT i.IdInforme, i.IdTicket, i.Titulo, ISNULL(i.Html, N'') AS Html, i.Estado, i.GeneradoIA, ISNULL(i.UsuarioAlta, N'') AS UsuarioAlta, i.FechaHoraAlta,
                    ISNULL(i.UsuarioModificacion, N'') AS UsuarioModificacion, i.FechaHoraModificacion, i.FechaHoraPublicacion,
                    (SELECT COUNT(*) FROM dbo.TICK_INFORME_VISTAS v WHERE v.IdInforme = i.IdInforme) AS Vistas,
-                   (SELECT MAX(v.FechaHora) FROM dbo.TICK_INFORME_VISTAS v WHERE v.IdInforme = i.IdInforme) AS UltimaVista
+                   (SELECT MAX(v.FechaHora) FROM dbo.TICK_INFORME_VISTAS v WHERE v.IdInforme = i.IdInforme) AS UltimaVista,
+                   ISNULL(r.Tipo, '') AS UltimaRespuestaTipo, ISNULL(r.Nombre, N'') AS UltimaRespuestaNombre, r.FechaHora AS UltimaRespuestaFecha
             FROM dbo.TICK_INFORMES i
+            OUTER APPLY (SELECT TOP (1) x.Tipo, x.Nombre, x.FechaHora FROM dbo.TICK_INFORME_RESPUESTAS x WHERE x.IdInforme = i.IdInforme ORDER BY x.FechaHora DESC) r
             WHERE i.IdTicket = @IdTicket AND i.Baja = 0
             ORDER BY i.FechaHoraAlta DESC, i.IdInforme DESC;
             """;
@@ -209,6 +226,153 @@ public sealed class TicketInformesService(
             IF OBJECT_ID(N'dbo.TICK_INFORME_VISTAS', N'U') IS NOT NULL
                 INSERT INTO dbo.TICK_INFORME_VISTAS (IdInforme, FechaHora, Navegador) VALUES (@IdInforme, GETDATE(), @Navegador);
             """, new { IdInforme = idInforme, Navegador = nav.Length > 300 ? nav[..300] : nav }, cancellationToken: ct));
+    }
+
+    // ---- PDF, envíos y respuestas (etapa 2) ----
+
+    public async Task<byte[]> PdfAsync(int idInforme, bool soloPublicado = false, CancellationToken ct = default)
+    {
+        if (pdfService is null) throw new InvalidOperationException("La generación de PDF no está disponible en este servidor.");
+        var doc = await DocumentoAsync(idInforme, soloPublicado, ct) ?? throw new InvalidOperationException("El informe no existe o no está publicado.");
+        return await pdfService.GenerateAsync(InformeDocumento.Html(doc), new DocumentPdfFooterOptions(true, true, "Alfa Gestión · Soporte"), ct);
+    }
+
+    private async Task<TicketInformePublicoDto?> DocumentoAsync(int idInforme, bool soloPublicado, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        var r = await cn.QueryFirstOrDefaultAsync<TicketInformePublicoDto>(new CommandDefinition($"""
+            SELECT i.IdInforme, i.Titulo, ISNULL(i.Html, N'') AS Html, t.Numero AS NumeroTicket, t.Titulo AS TituloTicket,
+                   ISNULL((SELECT TOP (1) c.RAZON_SOCIAL FROM dbo.VT_CLIENTES c WHERE LTRIM(RTRIM(c.CODIGO)) = LTRIM(RTRIM(t.ClienteCodigo))), N'') AS Cliente,
+                   i.FechaHoraPublicacion, i.FechaHoraModificacion
+            FROM dbo.TICK_INFORMES i INNER JOIN dbo.TICK_TICKETS t ON t.IdTicket = i.IdTicket
+            WHERE i.IdInforme = @IdInforme AND i.Baja = 0 {(soloPublicado ? "AND i.Estado = 'PUBLICADO'" : "")};
+            """, new { IdInforme = idInforme }, commandTimeout: Timeout, cancellationToken: ct));
+        if (r is not null) r.Html = InformeHtmlSanitizer.Limpiar(r.Html);
+        return r;
+    }
+
+    public async Task<TicketInformeEnvioDto> DatosEnvioAsync(int idInforme, TicketInformeDestino destino, CancellationToken ct = default)
+    {
+        await using var cn = await AbrirAsync(ct);
+        var d = await cn.QueryFirstOrDefaultAsync<TicketInformeEnvioDto>(new CommandDefinition("""
+            SELECT t.Numero AS NumeroTicket, i.Titulo AS TituloInforme, t.IdConversacion,
+                   ISNULL(cli.RAZON_SOCIAL, N'') AS Cliente, ISNULL(co.Nombre_y_Apellido, N'') AS Contacto,
+                   COALESCE(NULLIF(LTRIM(RTRIM(co.Email)), N''), NULLIF(LTRIM(RTRIM(cli.MAIL)), N''), N'') AS Mail,
+                   COALESCE(NULLIF(LTRIM(RTRIM(co.Celular)), N''), NULLIF(LTRIM(RTRIM(co.Telefono)), N''), NULLIF(LTRIM(RTRIM(cli.TELEFONO)), N''), N'') AS Telefono
+            FROM dbo.TICK_INFORMES i
+            INNER JOIN dbo.TICK_TICKETS t ON t.IdTicket = i.IdTicket
+            LEFT JOIN dbo.MA_CONTACTOS co ON co.id = t.IdContacto
+            OUTER APPLY (SELECT TOP (1) c.RAZON_SOCIAL, c.MAIL, c.TELEFONO FROM dbo.VT_CLIENTES c WHERE LTRIM(RTRIM(c.CODIGO)) = LTRIM(RTRIM(t.ClienteCodigo))) cli
+            WHERE i.IdInforme = @IdInforme AND i.Baja = 0;
+            """, new { IdInforme = idInforme }, commandTimeout: Timeout, cancellationToken: ct))
+            ?? throw new InvalidOperationException("El informe ya no existe.");
+        d.Link = await ObtenerLinkAsync(idInforme, destino, ct) ?? string.Empty;
+        if (d.IdConversacion is > 0 && conversaciones is not null)
+        {
+            try
+            {
+                var v = await conversaciones.GetWhatsAppSendWindowAsync(d.IdConversacion.Value, ct: ct);
+                d.WhatsAppDisponible = v.Activa;
+                d.WhatsAppVence = v.Vencimiento;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { d.WhatsAppDisponible = false; }
+        }
+        return d;
+    }
+
+    public async Task EnviarMailAsync(TicketInformeMailRequest request, TicketInformeDestino destino, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (correo is null) throw new InvalidOperationException("El envío de mails no está disponible en este servidor.");
+        var (validos, invalidos) = CorreoSalienteService.SepararMails(request.Para);
+        if (validos.Count == 0) throw new InvalidOperationException("Indicá al menos un mail válido.");
+        if (invalidos.Count > 0) throw new InvalidOperationException("Revisá estos mails: " + string.Join(", ", invalidos));
+        var link = await ObtenerLinkAsync(request.IdInforme, destino, ct) ?? throw new InvalidOperationException("Publicá el informe antes de enviarlo.");
+        var doc = await DocumentoAsync(request.IdInforme, soloPublicado: true, ct) ?? throw new InvalidOperationException("El informe no está publicado.");
+        var adjuntos = new List<CorreoSalienteService.Adjunto>();
+        if (request.AdjuntarPdf && pdfService is not null)
+            adjuntos.Add(new CorreoSalienteService.Adjunto(NombreArchivo(doc), await pdfService.GenerateAsync(InformeDocumento.Html(doc), new DocumentPdfFooterOptions(true, true, "Alfa Gestión · Soporte"), ct)));
+        var asunto = string.IsNullOrWhiteSpace(request.Asunto) ? $"Informe del ticket #{doc.NumeroTicket}: {doc.Titulo}" : request.Asunto.Trim();
+        var usuario = Usuario(request.Usuario);
+
+        await using var cn = await AbrirAsync(ct);
+        var cuenta = await correo.ResolverAsync(cn, usuario, ct);
+        await correo.EnviarAsync(cn, cuenta, validos, asunto, InformeDocumento.CuerpoMail(request.Mensaje, link, doc.Titulo, adjuntos.Count > 0), adjuntos, ct);
+        await ActividadInformeAsync(cn, request.IdInforme, $"Informe enviado por mail a {string.Join(", ", validos)}: {doc.Titulo}", usuario, ct);
+    }
+
+    public async Task EnviarWhatsAppAsync(int idInforme, string texto, string usuario, TicketInformeDestino destino, CancellationToken ct = default)
+    {
+        if (conversaciones is null) throw new InvalidOperationException("WhatsApp no está disponible en este servidor.");
+        var datos = await DatosEnvioAsync(idInforme, destino, ct);
+        if (string.IsNullOrEmpty(datos.Link)) throw new InvalidOperationException("Publicá el informe antes de enviarlo.");
+        if (datos.IdConversacion is not > 0) throw new InvalidOperationException("El ticket no tiene una conversación de WhatsApp vinculada. Usá Abrir en WhatsApp.");
+        if (!datos.WhatsAppDisponible) throw new InvalidOperationException("Pasaron más de 24 horas desde el último mensaje del cliente: WhatsApp no deja mandar texto libre. Usá Abrir en WhatsApp o una plantilla desde Conversaciones.");
+        var mensaje = (texto ?? string.Empty).Trim();
+        if (!mensaje.Contains(datos.Link, StringComparison.Ordinal)) mensaje = (mensaje + "\n" + datos.Link).Trim();
+        await conversaciones.SendMessageAsync(new ConversacionSendMessageRequest { IdConversacion = datos.IdConversacion.Value, Texto = mensaje, UsuarioAccion = Usuario(usuario), SistemaAccion = "INFORME_TICKET" }, ct);
+        await using var cn = await AbrirAsync(ct);
+        await ActividadInformeAsync(cn, idInforme, $"Informe enviado por WhatsApp (conversación del ticket): {datos.TituloInforme}", Usuario(usuario), ct);
+    }
+
+    public async Task RegistrarEnvioManualAsync(int idInforme, string canal, string destinatario, string usuario, CancellationToken ct = default)
+    {
+        await using var cn = await AbrirAsync(ct);
+        var dest = (destinatario ?? string.Empty).Trim();
+        await ActividadInformeAsync(cn, idInforme, $"Se abrió {canal} para enviar el informe{(dest.Length > 0 ? " a " + dest : "")}.", Usuario(usuario), ct);
+    }
+
+    public async Task<IReadOnlyList<TicketInformeRespuestaDto>> RespuestasAsync(int idInforme, CancellationToken ct = default)
+    {
+        await using var cn = await AbrirAsync(ct);
+        return (await cn.QueryAsync<TicketInformeRespuestaDto>(new CommandDefinition(
+            "SELECT IdRespuesta, IdInforme, Tipo, ISNULL(Nombre, N'') AS Nombre, ISNULL(Texto, N'') AS Texto, FechaHora FROM dbo.TICK_INFORME_RESPUESTAS WHERE IdInforme = @IdInforme ORDER BY FechaHora DESC;",
+            new { IdInforme = idInforme }, cancellationToken: ct))).ToList();
+    }
+
+    public async Task ResponderPublicoAsync(int idInforme, string tipo, string? nombre, string? texto, CancellationToken ct = default)
+    {
+        var t = (tipo ?? string.Empty).Trim().ToUpperInvariant();
+        if (t is not (TicketInformeRespuestaTipos.Conforme or TicketInformeRespuestaTipos.Consulta)) throw new InvalidOperationException("Respuesta no válida.");
+        var n = Recortar((nombre ?? string.Empty).Trim(), 120);
+        var x = (texto ?? string.Empty).Trim();
+        if (x.Length > 2000) x = x[..2000];
+        if (t == TicketInformeRespuestaTipos.Consulta && x.Length == 0) throw new InvalidOperationException("Escribí tu consulta.");
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+        var idTicket = await cn.ExecuteScalarAsync<long?>(new CommandDefinition("""
+            SELECT IdTicket FROM dbo.TICK_INFORMES WHERE IdInforme = @IdInforme AND Baja = 0 AND Estado = 'PUBLICADO';
+            """, new { IdInforme = idInforme }, tx, cancellationToken: ct)) ?? throw new InvalidOperationException("El informe ya no está publicado.");
+        // Freno simple contra repeticiones: hasta 10 respuestas por informe por hora.
+        var recientes = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM dbo.TICK_INFORME_RESPUESTAS WHERE IdInforme = @IdInforme AND FechaHora > DATEADD(hour, -1, GETDATE());", new { IdInforme = idInforme }, tx, cancellationToken: ct));
+        if (recientes >= 10) throw new InvalidOperationException("Ya recibimos varias respuestas a este informe. Si necesitás algo más, escribinos por el canal habitual.");
+        await cn.ExecuteAsync(new CommandDefinition(
+            "INSERT INTO dbo.TICK_INFORME_RESPUESTAS (IdInforme, Tipo, Nombre, Texto, FechaHora) VALUES (@IdInforme, @Tipo, @Nombre, @Texto, GETDATE());",
+            new { IdInforme = idInforme, Tipo = t, Nombre = n, Texto = x }, tx, cancellationToken: ct));
+        var quien = n.Length > 0 ? n : "El cliente";
+        var descripcion = t == TicketInformeRespuestaTipos.Conforme
+            ? $"{quien} marcó el informe como conforme{(x.Length > 0 ? ": " + x : ".")}"
+            : $"{quien} hizo una consulta sobre el informe: {x}";
+        await ActividadAsync(cn, tx, idTicket, descripcion, "Cliente (informe)", ct);
+        await tx.CommitAsync(ct);
+    }
+
+    private static async Task ActividadInformeAsync(SqlConnection cn, int idInforme, string texto, string usuario, CancellationToken ct)
+    {
+        var idTicket = await cn.ExecuteScalarAsync<long?>(new CommandDefinition("SELECT IdTicket FROM dbo.TICK_INFORMES WHERE IdInforme = @IdInforme;", new { IdInforme = idInforme }, cancellationToken: ct));
+        if (idTicket is null) return;
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+        await ActividadAsync(cn, tx, idTicket.Value, texto, usuario, ct);
+        await tx.CommitAsync(ct);
+    }
+
+    internal static string NombreArchivo(TicketInformePublicoDto doc)
+    {
+        var baseNombre = new string($"Informe ticket {doc.NumeroTicket} {doc.Titulo}".Select(c => char.IsLetterOrDigit(c) || c is ' ' or '-' ? c : ' ').ToArray());
+        return string.Join('-', baseNombre.Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant() is { Length: > 0 } n ? (n.Length > 80 ? n[..80] : n) + ".pdf" : "informe.pdf";
     }
 
     // ---- contexto, plantilla e IA ----

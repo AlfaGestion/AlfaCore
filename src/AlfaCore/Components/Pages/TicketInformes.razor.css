@@ -172,3 +172,55 @@
     color: inherit;
     cursor: pointer;
 }
+
+.tki-envio,
+.tki-respuestas {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--alfa-radius-sm, 6px);
+}
+
+.tki-envio input[type="text"],
+.tki-envio input[type="tel"],
+.tki-envio textarea {
+    width: 100%;
+}
+
+.tki-envio small {
+    color: var(--color-muted);
+}
+
+.tki-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+a.btn.is-disabled {
+    pointer-events: none;
+    opacity: .55;
+}
+
+.tki-respuesta.is-ok,
+.tki-respuesta-item.is-ok span {
+    color: #2f9e6a;
+}
+
+.tki-respuesta.is-consulta,
+.tki-respuesta-item.is-consulta span {
+    color: #d97706;
+}
+
+.tki-respuesta-item {
+    display: grid;
+    gap: 2px;
+    padding-top: 6px;
+    border-top: 1px solid var(--color-border);
+}
+
+.tki-respuesta-item p {
+    margin: 0;
+    color: var(--color-text);
+}

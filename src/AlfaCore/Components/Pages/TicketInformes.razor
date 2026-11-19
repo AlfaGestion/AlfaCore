@@ -1,3 +1,4 @@
+@using AlfaCore.Services
 @using AlfaCore.Models
 @using Microsoft.JSInterop
 @inject AlfaCore.Services.ITicketInformesService InformesSvc
@@ -46,6 +47,13 @@
                         {
                             <span class="tki-item__meta">@(i.Vistas == 0 ? "El cliente todavía no lo abrió" : $"Abierto {i.Vistas} {(i.Vistas == 1 ? "vez" : "veces")} · último {i.UltimaVista:dd/MM HH:mm}")</span>
                         }
+                        @if (i.UltimaRespuestaFecha is { } fr)
+                        {
+                            <span class="tki-item__meta tki-respuesta @(i.UltimaRespuestaTipo == TicketInformeRespuestaTipos.Conforme ? "is-ok" : "is-consulta")">
+                                <i class="bi @(i.UltimaRespuestaTipo == TicketInformeRespuestaTipos.Conforme ? "bi-check2-circle" : "bi-question-circle")"></i>
+                                @(i.UltimaRespuestaTipo == TicketInformeRespuestaTipos.Conforme ? "Conforme" : "Consulta") @(string.IsNullOrWhiteSpace(i.UltimaRespuestaNombre) ? "" : "· " + i.UltimaRespuestaNombre) · @fr.ToString("dd/MM HH:mm")
+                            </span>
+                        }
                     </button>
                 }
             }
@@ -92,9 +100,73 @@
                             <a class="btn btn--sm" href="@_link" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Ver como cliente</a>
                             <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="DespublicarAsync" title="El link deja de funcionar"><i class="bi bi-eye-slash"></i> Despublicar</button>
                         }
+                        <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="DescargarPdfAsync"><i class="bi bi-file-earmark-pdf"></i> Descargar PDF</button>
+                        @if (a.Publicado && !string.IsNullOrEmpty(_link))
+                        {
+                            <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="() => AbrirEnvioAsync(PanelMail)"><i class="bi bi-envelope"></i> Enviar por mail</button>
+                            <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="() => AbrirEnvioAsync(PanelWhatsApp)"><i class="bi bi-whatsapp"></i> WhatsApp</button>
+                        }
                         <button type="button" class="btn btn--sm tki-peligro" disabled="@_ocupado" @onclick="() => _confirmarBaja = true"><i class="bi bi-trash"></i> Eliminar</button>
                     }
                 </div>
+                @if (_panel == PanelMail && _envio is { } em)
+                {
+                    <div class="tki-envio">
+                        <strong><i class="bi bi-envelope"></i> Enviar por mail</strong>
+                        <label for="tki-mail-para">Para (separá varios con coma)</label>
+                        <input id="tki-mail-para" type="text" @bind="_mailPara" placeholder="cliente@empresa.com" />
+                        <label for="tki-mail-asunto">Asunto</label>
+                        <input id="tki-mail-asunto" type="text" maxlength="200" @bind="_mailAsunto" />
+                        <label for="tki-mail-mensaje">Mensaje</label>
+                        <textarea id="tki-mail-mensaje" rows="5" @bind="_mailMensaje"></textarea>
+                        <label class="tki-check"><input type="checkbox" @bind="_mailPdf" /> Adjuntar el informe en PDF</label>
+                        <small>El mail lleva un botón al informe. Sale desde la cuenta de correo de tu usuario o, si no tiene, la de la empresa.</small>
+                        <div class="tki-acciones">
+                            <button type="button" class="btn btn--primary btn--sm" disabled="@_ocupado" @onclick="EnviarMailAsync"><i class="bi bi-send"></i> @(_ocupado ? "Enviando…" : "Enviar")</button>
+                            <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="() => _panel = null">Cancelar</button>
+                        </div>
+                    </div>
+                }
+                @if (_panel == PanelWhatsApp && _envio is { } ew)
+                {
+                    <div class="tki-envio">
+                        <strong><i class="bi bi-whatsapp"></i> Enviar por WhatsApp</strong>
+                        <label for="tki-wa-numero">Número</label>
+                        <input id="tki-wa-numero" type="tel" @bind="_waNumero" @bind:event="oninput" placeholder="11 1234-5678" />
+                        <label for="tki-wa-mensaje">Mensaje</label>
+                        <textarea id="tki-wa-mensaje" rows="4" @bind="_waMensaje" @bind:event="oninput"></textarea>
+                        <div class="tki-acciones">
+                            @if (ew.IdConversacion is > 0)
+                            {
+                                <button type="button" class="btn btn--primary btn--sm" disabled="@(_ocupado || !ew.WhatsAppDisponible)" title="@(ew.WhatsAppDisponible ? "Sale por la conversación de WhatsApp del ticket" : "Pasaron más de 24 horas desde el último mensaje del cliente")" @onclick="EnviarWhatsAppAsync">
+                                    <i class="bi bi-send"></i> Enviar por la conversación del ticket
+                                </button>
+                            }
+                            <a class="btn btn--sm @(InformeDocumento.TelefonoWhatsApp(_waNumero).Length < 8 ? "is-disabled" : "")" href="@InformeDocumento.LinkWhatsApp(_waNumero, _waMensaje)" target="_blank" rel="noopener" @onclick="RegistrarWhatsAppManualAsync">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir en WhatsApp
+                            </a>
+                            <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="() => _panel = null">Cancelar</button>
+                        </div>
+                        <small>
+                            @if (ew.IdConversacion is > 0 && !ew.WhatsAppDisponible) { <span>La conversación del ticket está fuera de las 24 horas: WhatsApp solo deja mandar plantillas. </span> }
+                            "Abrir en WhatsApp" abre WhatsApp (en el teléfono o WhatsApp Web) con el mensaje listo para mandar.
+                        </small>
+                    </div>
+                }
+                @if (_respuestas.Count > 0)
+                {
+                    <div class="tki-respuestas">
+                        <strong>Respuestas del cliente</strong>
+                        @foreach (var r in _respuestas)
+                        {
+                            <div class="tki-respuesta-item @(r.Tipo == TicketInformeRespuestaTipos.Conforme ? "is-ok" : "is-consulta")">
+                                <span><i class="bi @(r.Tipo == TicketInformeRespuestaTipos.Conforme ? "bi-check2-circle" : "bi-question-circle")"></i>
+                                    @(r.Tipo == TicketInformeRespuestaTipos.Conforme ? "Conforme" : "Consulta") @(string.IsNullOrWhiteSpace(r.Nombre) ? "" : "· " + r.Nombre) · @r.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                                @if (!string.IsNullOrWhiteSpace(r.Texto)) { <p>@r.Texto</p> }
+                            </div>
+                        }
+                    </div>
+                }
                 @if (a.Publicado && !string.IsNullOrEmpty(_link))
                 {
                     <div class="tki-link">
@@ -140,6 +212,12 @@
     private string _indicaciones = string.Empty;
     private bool _cargando = true, _ocupado, _generando, _mostrarIa, _sucio, _confirmarBaja, _generadoIa;
     private long _ticketCargado;
+    private const string PanelMail = "mail", PanelWhatsApp = "whatsapp";
+    private string? _panel;
+    private TicketInformeEnvioDto? _envio;
+    private List<TicketInformeRespuestaDto> _respuestas = [];
+    private string _mailPara = string.Empty, _mailAsunto = string.Empty, _mailMensaje = string.Empty, _waNumero = string.Empty, _waMensaje = string.Empty;
+    private bool _mailPdf = true;
     private AppUiMessage? _feedback;
 
     private string Usuario => AppUserSession.GetCurrentUserName(string.Empty).Trim();
@@ -176,7 +254,12 @@
     {
         if (!forzar && _actual?.IdInforme == informe.IdInforme) return;
         _actual = informe; _titulo = informe.Titulo; _htmlPendiente = informe.Html; _sucio = false; _generadoIa = false; _confirmarBaja = false;
-        _link = null;
+        _link = null; _panel = null; _respuestas = [];
+        if (informe.IdInforme > 0)
+        {
+            var rr = await UiOps.RunAsync(() => InformesSvc.RespuestasAsync(informe.IdInforme), "No se pudieron leer las respuestas del cliente.");
+            if (rr.Success) _respuestas = rr.Value!.ToList();
+        }
         if (informe.Publicado)
         {
             var r = await UiOps.RunAsync(() => InformesSvc.ObtenerLinkAsync(informe.IdInforme, Destino), "No se pudo leer el link del informe.");
@@ -291,6 +374,68 @@
         if (!r.Success) { _feedback = r.Feedback; return; }
         _actual = null; _link = null;
         await CargarAsync();
+        await OnActividad.InvokeAsync();
+    }
+
+    private async Task DescargarPdfAsync()
+    {
+        if (_actual is not { IdInforme: > 0 } a) return;
+        if (_sucio) { _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Message = "Guardá los cambios antes de descargar el PDF." }; return; }
+        _ocupado = true; _feedback = null;
+        var r = await UiOps.RunAsync(() => InformesSvc.PdfAsync(a.IdInforme), "No se pudo generar el PDF del informe.");
+        _ocupado = false;
+        if (!r.Success || r.Value is null) { _feedback = r.Feedback; return; }
+        try { await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(r.Value), "application/pdf", $"informe-{a.IdInforme}.pdf"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task AbrirEnvioAsync(string panel)
+    {
+        if (_actual is not { IdInforme: > 0 } a) return;
+        if (_sucio) { _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Message = "Guardá los cambios antes de enviar el informe." }; return; }
+        _ocupado = true; _feedback = null;
+        var r = await UiOps.RunAsync(() => InformesSvc.DatosEnvioAsync(a.IdInforme, Destino), "No se pudieron leer los datos del cliente.");
+        _ocupado = false;
+        if (!r.Success || r.Value is null) { _feedback = r.Feedback; return; }
+        _envio = r.Value;
+        var saludo = string.IsNullOrWhiteSpace(_envio.Contacto) ? "Hola" : $"Hola {_envio.Contacto.Split(' ')[0]}";
+        _mailPara = _envio.Mail;
+        _mailAsunto = $"Informe del ticket #{_envio.NumeroTicket}: {_envio.TituloInforme}";
+        _mailMensaje = $"{saludo}, te compartimos el informe del ticket #{_envio.NumeroTicket}.\n\nCualquier duda, quedamos a disposición.";
+        _waNumero = _envio.Telefono;
+        _waMensaje = $"{saludo}, te compartimos el informe del ticket #{_envio.NumeroTicket} ({_envio.TituloInforme}): {_envio.Link}";
+        _panel = panel;
+    }
+
+    private async Task EnviarMailAsync()
+    {
+        if (_actual is not { IdInforme: > 0 } a) return;
+        _ocupado = true; _feedback = null; StateHasChanged();
+        var request = new TicketInformeMailRequest { IdInforme = a.IdInforme, Para = _mailPara, Asunto = _mailAsunto, Mensaje = _mailMensaje, AdjuntarPdf = _mailPdf, Usuario = Usuario };
+        var r = await UiOps.RunAsync(async () => { await InformesSvc.EnviarMailAsync(request, Destino); return true; }, "No se pudo enviar el mail.");
+        _ocupado = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _panel = null;
+        await OnActividad.InvokeAsync();
+        _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Message = $"Informe enviado por mail a {_mailPara}." };
+    }
+
+    private async Task EnviarWhatsAppAsync()
+    {
+        if (_actual is not { IdInforme: > 0 } a) return;
+        _ocupado = true; _feedback = null;
+        var r = await UiOps.RunAsync(async () => { await InformesSvc.EnviarWhatsAppAsync(a.IdInforme, _waMensaje, Usuario, Destino); return true; }, "No se pudo enviar por WhatsApp.");
+        _ocupado = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _panel = null;
+        await OnActividad.InvokeAsync();
+        _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Message = "Informe enviado por la conversación de WhatsApp del ticket." };
+    }
+
+    private async Task RegistrarWhatsAppManualAsync()
+    {
+        if (_actual is not { IdInforme: > 0 } a) return;
+        await UiOps.RunAsync(async () => { await InformesSvc.RegistrarEnvioManualAsync(a.IdInforme, "WhatsApp", _waNumero, Usuario); return true; }, "No se pudo registrar el envío.");
         await OnActividad.InvokeAsync();
     }
 

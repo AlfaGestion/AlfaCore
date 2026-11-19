@@ -4,6 +4,8 @@ using AlfaCore.Services;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -94,6 +96,40 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
         finally { Environment.SetEnvironmentVariable(TicketInformesService.VariableModeloInformes, antes); }
     }
 
+    [Theory]
+    [InlineData("11 4567-8901", "5491145678901")]
+    [InlineData("011 4567 8901", "5491145678901")]
+    [InlineData("+54 9 11 4567-8901", "5491145678901")]
+    [InlineData("541145678901", "5491145678901")]
+    [InlineData("0054 9 351 555 1234", "5493515551234")]
+    public void TelefonoParaWhatsApp(string entrada, string esperado) => Assert.Equal(esperado, InformeDocumento.TelefonoWhatsApp(entrada));
+
+    [Fact]
+    public void LinkYMailDelInforme()
+    {
+        Assert.Equal("https://wa.me/5491145678901?text=Hola%20%26%20link%3A%20https%3A%2F%2Fx", InformeDocumento.LinkWhatsApp("11 4567-8901", "Hola & link: https://x"));
+        var cuerpo = InformeDocumento.CuerpoMail("Hola Juan,\n\nSaludos <b>", "https://alfa.test/x?a=1&b=2", "Informe & más", conPdf: true);
+        Assert.Contains("<p>Hola Juan,</p><p>Saludos &lt;b&gt;</p>", cuerpo);
+        Assert.Contains("href=\"https://alfa.test/x?a=1&amp;b=2\"", cuerpo);
+        Assert.Contains("Informe &amp; más", cuerpo);
+        Assert.Contains("adjunto en PDF", cuerpo);
+        Assert.Equal("informe-ticket-181-cambio-de-precios.pdf", TicketInformesService.NombreArchivo(new TicketInformePublicoDto { NumeroTicket = 181, Titulo = "Cambio de precios!" }));
+    }
+
+    [Fact]
+    public void DocumentoDelPdfLimpiaElHtmlYEscapaLosDatos()
+    {
+        var html = InformeDocumento.Html(new TicketInformePublicoDto
+        {
+            Titulo = "Informe <x>", NumeroTicket = 7, TituloTicket = "Ticket", Cliente = "ACME & Cía", Html = "<h2>Hola</h2><script>mal()</script>", FechaHoraPublicacion = new DateTime(2026, 11, 19)
+        });
+        Assert.Contains("<title>Informe &lt;x&gt;</title>", html);
+        Assert.Contains("ACME &amp; Cía", html);
+        Assert.Contains("<h2>Hola</h2>", html);
+        Assert.DoesNotContain("script", html);
+        Assert.Contains("19/11/2026", html);
+    }
+
     [Fact]
     public void ElTipoDeLinkInformeEntraEnLaRestriccionCentral()
     {
@@ -115,7 +151,9 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
             idTicket = await cn.ExecuteScalarAsync<long>("SELECT TOP (1) IdTicket FROM dbo.TICK_TICKETS ORDER BY IdTicket DESC;");
 
         var links = new LinksEnMemoria();
-        var svc = new TicketInformesService(new ConfigurationBuilder().Build(), Sesion(cadena), links, Ia(null));
+        using var proveedor = new ServiceCollection().BuildServiceProvider();
+        await using var pdf = new DocumentPdfService(proveedor.GetRequiredService<IServiceScopeFactory>(), NullLogger<DocumentPdfService>.Instance);
+        var svc = new TicketInformesService(new ConfigurationBuilder().Build(), Sesion(cadena), links, Ia(null), pdf);
         var destino = new TicketInformeDestino("PRUEBA", 4283, "https://alfa.test/");
         var plantilla = await svc.PlantillaAsync(idTicket);
         Assert.Contains("<h2>Qué pasó</h2>", plantilla);
@@ -138,6 +176,21 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
             await svc.RegistrarVistaAsync(id, "test");
             Assert.Equal(1, (await svc.ListarAsync(idTicket)).Single(x => x.IdInforme == id).Vistas);
 
+            var envio = await svc.DatosEnvioAsync(id, destino);
+            Assert.Equal(url, envio.Link);
+            Assert.False(envio.WhatsAppDisponible);
+            var bytes = await svc.PdfAsync(id, soloPublicado: true);
+            Assert.True(bytes.Length > 1000 && bytes[0] == (byte)'%' && bytes[1] == (byte)'P');
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.ResponderPublicoAsync(id, "OTRO", null, null));
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.ResponderPublicoAsync(id, TicketInformeRespuestaTipos.Consulta, "Ana", "  "));
+            await svc.ResponderPublicoAsync(id, TicketInformeRespuestaTipos.Conforme, "Ana", null);
+            await svc.ResponderPublicoAsync(id, TicketInformeRespuestaTipos.Consulta, null, "¿Y la factura?");
+            var respuestas = await svc.RespuestasAsync(id);
+            Assert.Equal(2, respuestas.Count);
+            var ultima = (await svc.ListarAsync(idTicket)).Single(x => x.IdInforme == id);
+            Assert.Equal(TicketInformeRespuestaTipos.Consulta, ultima.UltimaRespuestaTipo);
+            await svc.RegistrarEnvioManualAsync(id, "WhatsApp", "11 4567-8901", "TEST");
+
             await svc.DespublicarAsync(id, "TEST", destino);
             Assert.Null(await svc.ObtenerLinkAsync(id, destino));
             Assert.Null(await svc.ObtenerPublicoAsync(id));
@@ -148,8 +201,9 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
             await using var cn = new SqlConnection(cadena);
             await cn.ExecuteAsync("""
                 DELETE FROM dbo.TICK_INFORME_VISTAS WHERE IdInforme = @Id;
+                DELETE FROM dbo.TICK_INFORME_RESPUESTAS WHERE IdInforme = @Id;
                 DELETE FROM dbo.TICK_INFORMES WHERE IdInforme = @Id;
-                DELETE FROM dbo.TICK_ACTIVIDAD WHERE IdTicket = @IdTicket AND TipoActividad = 'INFORME' AND Usuario = 'TEST';
+                DELETE FROM dbo.TICK_ACTIVIDAD WHERE IdTicket = @IdTicket AND TipoActividad = 'INFORME' AND Usuario IN ('TEST', 'Cliente (informe)');
                 """, new { Id = id, IdTicket = idTicket });
         }
     }

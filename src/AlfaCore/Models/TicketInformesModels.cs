@@ -22,6 +22,9 @@ public sealed class TicketInformeDto
     public DateTime? FechaHoraPublicacion { get; set; }
     public int Vistas { get; set; }
     public DateTime? UltimaVista { get; set; }
+    public string UltimaRespuestaTipo { get; set; } = string.Empty;
+    public string UltimaRespuestaNombre { get; set; } = string.Empty;
+    public DateTime? UltimaRespuestaFecha { get; set; }
 
     public bool Publicado => Estado == TicketInformeEstados.Publicado;
 }
@@ -65,4 +68,47 @@ public sealed class TicketInformeContexto
     public List<(DateTime Fecha, string Tipo, string Texto, string Usuario)> Actividad { get; set; } = [];
     public List<(DateTime Fecha, string Direccion, string Texto)> Mensajes { get; set; } = [];
     public List<(DateTime Fecha, int Minutos, string Texto)> Partes { get; set; } = [];
+}
+
+public static class TicketInformeRespuestaTipos
+{
+    public const string Conforme = "CONFORME";
+    public const string Consulta = "CONSULTA";
+}
+
+/// <summary>Respuesta del cliente desde la página pública (TICK_INFORME_RESPUESTAS).</summary>
+public sealed class TicketInformeRespuestaDto
+{
+    public int IdRespuesta { get; set; }
+    public int IdInforme { get; set; }
+    public string Tipo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string Texto { get; set; } = string.Empty;
+    public DateTime FechaHora { get; set; }
+}
+
+/// <summary>Datos para mandar el informe: a quién (contacto del ticket o cliente) y por dónde.</summary>
+public sealed class TicketInformeEnvioDto
+{
+    public string Link { get; set; } = string.Empty;
+    public int NumeroTicket { get; set; }
+    public string TituloInforme { get; set; } = string.Empty;
+    public string Cliente { get; set; } = string.Empty;
+    public string Contacto { get; set; } = string.Empty;
+    public string Mail { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public long? IdConversacion { get; set; }
+    /// <summary>La conversación del ticket permite mandar texto libre ahora (ventana de 24 h de WhatsApp abierta).</summary>
+    public bool WhatsAppDisponible { get; set; }
+    public DateTime? WhatsAppVence { get; set; }
+}
+
+public sealed class TicketInformeMailRequest
+{
+    public int IdInforme { get; set; }
+    public string Para { get; set; } = string.Empty;
+    public string Asunto { get; set; } = string.Empty;
+    public string Mensaje { get; set; } = string.Empty;
+    public bool AdjuntarPdf { get; set; } = true;
+    public string Usuario { get; set; } = string.Empty;
 }

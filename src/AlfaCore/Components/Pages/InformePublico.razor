@@ -6,6 +6,7 @@
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ITicketInformesService InformesSvc
+@inject IJSRuntime JS
 @inject ILogger<InformePublico> Logger
 
 <PageTitle>@(_informe?.Titulo ?? "Informe") | Alfa Gestión</PageTitle>
@@ -36,6 +37,32 @@
                 </dl>
             </header>
             <div class="ip-cuerpo">@((MarkupString)_informe.Html)</div>
+            <section class="ip-respuesta" aria-label="Respuesta al informe">
+                @if (_respondido is { } r)
+                {
+                    <p class="ip-gracias">@(r == TicketInformeRespuestaTipos.Conforme ? "¡Gracias! Registramos tu conformidad con el informe." : "¡Gracias! Recibimos tu consulta; te vamos a responder por el canal habitual.")</p>
+                }
+                else
+                {
+                    <h2>¿Está todo claro?</h2>
+                    <div class="ip-botones">
+                        <button type="button" class="ip-btn ip-btn--ok" disabled="@_enviando" @onclick="() => ResponderAsync(TicketInformeRespuestaTipos.Conforme)">Conforme</button>
+                        <button type="button" class="ip-btn" disabled="@_enviando" @onclick="() => _modoConsulta = !_modoConsulta">Tengo una consulta</button>
+                        <button type="button" class="ip-btn ip-btn--link" disabled="@_descargando" @onclick="DescargarPdfAsync">@(_descargando ? "Preparando PDF…" : "Descargar PDF")</button>
+                    </div>
+                    <div class="ip-form">
+                        <label for="ip-nombre">Tu nombre (opcional)</label>
+                        <input id="ip-nombre" type="text" maxlength="120" @bind="_nombre" />
+                        @if (_modoConsulta)
+                        {
+                            <label for="ip-consulta">Tu consulta</label>
+                            <textarea id="ip-consulta" rows="4" maxlength="2000" @bind="_texto"></textarea>
+                            <button type="button" class="ip-btn ip-btn--ok" disabled="@_enviando" @onclick="() => ResponderAsync(TicketInformeRespuestaTipos.Consulta)">Enviar consulta</button>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(_errorRespuesta)) { <p class="ip-error">@_errorRespuesta</p> }
+                }
+            </section>
             <footer class="ip-pie">Alfa Gestión · Soporte. Ante cualquier duda sobre este informe, respondanos por el canal habitual.</footer>
         </article>
     }
@@ -69,10 +96,26 @@
     .ip-cuerpo .ticket-editor-banner--success { background: #e7f4ec; }
     .ip-cuerpo .ticket-editor-banner--warning { background: #fdf1dd; }
     .ip-cuerpo .ticket-editor-banner--danger { background: #fbe7e7; }
+    .ip-respuesta { margin: 16px 32px 0; padding: 18px 20px; border: 1px solid #dfe3ea; border-radius: 10px; background: #f7f9fc; display: grid; gap: 12px; }
+    .ip-respuesta h2 { margin: 0; font-size: 1.05rem; }
+    .ip-botones { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ip-btn { font: inherit; padding: 9px 16px; border-radius: 8px; border: 1px solid #c9d2de; background: #fff; color: #1d2430; cursor: pointer; }
+    .ip-btn:hover:not(:disabled) { border-color: #1f5fa8; }
+    .ip-btn:disabled { opacity: .6; cursor: default; }
+    .ip-btn--ok { background: #1f5fa8; border-color: #1f5fa8; color: #fff; }
+    .ip-btn--link { margin-left: auto; }
+    .ip-form { display: grid; gap: 6px; max-width: 520px; }
+    .ip-form label { font-size: 13px; color: #5b6574; }
+    .ip-form input, .ip-form textarea { font: inherit; padding: 8px 10px; border: 1px solid #c9d2de; border-radius: 6px; width: 100%; box-sizing: border-box; }
+    .ip-form .ip-btn { justify-self: start; }
+    .ip-gracias { margin: 0; color: #1f7a4d; font-weight: 600; }
+    .ip-error { margin: 0; color: #b42318; }
     .ip-pie { padding: 16px 32px 24px; color: #5b6574; font-size: 13px; border-top: 1px solid #dfe3ea; margin-top: 16px; }
     @@media (max-width: 600px) {
         .ip { padding-top: 12px; }
         .ip-cabecera, .ip-cuerpo, .ip-pie { padding-left: 18px; padding-right: 18px; }
+        .ip-respuesta { margin-left: 18px; margin-right: 18px; }
+        .ip-btn--link { margin-left: 0; }
         .ip-cabecera h1 { font-size: 1.3rem; }
     }
 </style>
@@ -84,6 +127,45 @@
     private string? _error;
     private bool _loading = true;
     private bool _vistaRegistrada;
+    private bool _enviando, _descargando, _modoConsulta;
+    private string _nombre = string.Empty, _texto = string.Empty;
+    private string? _respondido, _errorRespuesta;
+
+    private async Task ResponderAsync(string tipo)
+    {
+        if (_informe is null || _enviando) return;
+        _enviando = true; _errorRespuesta = null;
+        try
+        {
+            await InformesSvc.ResponderPublicoAsync(_informe.IdInforme, tipo, _nombre, tipo == TicketInformeRespuestaTipos.Consulta ? _texto : null);
+            _respondido = tipo;
+        }
+        catch (InvalidOperationException ex) { _errorRespuesta = ex.Message; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo registrar la respuesta al informe {IdInforme}.", _informe.IdInforme);
+            _errorRespuesta = "No se pudo registrar la respuesta. Probá de nuevo en unos minutos.";
+        }
+        finally { _enviando = false; }
+    }
+
+    private async Task DescargarPdfAsync()
+    {
+        if (_informe is null || _descargando) return;
+        _descargando = true; _errorRespuesta = null;
+        try
+        {
+            var pdf = await InformesSvc.PdfAsync(_informe.IdInforme, soloPublicado: true);
+            await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"informe-ticket-{_informe.NumeroTicket}.pdf");
+        }
+        catch (JSDisconnectedException) { }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo generar el PDF del informe {IdInforme}.", _informe.IdInforme);
+            _errorRespuesta = "No se pudo generar el PDF. Probá de nuevo en unos minutos.";
+        }
+        finally { _descargando = false; }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
