@@ -523,7 +523,7 @@ public class Program
         builder.Services.AddScoped<FilterStateService>();
         builder.Services.AddScoped<GestionFilterStateService>();
         builder.Services.AddHttpClient();
-        builder.Services.AddHttpClient(LegacyPythonApiProxy.HttpClientName, (client, provider) =>
+        builder.Services.AddHttpClient(LegacyPythonApiProxy.HttpClientName, (provider, client) =>
         {
             var settings = provider.GetRequiredService<IOptions<LegacyPythonApiOptions>>().Value;
             client.Timeout = settings.TimeoutSeconds > 0
