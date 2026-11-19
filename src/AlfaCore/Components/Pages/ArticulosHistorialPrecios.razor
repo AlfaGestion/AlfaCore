@@ -13,7 +13,8 @@
 
 <PageTitle>Historial de precios | Alfa Gestión</PageTitle>
 
-@* Control de cambios de costos y precios sobre V_MV_PreciosHis (D010507 del legacy, Rp_PRECIOSHISTORIAL). Solo lectura. *@
+@* Control de cambios de costos y precios sobre V_MV_PreciosHis (D010507 del legacy, Rp_PRECIOSHISTORIAL) y de los demás datos del
+   maestro sobre ALFACORE_ARTICULOS_AUDITORIA (update 2026-11-19-060). Solo lectura. *@
 <div class="gd-page gd hp-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
     <AlfaTabs Items="Solapas" ActiveKey="@_solapa" ActiveKeyChanged="CambiarSolapaAsync" />
@@ -39,6 +40,9 @@
             case "alertas" when _alertas is { } al:
                 @RenderAlertas(al)
                 break;
+            case "maestro" when _maestro is { } m:
+                @RenderMaestro(m)
+                break;
         }
     }
 
@@ -52,7 +56,8 @@
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
     private static readonly IReadOnlyList<AlfaTabItem> Solapas =
     [
-        new("resumen", "Resumen"), new("cambios", "Cambios"), new("articulos", "Por artículo"), new("alertas", "Alertas")
+        new("resumen", "Resumen"), new("cambios", "Cambios"), new("articulos", "Por artículo"), new("alertas", "Alertas"),
+        new("maestro", "Cambios del maestro")
     ];
     private static readonly IReadOnlyList<AlfaSelectOption> Sentidos = [new("SUBE", "Solo aumentos"), new("BAJA", "Solo bajas")];
 
@@ -65,6 +70,7 @@
     private HistorialPrecioPagina<HistorialPrecioCambioDto>? _cambios;
     private HistorialPrecioPagina<HistorialPrecioArticuloDto>? _articulos;
     private HistorialPrecioPagina<HistorialPrecioAlertaDto>? _alertas;
+    private HistorialMaestroDto? _maestro;
     private HistorialPrecioFichaDto? _ficha;
     private ArticuloLookupOptionDto? _proveedorSeleccionado;
     private string _proveedorTexto = string.Empty;
@@ -74,7 +80,11 @@
 
     private string NombreCampo(string campo) => _ctx?.Campos.FirstOrDefault(x => x.Codigo == campo)?.Nombre ?? campo;
     private string NombreOrigen(string origen) => origen.Length == 0 ? "Maestro de artículos" : _ctx?.Listas.FirstOrDefault(x => x.Codigo == origen)?.Nombre ?? origen;
-    private string Alcance => $"{NombreCampo(_aplicado.Campo)} · {NombreOrigen(_aplicado.Origen)} · del {_aplicado.Desde:dd/MM/yyyy} al {_aplicado.Hasta:dd/MM/yyyy}";
+    private bool EsMaestro => _solapa == "maestro";
+    private string Periodo => $"del {_aplicado.Desde:dd/MM/yyyy} al {_aplicado.Hasta:dd/MM/yyyy}";
+    private string Alcance => EsMaestro
+        ? $"{(_aplicado.DatoMaestro.Length > 0 ? HistorialMaestroTexto.NombreDato(_aplicado.DatoMaestro) : "Datos del maestro")} · {Periodo}"
+        : $"{NombreCampo(_aplicado.Campo)} · {NombreOrigen(_aplicado.Origen)} · {Periodo}";
 
     protected override async Task OnInitializedAsync()
     {
@@ -109,6 +119,7 @@
                 case "cambios": _cambios = await Service.GetCambiosAsync(f, _lifetime.Token); break;
                 case "articulos": _articulos = await Service.GetArticulosAsync(f, _lifetime.Token); break;
                 case "alertas": _alertas = await Service.GetAlertasAsync(f, _lifetime.Token); break;
+                case "maestro": _maestro = await Service.GetMaestroAsync(f, _lifetime.Token); break;
                 default: _resumen = await Service.GetResumenAsync(f, _lifetime.Token); break;
             }
         }, "Historial de precios", _lifetime.Token);
@@ -150,6 +161,15 @@
         var venta = $"PRECIO{_ctx?.ClaseVenta}";
         if (ultimo.Valor(venta) != 0) return venta;
         return Enumerable.Range(1, 8).Select(c => $"PRECIO{c}").FirstOrDefault(c => ultimo.Valor(c) != 0) ?? "COSTO";
+    }
+
+    private Task FiltrarDatoAsync(string dato) { _filtro = _aplicado.Copiar(); _filtro.DatoMaestro = _filtro.DatoMaestro == dato ? string.Empty : dato; _filtro.Pagina = 1; return CargarAsync(); }
+    private Task FiltrarQuienAsync(string quien)
+    {
+        // "Sin usuario (login)" filtra por el login de SQL; "Sin usuario" no se puede filtrar.
+        var texto = quien.StartsWith("Sin usuario (", StringComparison.Ordinal) ? quien[13..^1] : quien == "Sin usuario" ? string.Empty : quien;
+        _filtro = _aplicado.Copiar(); _filtro.Usuario = _filtro.Usuario == texto ? string.Empty : texto; _filtro.Pagina = 1;
+        return CargarAsync();
     }
 
     private Task FiltrarRubroAsync(string codigo) { _filtro = _aplicado.Copiar(); _filtro.RubroCodigo = codigo; return GenerarAsync(); }
@@ -339,6 +359,119 @@
         </div>
     </div>;
 
+    private static string DatoTxt(HistorialMaestroCambioDto x) => HistorialMaestroTexto.NombreDato(HistorialMaestroTexto.Dato(x));
+    private static string AnteriorTxt(HistorialMaestroCambioDto x)
+        => x.Accion == HistorialMaestroAcciones.Modificacion ? HistorialMaestroTexto.Valor(x.Campo, x.Anterior, x.AnteriorNombre) : "";
+    private static string NuevoTxt(HistorialMaestroCambioDto x)
+        => x.Accion == HistorialMaestroAcciones.Modificacion ? HistorialMaestroTexto.Valor(x.Campo, x.Nuevo, x.NuevoNombre) : x.Accion == HistorialMaestroAcciones.Alta ? x.Nuevo : "";
+    private static string EquipoTxt(HistorialMaestroCambioDto x)
+        => string.Join(" · ", new[] { x.Equipo, x.Programa }.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()));
+
+    private RenderFragment RenderMaestro(HistorialMaestroDto m) => @<div class="hp-resumen">
+        @if (!m.Instalado)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Esta base todavía no registra los cambios del maestro"
+                            Message="Se activa con la próxima actualización de AlfaCore en esta base. Registra desde que se instala: los cambios anteriores no quedaron guardados en ningún lado." />
+        }
+        else
+        {
+            <section class="hp-kpis">
+                <article class="hp-kpi"><span>Datos cambiados</span><strong>@m.Cambios.ToString("N0", Ar)</strong><small>en @m.Articulos.ToString("N0", Ar) @(m.Articulos == 1 ? "artículo" : "artículos")</small></article>
+                <article class="hp-kpi"><span>Altas</span><strong>@m.Altas.ToString("N0", Ar)</strong><small>artículos nuevos</small></article>
+                <article class="hp-kpi"><span>Bajas</span><strong>@m.Bajas.ToString("N0", Ar)</strong><small>artículos borrados de la base</small></article>
+                <article class="hp-kpi" title="Los cambios de antes no quedaron guardados."><span>Registra desde</span><strong>@m.RegistraDesde?.ToString("dd/MM/yyyy", Ar)</strong><small>costos y precios: ver las otras solapas</small></article>
+            </section>
+            @if (!m.Activo)
+            {
+                <p class="hp-nota"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> El registro está apagado en esta base: los cambios nuevos no se guardan.</p>
+            }
+            @if (m.Cambios + m.Altas + m.Bajas == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hubo cambios del maestro con esos filtros" Message="Probá con otro período o quitá filtros." />
+            }
+            else
+            {
+                <section class="hp-grupos hp-grupos--dos">
+                    <article class="hp-panel">
+                        <h3>Datos que más cambiaron</h3>
+                        <table class="hp-tabla hp-tabla--chica">
+                            <thead><tr><th>Dato</th><th class="num">Cambios</th></tr></thead>
+                            <tbody>
+                                @foreach (var d in m.Datos.Take(10))
+                                {
+                                    <tr class="is-clickable @(_aplicado.DatoMaestro == d.Codigo ? "is-activo" : "")" title="@(_aplicado.DatoMaestro == d.Codigo ? "Ver todos los datos" : "Ver solo " + HistorialMaestroTexto.NombreDato(d.Codigo))" @onclick="() => FiltrarDatoAsync(d.Codigo)">
+                                        <td class="hp-recorte">@HistorialMaestroTexto.NombreDato(d.Codigo)</td><td class="num">@d.Cantidad.ToString("N0", Ar)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </article>
+                    <article class="hp-panel">
+                        <h3>Cambios por usuario</h3>
+                        <table class="hp-tabla hp-tabla--chica">
+                            <thead><tr><th>Usuario</th><th class="num">Cambios</th></tr></thead>
+                            <tbody>
+                                @foreach (var u in m.Usuarios)
+                                {
+                                    <tr class="is-clickable" title="Filtrar por @u.Codigo" @onclick="() => FiltrarQuienAsync(u.Codigo)">
+                                        <td class="hp-recorte">@u.Codigo</td><td class="num">@u.Cantidad.ToString("N0", Ar)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </article>
+                </section>
+                @if (m.Usuarios.Any(u => u.Codigo.StartsWith("Sin usuario", StringComparison.Ordinal)))
+                {
+                    <p class="hp-nota"><i class="bi bi-info-circle" aria-hidden="true"></i> "Sin usuario" son cambios hechos sin informar el usuario de Alfa, por ejemplo una actualización masiva o un proceso. Se ve el equipo y el programa que lo hizo.</p>
+                }
+                <div class="hp-panel hp-panel--tabla">
+                    <div class="hp-scroll"><table class="hp-tabla">
+                        <thead><tr>
+                            @Titulo("Fecha", HistorialPrecioOrden.FechaDesc, HistorialPrecioOrden.FechaAsc)
+                            @Titulo("Artículo", HistorialPrecioOrden.Articulo)
+                            <th>Dato</th><th>Anterior</th><th>Nuevo</th><th>Usuario</th><th>Equipo</th>
+                        </tr></thead>
+                        <tbody>
+                            @foreach (var x in m.Pagina.Filas)
+                            {
+                                <tr class="@(x.Existe ? "is-clickable" : "")" title="@(x.Existe ? "Ver el historial del artículo" : "El artículo ya no existe")" @onclick="() => x.Existe ? AbrirFichaAsync(x.IdArticulo) : Task.CompletedTask">
+                                    <td class="hp-nowrap">@x.FechaHora.ToString("dd/MM/yyyy HH:mm", Ar)</td><td class="hp-recorte"><span class="hp-codigo">@x.Codigo</span> @x.Descripcion</td>
+                                    <td class="hp-nowrap"><strong>@DatoTxt(x)</strong></td><td class="hp-recorte hp-valor">@AnteriorTxt(x)</td><td class="hp-recorte hp-valor"><strong>@NuevoTxt(x)</strong></td>
+                                    <td class="hp-nowrap">@HistorialMaestroTexto.Quien(x)</td><td class="hp-recorte">@EquipoTxt(x)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table></div>
+                </div>
+            }
+        }
+    </div>;
+
+    private RenderFragment RenderFichaMaestro(IReadOnlyList<HistorialMaestroCambioDto> cambios) => @<section class="hp-ficha__maestro">
+        <h3>Cambios del maestro</h3>
+        @if (cambios.Count == 0)
+        {
+            <p class="hp-nota">Sin cambios registrados en descripción, rubro, proveedor, IVA y demás datos.</p>
+        }
+        else
+        {
+            <div class="hp-scroll hp-scroll--ficha"><table class="hp-tabla hp-tabla--chica">
+                <thead><tr><th>Fecha</th><th>Dato</th><th>Anterior</th><th>Nuevo</th><th>Usuario</th></tr></thead>
+                <tbody>
+                    @foreach (var x in cambios)
+                    {
+                        <tr title="@EquipoTxt(x)">
+                            <td class="hp-nowrap">@x.FechaHora.ToString("dd/MM/yyyy HH:mm", Ar)</td><td class="hp-nowrap">@DatoTxt(x)</td>
+                            <td class="hp-recorte hp-valor">@AnteriorTxt(x)</td><td class="hp-recorte hp-valor"><strong>@NuevoTxt(x)</strong></td><td class="hp-nowrap">@HistorialMaestroTexto.Quien(x)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table></div>
+            @if (cambios.Count >= 200) { <p class="hp-nota">Se muestran los últimos 200 cambios.</p> }
+        }
+    </section>;
+
     private RenderFragment RenderFicha(HistorialPrecioFichaDto f) => @<div class="hp-ficha">
         @{
             var campos = _ctx?.Campos ?? [];
@@ -386,6 +519,7 @@
                 </tbody>
             </table></div>
         }
+        @if (f.CambiosMaestro is { } cm) { @RenderFichaMaestro(cm) }
     </div>;
 
     private async Task TeclaBusquedaAsync(KeyboardEventArgs e) { if (e.Key == "Enter") await GenerarAsync(); }
@@ -405,11 +539,14 @@
     private List<(string Key, string Label)> Chips()
     {
         var f = _filtro;
-        var chips = new List<(string Key, string Label)> { ("", NombreCampo(f.Campo)), ("origen", NombreOrigen(f.Origen)) };
+        var chips = EsMaestro
+            ? new List<(string Key, string Label)> { f.DatoMaestro.Length > 0 ? ("dato", HistorialMaestroTexto.NombreDato(f.DatoMaestro)) : ("", "Todos los datos") }
+            : new List<(string Key, string Label)> { ("", NombreCampo(f.Campo)), ("origen", NombreOrigen(f.Origen)) };
         if (f.RubroCodigo.Length > 0) chips.Add(("rubro", _ctx?.Rubros.FirstOrDefault(x => x.Codigo == f.RubroCodigo)?.Nombre ?? f.RubroCodigo));
         if (f.MarcaCodigo.Length > 0) chips.Add(("marca", _ctx?.Marcas.FirstOrDefault(x => x.Codigo == f.MarcaCodigo)?.Nombre ?? f.MarcaCodigo));
         if (f.ProveedorCodigo.Length > 0) chips.Add(("proveedor", f.ProveedorNombre.Length > 0 ? f.ProveedorNombre : f.ProveedorCodigo));
         if (f.Usuario.Length > 0) chips.Add(("usuario", f.Usuario));
+        if (EsMaestro) return chips;
         if (f.Sentido.Length > 0) chips.Add(("sentido", f.Sentido == "SUBE" ? "Solo aumentos" : "Solo bajas"));
         if (f.VariacionMinima > 0) chips.Add(("variacion", $"Desde {f.VariacionMinima.ToString("0.##", Ar)} %"));
         return chips;
@@ -431,6 +568,7 @@
             case "marca": _filtro.MarcaCodigo = string.Empty; break;
             case "proveedor": await ProveedorElegidoAsync(null); break;
             case "usuario": _filtro.Usuario = string.Empty; break;
+            case "dato": _filtro.DatoMaestro = string.Empty; break;
             case "sentido": _filtro.Sentido = string.Empty; break;
             case "variacion": _filtro.VariacionMinima = 0; break;
         }
@@ -449,7 +587,7 @@
         @{ var chips = Chips(); }
         <div class="smart-search__bar @(_filtrosAbiertos ? "is-open" : string.Empty)">
             <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
-            <button type="button" class="smart-search__filter-button @(_filtrosAbiertos || chips.Count > 2 ? "is-active" : string.Empty)" aria-label="Abrir filtros" title="Abrir filtros"
+            <button type="button" class="smart-search__filter-button @(_filtrosAbiertos || chips.Count > (EsMaestro ? 1 : 2) ? "is-active" : string.Empty)" aria-label="Abrir filtros" title="Abrir filtros"
                     aria-expanded="@_filtrosAbiertos" disabled="@_cargando" @onclick="AlternarFiltros"><i class="bi bi-funnel-fill" aria-hidden="true"></i></button>
             <div class="smart-search__active-filters" aria-label="Filtros activos">
                 @foreach (var chip in chips.Take(2))
@@ -471,13 +609,25 @@
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
             <div class="smart-search__panel" @onclick:stopPropagation>
-                <div class="smart-search__column">
-                    <h4><i class="bi bi-currency-dollar" aria-hidden="true"></i> Qué controlar</h4>
-                    <AlfaSelect Label="Costo o precio" Value="@_filtro.Campo" ValueChanged="CampoElegido"
-                                Options="@ctx.Campos.Select(x => new AlfaSelectOption(x.Codigo, x.Nombre)).ToList()" />
-                    <AlfaSelect Label="Dónde" Value="@_filtro.Origen" ValueChanged="v => Cambiar(() => _filtro.Origen = v ?? string.Empty)" Placeholder="Maestro de artículos"
-                                Options="@ctx.Listas.Select(x => new AlfaSelectOption(x.Codigo, x.Nombre)).ToList()" />
-                </div>
+                @if (EsMaestro)
+                {
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-card-checklist" aria-hidden="true"></i> Qué ver</h4>
+                        <AlfaSelect Label="Dato" Value="@_filtro.DatoMaestro" ValueChanged="v => Cambiar(() => _filtro.DatoMaestro = v ?? string.Empty)" Placeholder="Todos los datos"
+                                    Options="@OpcionesDato()" />
+                        <AlfaInput Label="Usuario o equipo" Value="@_filtro.Usuario" ValueChanged="v => Cambiar(() => _filtro.Usuario = v ?? string.Empty)" MaxLength="50" />
+                    </div>
+                }
+                else
+                {
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-currency-dollar" aria-hidden="true"></i> Qué controlar</h4>
+                        <AlfaSelect Label="Costo o precio" Value="@_filtro.Campo" ValueChanged="CampoElegido"
+                                    Options="@ctx.Campos.Select(x => new AlfaSelectOption(x.Codigo, x.Nombre)).ToList()" />
+                        <AlfaSelect Label="Dónde" Value="@_filtro.Origen" ValueChanged="v => Cambiar(() => _filtro.Origen = v ?? string.Empty)" Placeholder="Maestro de artículos"
+                                    Options="@ctx.Listas.Select(x => new AlfaSelectOption(x.Codigo, x.Nombre)).ToList()" />
+                    </div>
+                }
                 <FiltroPeriodo Desde="@_filtro.Desde" Hasta="@_filtro.Hasta" Disabled="@_cargando"
                                PeriodoChanged="p => Cambiar(() => { _filtro.Desde = p.Desde ?? _filtro.Desde; _filtro.Hasta = p.Hasta ?? _filtro.Hasta; })" />
                 <div class="smart-search__column">
@@ -491,8 +641,13 @@
                                 SelectedItem="@_proveedorSeleccionado" SelectedItemChanged="ProveedorElegidoAsync">
                         <ItemTemplate Context="p">@p.Descripcion</ItemTemplate>
                     </AlfaLookup>
-                    <AlfaCheckbox Value="@_filtro.SoloActivos" ValueChanged="v => Cambiar(() => _filtro.SoloActivos = v == true)">Solo artículos activos</AlfaCheckbox>
+                    @if (!EsMaestro)
+                    {
+                        <AlfaCheckbox Value="@_filtro.SoloActivos" ValueChanged="v => Cambiar(() => _filtro.SoloActivos = v == true)">Solo artículos activos</AlfaCheckbox>
+                    }
                 </div>
+                @if (!EsMaestro)
+                {
                 <div class="smart-search__column">
                     <h4><i class="bi bi-sliders" aria-hidden="true"></i> Cambios</h4>
                     <AlfaSelect Label="Sentido" Value="@_filtro.Sentido" ValueChanged="v => Cambiar(() => _filtro.Sentido = v ?? string.Empty)" Placeholder="Aumentos y bajas" Options="@Sentidos" />
@@ -500,6 +655,7 @@
                     <AlfaInput Type="number" Label="Alertar desde (%)" Value="@_filtro.UmbralAlerta.ToString("0.##", CultureInfo.InvariantCulture)" ValueChanged="v => Cambiar(() => _filtro.UmbralAlerta = LeerDecimal(v))" />
                     <AlfaInput Label="Usuario" Value="@_filtro.Usuario" ValueChanged="v => Cambiar(() => _filtro.Usuario = v ?? string.Empty)" MaxLength="50" />
                 </div>
+                }
                 <div class="smart-search__actions">
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" Disabled="@_cargando" OnClick="_ => LimpiarAsync()">Limpiar</AlfaButton>
                     <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_cargando" OnClick="_ => GenerarAsync()">Aplicar</AlfaButton>
@@ -508,6 +664,14 @@
         }
     </div>;
 
+    /// <summary>Datos que aparecen en el período, más el elegido aunque ya no tenga cambios.</summary>
+    private IReadOnlyList<AlfaSelectOption> OpcionesDato()
+    {
+        var codigos = (_maestro?.Datos ?? []).Select(d => d.Codigo).ToList();
+        if (_filtro.DatoMaestro.Length > 0 && !codigos.Contains(_filtro.DatoMaestro)) codigos.Add(_filtro.DatoMaestro);
+        return codigos.Select(c => new AlfaSelectOption(c, HistorialMaestroTexto.NombreDato(c))).OrderBy(o => o.Label, StringComparer.CurrentCulture).ToList();
+    }
+
     private PageHeaderPaginationConfig? Paginador()
     {
         (int Total, int Pagina, int Tamano)? datos = _solapa switch
@@ -515,6 +679,7 @@
             "cambios" when _cambios is { } c => (c.Total, c.Pagina, c.TamanoPagina),
             "articulos" when _articulos is { } a => (a.Total, a.Pagina, a.TamanoPagina),
             "alertas" when _alertas is { } al => (al.Total, al.Pagina, al.TamanoPagina),
+            "maestro" when _maestro is { Instalado: true } m => (m.Pagina.Total, m.Pagina.Pagina, m.Pagina.TamanoPagina),
             _ => null
         };
         if (datos is not { } d || !_generado) return null;
@@ -541,7 +706,7 @@
             Actions =
             [
                 new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
-                        Disabled = _cargando || !_generado, OnClick = ExportarAsync },
+                        Disabled = _cargando || !_generado || (EsMaestro && _maestro is not { Instalado: true }), OnClick = ExportarAsync },
                 new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _cargando || _ctx is null,
                         OnClick = () => { _filtro = _aplicado.Copiar(); return CargarAsync(); } }
             ]

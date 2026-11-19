@@ -182,3 +182,28 @@
     color: var(--alfa-accent);
     font-weight: 600;
 }
+
+.hp-grupos--dos {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+}
+
+.hp-tabla tr.is-activo td {
+    background: var(--alfa-bg-row-hover);
+}
+
+.hp-valor {
+    max-width: 22rem;
+}
+
+.hp-ficha__maestro {
+    display: grid;
+    gap: var(--alfa-space-8);
+    margin-top: var(--alfa-space-12);
+}
+
+.hp-ficha__maestro h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--alfa-text-primary);
+}

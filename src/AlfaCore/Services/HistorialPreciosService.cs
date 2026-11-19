@@ -14,6 +14,7 @@ public interface IHistorialPreciosService
     Task<HistorialPrecioPagina<HistorialPrecioArticuloDto>> GetArticulosAsync(HistorialPrecioFiltro filtro, CancellationToken ct = default);
     Task<HistorialPrecioPagina<HistorialPrecioAlertaDto>> GetAlertasAsync(HistorialPrecioFiltro filtro, CancellationToken ct = default);
     Task<HistorialPrecioFichaDto> GetFichaAsync(string idArticulo, HistorialPrecioFiltro filtro, CancellationToken ct = default);
+    Task<HistorialMaestroDto> GetMaestroAsync(HistorialPrecioFiltro filtro, CancellationToken ct = default);
     Task<byte[]> ExportarAsync(string solapa, HistorialPrecioFiltro filtro, CancellationToken ct = default);
 }
 
@@ -47,6 +48,9 @@ public sealed class HistorialPreciosService(ISessionService sessions, IAppUserSe
     public Task<HistorialPrecioFichaDto> GetFichaAsync(string idArticulo, HistorialPrecioFiltro filtro, CancellationToken ct = default)
         => EjecutarAsync("Ficha", cn => LeerFichaAsync(cn, idArticulo, filtro, ct), ct);
 
+    public Task<HistorialMaestroDto> GetMaestroAsync(HistorialPrecioFiltro filtro, CancellationToken ct = default)
+        => EjecutarAsync("Maestro", cn => LeerMaestroAsync(cn, filtro, ct), ct);
+
     public Task<byte[]> ExportarAsync(string solapa, HistorialPrecioFiltro filtro, CancellationToken ct = default)
         => EjecutarAsync("Exportar", cn => ArmarExcelAsync(cn, solapa, filtro, ct), ct);
 
@@ -56,9 +60,19 @@ public sealed class HistorialPreciosService(ISessionService sessions, IAppUserSe
         var cfg = await CargaComprobantesConfigPrecios.LeerAsync(cn, ct);
         var campo = NombreCampo(cfg, Columna(f.Campo));
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add(solapa switch { "articulos" => "Por artículo", "alertas" => "Alertas", "resumen" => "Resumen", _ => "Cambios" });
+        var ws = wb.Worksheets.Add(solapa switch { "articulos" => "Por artículo", "alertas" => "Alertas", "resumen" => "Resumen", "maestro" => "Cambios del maestro", _ => "Cambios" });
         switch (solapa)
         {
+            case "maestro":
+                Hoja(ws, ["Fecha", "Código", "Descripción", "Dato", "Anterior", "Nuevo", "Usuario", "Equipo", "Programa"],
+                    (await LeerMaestroAsync(cn, f, ct)).Pagina.Filas.Select(x => new object?[]
+                    {
+                        x.FechaHora, x.Codigo, x.Descripcion, HistorialMaestroTexto.NombreDato(HistorialMaestroTexto.Dato(x)),
+                        x.Accion == HistorialMaestroAcciones.Modificacion ? HistorialMaestroTexto.Valor(x.Campo, x.Anterior, x.AnteriorNombre) : x.Anterior,
+                        x.Accion == HistorialMaestroAcciones.Modificacion ? HistorialMaestroTexto.Valor(x.Campo, x.Nuevo, x.NuevoNombre) : x.Nuevo,
+                        HistorialMaestroTexto.Quien(x), x.Equipo, x.Programa
+                    }));
+                break;
             case "articulos":
                 Hoja(ws, ["Código", "Descripción", "Rubro", "Proveedor", "Valor inicial", "Valor final", "Variación %", "Cambios", "Último cambio"],
                     (await LeerArticulosAsync(cn, f, ct)).Filas.Select(x => new object?[] { x.Codigo, x.Descripcion, x.Rubro, x.Proveedor, x.ValorInicial, x.ValorFinal, x.Pct, x.Cambios, x.UltimoCambio }));
@@ -487,10 +501,111 @@ public sealed class HistorialPreciosService(ISessionService sessions, IAppUserSe
         var vigente = await multi.ReadFirstOrDefaultAsync<HistorialPrecioPuntoDto>();
         var filas = (await multi.ReadAsync<HistorialPrecioPuntoDto>()).Reverse().ToList();
         var puntos = SoloCambios(filas);
+        await multi.DisposeAsync();
+        IReadOnlyList<HistorialMaestroCambioDto>? maestro = null;
+        if (await RegistroMaestroAsync(cn, ct) is not null)
+            maestro = (await cn.QueryAsync<HistorialMaestroCambioDto>(new CommandDefinition(
+                "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n" + SqlFilaMaestro("TOP (200)", "x.IdArticulo = @Articulo") + " ORDER BY x.FechaHora DESC, x.Id DESC;",
+                new { Articulo = idArticulo }, commandTimeout: Timeout, cancellationToken: ct))).ToList();
         return new HistorialPrecioFichaDto
         {
             IdArticulo = idArticulo, Codigo = cab.Codigo, Descripcion = cab.Descripcion, Proveedor = cab.Proveedor, Actual = vigente,
-            Puntos = puntos.TakeLast(MaximoPuntosFicha).ToList(), Truncado = puntos.Count > MaximoPuntosFicha
+            Puntos = puntos.TakeLast(MaximoPuntosFicha).ToList(), Truncado = puntos.Count > MaximoPuntosFicha, CambiosMaestro = maestro
+        };
+    }
+
+    internal const string TablaMaestro = "ALFACORE_ARTICULOS_AUDITORIA";
+
+    /// <summary>Si la base tiene el registro de cambios del maestro: desde cuándo registra y si el trigger está activo. Null si no está instalado.</summary>
+    internal static async Task<(DateTime Desde, bool Activo)?> RegistroMaestroAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var r = await cn.QueryFirstOrDefaultAsync<(DateTime? Desde, int Activo)>(new CommandDefinition($"""
+            SELECT (SELECT create_date FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.{TablaMaestro}', N'U')),
+                   ISNULL((SELECT CASE WHEN is_disabled = 0 THEN 1 ELSE 0 END FROM sys.triggers WHERE object_id = OBJECT_ID(N'dbo.ALFACORE_TR_ARTICULOS_AUDITORIA')), 0);
+            """, cancellationToken: ct));
+        return r.Desde is { } d ? (d, r.Activo == 1) : null;
+    }
+
+    /// <summary>Fila del registro con la descripción actual del artículo y el nombre del rubro, marca o proveedor cuando el dato es un código.</summary>
+    private static string SqlFilaMaestro(string top, string condicion) => $"""
+        SELECT {top} x.Id, x.FechaHora, x.IdArticulo, LTRIM(RTRIM(x.IdArticulo)) AS Codigo, ISNULL(a.DESCRIPCION, ISNULL(CASE WHEN x.Accion = 'B' THEN x.ValorAnterior END, N'')) AS Descripcion,
+               x.Accion, ISNULL(x.Campo, N'') AS Campo, ISNULL(x.ValorAnterior, N'') AS Anterior, ISNULL(x.ValorNuevo, N'') AS Nuevo,
+               ISNULL(x.Usuario, N'') AS Usuario, ISNULL(x.Programa, N'') AS Programa, ISNULL(x.Equipo, N'') AS Equipo, ISNULL(x.LoginSql, N'') AS LoginSql,
+               CAST(CASE WHEN a.IDARTICULO IS NULL THEN 0 ELSE 1 END AS bit) AS Existe,
+               {NombreCodigo("x.ValorAnterior")} AS AnteriorNombre, {NombreCodigo("x.ValorNuevo")} AS NuevoNombre
+        FROM dbo.{TablaMaestro} x
+        LEFT JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = x.IdArticulo
+        WHERE {condicion}
+        """;
+
+    private static string NombreCodigo(string valor) => $"""
+        ISNULL(CASE UPPER(x.Campo)
+            WHEN 'IDRUBRO' THEN (SELECT TOP (1) r.Descripcion FROM dbo.v_ta_rubros r WHERE LTRIM(RTRIM(r.IdRubro)) = LTRIM(RTRIM({valor})))
+            WHEN 'IDTIPO' THEN (SELECT TOP (1) t.Descripcion FROM dbo.v_ta_tipoArticulo t WHERE LTRIM(RTRIM(t.IdTipo)) = LTRIM(RTRIM({valor})))
+            WHEN 'CUENTAPROVEEDOR' THEN (SELECT TOP (1) p.RAZON_SOCIAL FROM dbo.vt_proveedores p WHERE LTRIM(RTRIM(p.CODIGO)) = LTRIM(RTRIM({valor})))
+        END, N'')
+        """;
+
+    /// <summary>
+    /// Cambios del maestro (descripción, rubro, proveedor, IVA, etc.) que registra el trigger ALFACORE_TR_ARTICULOS_AUDITORIA.
+    /// Los filtros de rubro, marca y proveedor miran el artículo como está hoy. No usa «Solo activos»: suspender es uno de los cambios a ver.
+    /// </summary>
+    internal static async Task<HistorialMaestroDto> LeerMaestroAsync(SqlConnection cn, HistorialPrecioFiltro f, CancellationToken ct)
+    {
+        Validar(f);
+        if (await RegistroMaestroAsync(cn, ct) is not { } registro) return new HistorialMaestroDto { Instalado = false };
+        var orden = f.Orden switch
+        {
+            HistorialPrecioOrden.FechaAsc => "FechaHora, Id",
+            HistorialPrecioOrden.Articulo => "Descripcion, Codigo, FechaHora DESC, Id DESC",
+            _ => "FechaHora DESC, Id DESC"
+        };
+        const string dato = "CASE Accion WHEN 'A' THEN 'ALTA' WHEN 'B' THEN 'BAJA' ELSE Campo END";
+        const string quien = "CASE WHEN Usuario <> N'' THEN Usuario WHEN LoginSql <> N'' THEN N'Sin usuario (' + LoginSql + N')' ELSE N'Sin usuario' END";
+        var sql = $"""
+            SET NOCOUNT ON;
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+            SELECT x.Id, x.FechaHora, x.IdArticulo, LTRIM(RTRIM(x.IdArticulo)) AS Codigo,
+                   ISNULL(a.DESCRIPCION, ISNULL(CASE WHEN x.Accion = 'B' THEN x.ValorAnterior END, N'')) AS Descripcion,
+                   x.Accion, ISNULL(x.Campo, N'') AS Campo, ISNULL(x.Usuario, N'') AS Usuario, ISNULL(x.LoginSql, N'') AS LoginSql
+            INTO #m
+            FROM dbo.{TablaMaestro} x
+            LEFT JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = x.IdArticulo
+            WHERE x.FechaHora >= @Desde AND x.FechaHora < @HastaExcl
+              AND (@TextoLike = '' OR x.IdArticulo LIKE @TextoLike OR ISNULL(a.DESCRIPCION, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike OR ISNULL(a.CODIGOBARRA, '') LIKE @TextoLike
+                   OR ISNULL(x.ValorAnterior, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike OR ISNULL(x.ValorNuevo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike)
+              AND (@Rubro = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @Rubro)
+              AND (@Marca = '' OR LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = @Marca)
+              AND (@Proveedor = '' OR LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = @Proveedor)
+              AND (@UsuarioLike = '' OR ISNULL(x.Usuario, '') LIKE @UsuarioLike OR ISNULL(x.LoginSql, '') LIKE @UsuarioLike OR ISNULL(x.Equipo, '') LIKE @UsuarioLike);
+
+            SELECT SUM(CASE WHEN Accion = 'M' THEN 1 ELSE 0 END) AS Cambios, COUNT(DISTINCT IdArticulo) AS Articulos,
+                   SUM(CASE WHEN Accion = 'A' THEN 1 ELSE 0 END) AS Altas, SUM(CASE WHEN Accion = 'B' THEN 1 ELSE 0 END) AS Bajas
+            FROM #m;
+            SELECT {dato} AS Codigo, COUNT(*) AS Cantidad FROM #m GROUP BY {dato} ORDER BY COUNT(*) DESC;
+            SELECT TOP (10) {quien} AS Codigo, COUNT(*) AS Cantidad FROM #m GROUP BY {quien} ORDER BY COUNT(*) DESC;
+
+            DELETE FROM #m WHERE @Dato <> '' AND {dato} <> @Dato;
+            ;WITH o AS (SELECT Id, ROW_NUMBER() OVER (ORDER BY {orden}) AS Fila FROM #m)
+            SELECT Id, Fila INTO #p FROM o {SqlServerCompatibilidad.Paginar(cn.ServerVersion, "Fila")};
+            SELECT q.* FROM (
+            {SqlFilaMaestro("", "x.Id IN (SELECT Id FROM #p)")}
+            ) q INNER JOIN #p ON #p.Id = q.Id ORDER BY #p.Fila;
+            SELECT COUNT(*) FROM #m;
+            """;
+        var p = Parametros(f);
+        p.Add("Dato", (f.DatoMaestro ?? string.Empty).Trim());
+        await using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, p, commandTimeout: Timeout, cancellationToken: ct));
+        var t = await multi.ReadSingleAsync<(int? Cambios, int Articulos, int? Altas, int? Bajas)>();
+        var datos = (await multi.ReadAsync<(string Codigo, int Cantidad)>()).Select(x => new HistorialMaestroConteo(x.Codigo, x.Cantidad)).ToList();
+        var usuarios = (await multi.ReadAsync<(string Codigo, int Cantidad)>()).Select(x => new HistorialMaestroConteo(x.Codigo, x.Cantidad)).ToList();
+        var filas = (await multi.ReadAsync<HistorialMaestroCambioDto>()).ToList();
+        var total = await multi.ReadSingleAsync<int>();
+        return new HistorialMaestroDto
+        {
+            Instalado = true, Activo = registro.Activo, RegistraDesde = registro.Desde,
+            Cambios = t.Cambios ?? 0, Articulos = t.Articulos, Altas = t.Altas ?? 0, Bajas = t.Bajas ?? 0, Datos = datos, Usuarios = usuarios,
+            Pagina = new() { Filas = filas, Total = total, Pagina = Math.Max(f.Pagina, 1), TamanoPagina = f.TamanoPagina }
         };
     }
 

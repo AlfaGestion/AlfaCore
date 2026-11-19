@@ -439,7 +439,9 @@ public sealed partial class ArticulosService(
                 request.Utilidad,
                 TasaIva = tasaIva,
                 request.Exento,
-                Politica = politica.Length == 0 ? null : politica
+                Politica = politica.Length == 0 ? null : politica,
+                // Quién grabó: lo copian los triggers al historial de precios y al registro de cambios del maestro.
+                Usuario = UsuarioQueGraba()
             };
 
             // Artículo y solapa "Listas" en una sola transacción: si falla una lista no queda el artículo a medias.
@@ -450,11 +452,11 @@ public sealed partial class ArticulosService(
                     INSERT INTO dbo.V_MA_ARTICULOS
                         (IDARTICULO, CODIGOBARRA, DESCRIPCION, IDRUBRO, IDTIPO, IDUNIDAD, CUENTAPROVEEDOR,
                         CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA,
-                        POLITICAPRECIOS, DesdeTrigger, Perecedero, Largo)
+                        POLITICAPRECIOS, DesdeTrigger, Perecedero, Largo, Usuario)
                     VALUES
                         (@Codigo, @CodigoBarra, @Descripcion, @RubroCodigo, @MarcaCodigo, @UnidadCodigo, @CuentaProveedor,
                          @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE(),
-                         @Politica, 0, @Perecedero, CASE WHEN @Perecedero = 1 THEN @DiasVencimiento ELSE NULL END);
+                         @Politica, 0, @Perecedero, CASE WHEN @Perecedero = 1 THEN @DiasVencimiento ELSE NULL END, @Usuario);
                     """;
                 await cn.ExecuteAsync(new CommandDefinition(insertSql, parameters, tx, cancellationToken: token));
             }
@@ -488,6 +490,7 @@ public sealed partial class ArticulosService(
                         TasaIVA = @TasaIva,
                         EXENTO = @Exento,
                         POLITICAPRECIOS = @Politica,
+                        Usuario = @Usuario,
                         -- Perecedero comparte Largo con las medidas: con PideMedidas no se toca (Ma_art.frm oculta el check).
                         Perecedero = CASE WHEN @UsaPerecederos = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @Perecedero ELSE Perecedero END,
                         Largo = CASE WHEN @UsaPerecederos = 1 AND @Perecedero = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @DiasVencimiento ELSE Largo END,
@@ -502,7 +505,7 @@ public sealed partial class ArticulosService(
 
             if (request.Listas is not null || (esAlta && request.IncluirEnTodasLasListas))
             {
-                var usuario = appUserSession?.GetCurrentUserName().Trim() is { Length: > 0 } u ? (u.Length > 50 ? u[..50] : u) : "AlfaCore";
+                var usuario = UsuarioQueGraba();
                 var idArticulo = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
                     "SELECT TOP (1) IDARTICULO FROM dbo.V_MA_ARTICULOS WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;",
                     new { Codigo = codigoCrudo }, tx, cancellationToken: token));
@@ -514,6 +517,9 @@ public sealed partial class ArticulosService(
             return codigoCrudo;
         }, "No se pudo guardar el artículo.", ct);
 
+    private string UsuarioQueGraba()
+        => appUserSession?.GetCurrentUserName().Trim() is { Length: > 0 } u ? (u.Length > 50 ? u[..50] : u) : "AlfaCore";
+
     public Task DeactivateAsync(string codigo, CancellationToken ct = default)
         => ExecuteLoggedAsync("Deactivate", async token =>
         {
@@ -524,8 +530,8 @@ public sealed partial class ArticulosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await cn.ExecuteAsync(new CommandDefinition(
-                "UPDATE dbo.V_MA_ARTICULOS SET SUSPENDIDO = 1 WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;",
-                new { Codigo = normalizado }, cancellationToken: token));
+                "UPDATE dbo.V_MA_ARTICULOS SET SUSPENDIDO = 1, Usuario = @Usuario WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;",
+                new { Codigo = normalizado, Usuario = UsuarioQueGraba() }, cancellationToken: token));
         }, "No se pudo dar de baja el artículo.", ct);
 
     public Task<ArticuloViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
