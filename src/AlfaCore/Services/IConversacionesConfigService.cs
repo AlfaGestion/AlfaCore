@@ -58,6 +58,8 @@ public interface IConversacionesConfigService
     Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default);
     Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default);
+    Task<bool> GetLlamarActivoAsync(CancellationToken ct = default);
+    Task SaveLlamarActivoAsync(bool activo, CancellationToken ct = default);
 
     /// <summary>Catálogo de dbo.TA_CLASIFICACIONES, para poblar los combos de prioridad.</summary>
     Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default);

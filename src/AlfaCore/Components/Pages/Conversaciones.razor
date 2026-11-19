@@ -1282,6 +1282,38 @@
                                                 disabled="@_busyAction">
                                             <i class="bi bi-pencil-square"></i>
                                         </button>
+                                        @if (PuedeLlamar)
+                                        {
+                                            <span class="conversation-llamar" @onclick:stopPropagation="true">
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm conversation-title-editor__button"
+                                                        title="Llamar"
+                                                        aria-label="Llamar"
+                                                        aria-haspopup="menu"
+                                                        aria-expanded="@_showLlamarMenu"
+                                                        @onclick="() => _showLlamarMenu = !_showLlamarMenu">
+                                                    <i class="bi bi-telephone"></i>
+                                                </button>
+                                                @if (_showLlamarMenu)
+                                                {
+                                                    <button type="button" class="conversation-llamar__fondo" aria-label="Cerrar" @onclick="() => _showLlamarMenu = false"></button>
+                                                    <span class="conversation-llamar__menu" role="menu">
+                                                        <a role="menuitem"
+                                                           href="@LinkLlamarSeleccionada"
+                                                           target="_blank"
+                                                           rel="noopener noreferrer"
+                                                           @onclick="() => AbrirRegistroLlamada(hecha: true)">
+                                                            <i class="bi bi-whatsapp"></i>
+                                                            <span>Llamar por WhatsApp<small>Se abre el chat; tocá el teléfono para llamar.</small></span>
+                                                        </a>
+                                                        <button type="button" role="menuitem" @onclick="() => AbrirRegistroLlamada(hecha: false)">
+                                                            <i class="bi bi-telephone-inbound"></i>
+                                                            <span>Anotar llamada recibida<small>Para las llamadas que entraron al celular.</small></span>
+                                                        </button>
+                                                    </span>
+                                                }
+                                            </span>
+                                        }
                                     }
                                 </div>
                                 @if (_selectedConversation.Canal == "INSTAGRAM" && !string.IsNullOrWhiteSpace(_selectedConversation.UsuarioExterno))
@@ -3173,6 +3205,55 @@
                             Message="No hay información cargada en esta solapa." />
         }
     </div>
+</AlfaDialog>
+
+<AlfaDialog Open="@_llamada.Abierta"
+            Title="@(_llamada.Hecha ? "¿Cómo fue la llamada?" : "Anotar llamada recibida")"
+            Description="@DescripcionRegistroLlamada"
+            Size="AlfaDialogSize.Sm"
+            Loading="@_llamada.Guardando"
+            ErrorMessage="@_llamada.Error"
+            CloseOnBackdrop="false"
+            Class="llamada-dialog"
+            OnClose="CerrarRegistroLlamada">
+    <ChildContent>
+    <div class="llamada-dialog__campo">
+        <span class="llamada-dialog__etiqueta">Resultado</span>
+        <div class="llamada-dialog__opciones" role="radiogroup" aria-label="Resultado de la llamada">
+            @foreach (var (codigo, texto) in AlfaCore.Services.ConversacionLlamadas.Resultados)
+            {
+                var elegido = string.Equals(_llamada.Resultado, codigo, StringComparison.Ordinal);
+                <button type="button"
+                        class="conversations-filter-pill @(elegido ? "is-active" : string.Empty)"
+                        role="radio"
+                        aria-checked="@elegido"
+                        disabled="@_llamada.Guardando"
+                        @onclick="() => _llamada.Resultado = codigo">
+                    @texto
+                </button>
+            }
+        </div>
+    </div>
+    <AlfaInput Label="Duración en minutos (opcional)"
+               Type="number"
+               Step="1"
+               Value="@_llamada.Minutos"
+               ValueChanged="@((string? v) => _llamada.Minutos = v)"
+               Disabled="@_llamada.Guardando" />
+    <label class="llamada-dialog__campo">
+        <span class="llamada-dialog__etiqueta">Nota (opcional)</span>
+        <textarea rows="3"
+                  maxlength="@AlfaCore.Services.ConversacionLlamadas.NotaMaxima"
+                  placeholder="Ej.: pasa mañana a buscar el pedido"
+                  value="@_llamada.Nota"
+                  disabled="@_llamada.Guardando"
+                  @oninput="args => _llamada.Nota = args.Value?.ToString() ?? string.Empty"></textarea>
+    </label>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_llamada.Guardando" OnClick="CerrarRegistroLlamada">Descartar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-journal-check" Loading="@_llamada.Guardando" OnClick="GuardarRegistroLlamadaAsync">Guardar en la conversación</AlfaButton>
+    </Footer>
 </AlfaDialog>
 
 <AlfaDialog Open="@(_quotedPreviewMessage is not null)"
@@ -5146,6 +5227,15 @@
         {
             // Fail-open: si todavía no está la migración de multi-número (o falla la carga), se
             // sigue viendo/asignando conversaciones como antes de esta funcionalidad.
+        }
+
+        try
+        {
+            _llamarActivo = await ConfigSvc.GetLlamarActivoAsync();
+        }
+        catch
+        {
+            _llamarActivo = false;
         }
     }
 
@@ -9664,6 +9754,124 @@
             _sendingTemplate = false;
             QueueNumeroBlockedFeedbackRefresh();
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // --- Botón Llamar (ver ConversacionLlamadas) ---
+    private bool _llamarActivo;
+    private bool _showLlamarMenu;
+    private readonly RegistroLlamadaState _llamada = new();
+
+    private sealed class RegistroLlamadaState
+    {
+        public bool Abierta { get; set; }
+        public bool Hecha { get; set; }
+        public long IdConversacion { get; set; }
+        public string Resultado { get; set; } = string.Empty;
+        public string? Minutos { get; set; }
+        public string Nota { get; set; } = string.Empty;
+        public bool Guardando { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private string? LinkLlamarSeleccionada
+        => _selectedConversation is { Canal: "WHATSAPP" } conversation
+            ? AlfaCore.Services.ConversacionLlamadas.LinkWhatsApp(conversation.TelefonoWhatsApp)
+            : null;
+
+    private bool PuedeLlamar => _llamarActivo && LinkLlamarSeleccionada is not null;
+
+    private string DescripcionRegistroLlamada
+    {
+        get
+        {
+            var nombre = _selectedConversation is null ? "el cliente" : GetConversationHeader(_selectedConversation);
+            return _llamada.Hecha
+                ? $"Se abrió WhatsApp con el chat de {nombre}. Cuando termines de llamar, contá cómo fue: queda como nota interna (el cliente no la ve)."
+                : $"Anotá la llamada que hizo {nombre}. Queda como nota interna (el cliente no la ve).";
+        }
+    }
+
+    private void AbrirRegistroLlamada(bool hecha)
+    {
+        _showLlamarMenu = false;
+        if (_selectedConversation is null)
+            return;
+
+        _llamada.Abierta = true;
+        _llamada.Hecha = hecha;
+        _llamada.IdConversacion = _selectedConversation.IdConversacion;
+        _llamada.Resultado = hecha ? string.Empty : AlfaCore.Services.ConversacionLlamadas.ResultadoAtendio;
+        _llamada.Minutos = null;
+        _llamada.Nota = string.Empty;
+        _llamada.Error = null;
+        _llamada.Guardando = false;
+    }
+
+    private void CerrarRegistroLlamada()
+    {
+        if (_llamada.Guardando)
+            return;
+
+        _llamada.Abierta = false;
+        _llamada.Error = null;
+    }
+
+    private async Task GuardarRegistroLlamadaAsync()
+    {
+        if (_llamada.Guardando)
+            return;
+
+        _llamada.Error = null;
+        int? minutos = null;
+        if (!string.IsNullOrWhiteSpace(_llamada.Minutos))
+        {
+            if (!int.TryParse(_llamada.Minutos.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var valor))
+            {
+                _llamada.Error = "La duración tiene que ser un número entero de minutos.";
+                return;
+            }
+
+            minutos = valor;
+        }
+
+        string texto;
+        try
+        {
+            texto = AlfaCore.Services.ConversacionLlamadas.ArmarNota(_llamada.Hecha, _llamada.Resultado, minutos, _llamada.Nota);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _llamada.Error = ex.Message;
+            return;
+        }
+
+        _llamada.Guardando = true;
+        try
+        {
+            await ConversacionesSvc.AddInternalNoteAsync(new ConversacionNotaInternaRequest
+            {
+                IdConversacion = _llamada.IdConversacion,
+                Texto = texto,
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+
+            _llamada.Guardando = false;
+            _llamada.Abierta = false;
+            _actionMessage = "Llamada anotada en la conversación.";
+            if (_selectedConversation?.IdConversacion == _llamada.IdConversacion)
+                await SelectConversationAsync(_llamada.IdConversacion, updateUrl: false);
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+        }
+        catch (Exception ex)
+        {
+            _llamada.Error = ex.Message;
+        }
+        finally
+        {
+            _llamada.Guardando = false;
         }
     }
 
