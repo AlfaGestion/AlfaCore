@@ -38,6 +38,8 @@ Los archivos nuevos de Conversaciones se guardan una sola vez por contenido (SHA
 
 El chat del icono **?** reutiliza `OPENAI_API_KEY` y `OPENAI_MODEL` del servidor, cargados por el mecanismo `.env` existente, con el mismo fallback general que las otras funciones de IA. No agrega parámetros propios ni guarda credenciales en `TA_CONFIGURACION`. El consumo se identifica como `AYUDA`. Sin clave configurada, las guías siguen disponibles. Ver [arquitectura de ayuda](arquitectura/ayuda-contextual.md).
 
+Los **informes al cliente** de los tickets (solapa Informes, botón **Generar con IA**) usan `OPENAI_API_KEY` y el modelo de `OPENAI_MODEL_INFORMES` (variable de entorno del servidor, cargada por el mismo `.env`); si está vacía usan `OPENAI_MODEL` como el resto de la IA. Se recomienda un modelo más capaz que el general (por ejemplo `gpt-5.6`): el informe lo lee el cliente y se pide pocas veces. El consumo se registra con la función `INFORME_TICKET`. Requiere la actualización 2026-11-19-061__tickets_informes_cliente.sql.
+
 ## Conciliación bancaria inteligente
 
 `CONCILIACION-COBRANZA-AJUSTE` (CAJA, ValorAux JSON) conserva `Cuenta` (vacía inicialmente) y `Limite`

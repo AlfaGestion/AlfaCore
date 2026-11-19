@@ -173,7 +173,7 @@ public sealed class TicketInformesService(
         if (!ia.IsConfigured) throw new InvalidOperationException("La IA no está configurada en este servidor.");
         await using var cn = await AbrirAsync(ct);
         var contexto = await LeerContextoAsync(cn, idTicket, ct);
-        var html = await ia.GenerarTextoAsync(PromptSistema, ContenidoParaIa(contexto, indicaciones), IaUsoFunciones.InformeTicket, 120, ct);
+        var html = await ia.GenerarTextoAsync(PromptSistema, ContenidoParaIa(contexto, indicaciones), IaUsoFunciones.InformeTicket, 120, ModeloInformes(), ct);
         var limpio = InformeHtmlSanitizer.Limpiar(QuitarCercoDeCodigo(html));
         if (InformeHtmlSanitizer.ATexto(limpio).Length == 0)
             throw new InvalidOperationException("La IA no devolvió un informe. Probá de nuevo en unos segundos.");
@@ -212,6 +212,12 @@ public sealed class TicketInformesService(
     }
 
     // ---- contexto, plantilla e IA ----
+
+    /// <summary>Variable de entorno con el modelo de los informes (ej. gpt-5.6). Vacía: se usa OPENAI_MODEL como el resto de la IA.</summary>
+    internal const string VariableModeloInformes = "OPENAI_MODEL_INFORMES";
+
+    internal static string? ModeloInformes()
+        => Environment.GetEnvironmentVariable(VariableModeloInformes) is { Length: > 0 } m && !string.IsNullOrWhiteSpace(m) ? m.Trim() : null;
 
     internal const string PromptSistema = """
         Redactás el informe que una empresa de software de gestión (Alfa Gestión) le entrega a su cliente sobre un ticket de soporte.

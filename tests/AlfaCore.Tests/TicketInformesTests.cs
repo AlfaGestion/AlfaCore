@@ -81,6 +81,20 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void ElModeloDeInformesSaleDeSuVariableOQuedaElGeneral()
+    {
+        var antes = Environment.GetEnvironmentVariable(TicketInformesService.VariableModeloInformes);
+        try
+        {
+            Environment.SetEnvironmentVariable(TicketInformesService.VariableModeloInformes, " gpt-5.6 ");
+            Assert.Equal("gpt-5.6", TicketInformesService.ModeloInformes());
+            Environment.SetEnvironmentVariable(TicketInformesService.VariableModeloInformes, "");
+            Assert.Null(TicketInformesService.ModeloInformes());
+        }
+        finally { Environment.SetEnvironmentVariable(TicketInformesService.VariableModeloInformes, antes); }
+    }
+
+    [Fact]
     public void ElTipoDeLinkInformeEntraEnLaRestriccionCentral()
     {
         Assert.Contains(PublicLinkTipos.Informe, PublicLinkTipos.All);

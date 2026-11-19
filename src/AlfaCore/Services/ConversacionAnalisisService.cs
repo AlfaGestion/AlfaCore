@@ -53,19 +53,19 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
         return string.IsNullOrWhiteSpace(resultado) ? null : resultado.Trim();
     }
 
-    public async Task<string?> GenerarTextoAsync(string systemPrompt, string contenido, string funcion, int timeoutSegundos = 90, CancellationToken ct = default)
+    public async Task<string?> GenerarTextoAsync(string systemPrompt, string contenido, string funcion, int timeoutSegundos = 90, string? modelo = null, CancellationToken ct = default)
     {
-        var resultado = await CallOpenAiAsync(systemPrompt, (contenido ?? string.Empty).Trim(), ct, funcion, timeoutSegundos);
+        var resultado = await CallOpenAiAsync(systemPrompt, (contenido ?? string.Empty).Trim(), ct, funcion, timeoutSegundos, modelo);
         return string.IsNullOrWhiteSpace(resultado) ? null : resultado.Trim();
     }
 
-    private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct, string funcion = IaUsoFunciones.Analisis, int timeoutSegundos = 20)
+    private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct, string funcion = IaUsoFunciones.Analisis, int timeoutSegundos = 20, string? modelo = null)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey) || transcript.Length == 0)
             return null;
 
-        var model = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        var model = string.IsNullOrWhiteSpace(modelo) ? Environment.GetEnvironmentVariable("OPENAI_MODEL") : modelo.Trim();
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
