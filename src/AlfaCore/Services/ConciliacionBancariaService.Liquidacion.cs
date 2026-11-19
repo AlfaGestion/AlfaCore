@@ -173,6 +173,19 @@ public sealed partial class ConciliacionBancariaService
                 }
                 catch(JsonException) { }
         }
+        // Cuentas elegibles para comisión e IVA: las mismas que acepta el grabado (activas, contables, en pesos).
+        var tc=await LeerComprobanteAsync(cn,null,ClaveLiquidacionComprobante,"CC",ct);
+        var catalogoCuentas=(await AsientoCatalogoEnConexionAsync(cn,null,ct,tc)).Cuentas;
+        var cuentasGasto=catalogoCuentas.Select(c=>new LiquidacionCuenta(c.Codigo,c.Descripcion,"")).ToList();
+        // Sin cuenta configurada se propone una buscando en el plan de cuentas; no se guarda hasta que el usuario la confirme en el panel.
+        if(comision.Length==0&&SugerirCuentaComision(catalogoCuentas) is { } sc)
+        {
+            comision=sc;avisos.Add($"Cuenta de comisión propuesta automáticamente: {sc}. Revisala antes de generar.");
+        }
+        if(cuentaIva.Length==0&&SugerirCuentaIvaCredito(catalogoCuentas) is { } si)
+        {
+            cuentaIva=si;avisos.Add($"Cuenta de IVA crédito fiscal propuesta automáticamente: {si}. Revisala antes de generar.");
+        }
         var sinCuenta=dias.SelectMany(d=>d.Lineas).Where(l=>l.Cuenta.Length==0).Select(l=>l.Medio).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if(sinCuenta.Count>0) errores.Add($"Falta la cuenta de: {string.Join(", ",sinCuenta)}. Elegila en la tabla para poder generar el asiento.");
         if(comision.Length==0) errores.Add($"Falta la cuenta de gasto para la comisión ({ClaveCuentaComision}).");
@@ -187,11 +200,26 @@ public sealed partial class ConciliacionBancariaService
             if(t is not null&&t.Relacionada.Length>0&&t.Relacionada!=banco) avisos.Add($"La cuenta {t.Codigo} {t.Descripcion} tiene como cuenta relacionada {t.Relacionada}, pero el extracto es de {banco}.");
         }
         if(dias.Count==0) errores.Add("No hay créditos del extracto que coincidan con el detalle: no hay nada para liquidar.");
-        // Cuentas elegibles para comisión e IVA: las mismas que acepta el grabado (activas, contables, en pesos).
-        var tc=await LeerComprobanteAsync(cn,null,ClaveLiquidacionComprobante,"CC",ct);
-        var cuentasGasto=(await AsientoCatalogoEnConexionAsync(cn,null,ct,tc)).Cuentas.Select(c=>new LiquidacionCuenta(c.Codigo,c.Descripcion,"")).ToList();
         return new(detalle,banco,comision,cuentaIva,dias,new Dictionary<string,string>(mapa),tarjetas,errores,avisos,cuentasGasto);
     }
+
+    private static string Compacto(string? texto)
+        => new string(ConciliacionGastosBancarios.Normalizar(texto??"").Where(char.IsLetterOrDigit).ToArray());
+
+    private static bool EsActivo(ConciliacionAsientoCuenta c)
+        => c.Codigo.TrimStart().StartsWith('1')||Compacto(c.Rubro).Contains("ACTIVO");
+
+    /// <summary>IVA crédito fiscal: cuenta del activo cuyo nombre es «I.V.A. C.F.…» / «IVA crédito fiscal…»; no toma retenciones, percepciones ni débito fiscal. La primera por código.</summary>
+    internal static string? SugerirCuentaIvaCredito(IEnumerable<ConciliacionAsientoCuenta> cuentas)
+        => cuentas.Where(EsActivo).Select(c=>(c.Codigo,N:Compacto(c.Descripcion)))
+            .Where(x=>x.N.Contains("IVA")&&(x.N.Contains("IVACF")||x.N.Contains("CREDITOFISCAL"))&&!x.N.Contains("RETENCION")&&!x.N.Contains("PERCEPCION"))
+            .OrderBy(x=>x.Codigo,StringComparer.Ordinal).Select(x=>x.Codigo).FirstOrDefault();
+
+    /// <summary>Gasto por comisión: la cuenta «Gastos bancarios» (o comisiones bancarias) del plan; la primera por código.</summary>
+    internal static string? SugerirCuentaComision(IEnumerable<ConciliacionAsientoCuenta> cuentas)
+        => cuentas.Select(c=>(c.Codigo,N:Compacto(c.Descripcion)))
+            .Where(x=>x.N.Contains("GASTOSBANCARIOS")||x.N.Contains("COMISIONESBANCARIAS"))
+            .OrderBy(x=>x.Codigo,StringComparer.Ordinal).Select(x=>x.Codigo).FirstOrDefault();
 
     private static readonly decimal[] AlicuotasIva=[21m,10.5m,27m,5m,2.5m];
 
