@@ -1,4 +1,4 @@
-"""Lectura local de liquidaciones Nación, Patagonia e Hipotecario. No invoca IA ni escribe archivos.
+"""Lectura local de liquidaciones Nación, Patagonia e Hipotecario y del extracto Galicia (cobros NAVE con tarjeta). No invoca IA ni escribe archivos.
 Usa los formatos relevados por IA_ProcesarDocumentos; nunca ajusta importes para balancear.
 Entrada: PDF por stdin. Salida: JSON UTF-8. Dependencia: pypdf.
 """
@@ -63,9 +63,63 @@ def resumen_lt(text, result):
         if values: rows.append({"Concepto":label,"Rol":role,"Importe":str(-sum((amount(v) for v in values),Decimal(0)))})
     return [{"Numero":reference.group(1),"Fecha":date(emission.group(1)),"Neto":result["Neto"],
              "EsResumenMensual":True,"Conceptos":rows}]
+
+# Los saldos deudores (sobregiro) se informan con el signo al final: 46.829,90-
+GAL_IMPORTE=re.compile(r"(?<![\d.,])-?\d{1,3}(?:\.\d{3})*,\d{2}-?(?![\d,])")
+def gal_monto(v): return amount(v)
+def galicia_nave(pages, result):
+    """Extracto de cuenta corriente Galicia: toma solo los créditos «NAVE PAGO CON TARJETA».
+    Cada fila es un cobro individual acreditado (neto de comisiones). La devolución NAVE se descuenta
+    únicamente si su operación corresponde a un cobro con tarjeta. El saldo corrido de TODAS las filas
+    se verifica para garantizar que no se omitió ni se alteró ninguna línea."""
+    first=pages[0]
+    saldos=re.findall(r"\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})",first)
+    if len(saldos)<2: raise ValueError("No se encontraron los saldos inicial y final del extracto Galicia.")
+    inicial,cierre=[Decimal(v.replace(".","").replace(",",".")) for v in saldos[:2]]
+    cuenta=re.search(r"N.\s*(\d{7}-\d\s+\d{3}-\d)",first)
+    rows=[];state={"prev":inicial,"cur":None}
+    def flush():
+        c=state["cur"]
+        if c is None: return
+        state["cur"]=None
+        state["prev"]+=c["valor"]
+        if state["prev"]!=c["saldo"]: raise ValueError("El saldo del extracto Galicia no coincide en la página %d. Revisá el PDF original."%c["page"])
+        op=re.match(r"Operaci\S*n\s+(\S+)$",c["extra"][0]) if c["extra"] else None
+        rows.append((c["fecha"],c["desc"].upper(),c["valor"],op.group(1) if op else ""))
+    for page,text in enumerate(pages,1):
+        in_table=False
+        for line in text.splitlines():
+            if re.match(r"\s*Fecha\s+Descripci.n\s+Origen",line): in_table=True;continue
+            if not in_table: continue
+            if re.search(r"Resumen de Cuenta Corriente en Pesos\s+P.gina",line): in_table=False;continue
+            if re.match(r"\s*Total\b",line): flush();in_table=False;continue
+            row=re.match(r"\s*(\d{2}/\d{2}/\d{2})\s{2,}(\S.*)$",line)
+            if row:
+                flush()
+                desc=re.split(r"\s{2,}",row.group(2))[0].strip()
+                values=[gal_monto(v) for v in GAL_IMPORTE.findall(row.group(2)[len(desc):])]
+                if len(values)!=2 or not values[0]: raise ValueError("Una fila de la página %d del extracto Galicia no tiene importe y saldo legibles. No se importó el archivo."%page)
+                state["cur"]={"fecha":row.group(1),"desc":desc,"valor":values[0],"saldo":values[1],"page":page,"extra":[]}
+            elif state["cur"] is not None and line.strip(): state["cur"]["extra"].append(line.strip())
+    flush()
+    if state["prev"]!=cierre: raise ValueError("El saldo final del extracto Galicia no coincide con los movimientos leídos. No se importó el archivo.")
+    cobros={op for _,d,v,op in rows if d.startswith("NAVE PAGO CON TARJETA") and v>0 and op}
+    detalles=result["Detalles"]
+    for fecha,desc,valor,op in rows:
+        if desc.startswith("NAVE PAGO CON TARJETA") and valor>0:
+            detalles.append({"Fecha":date(fecha),"FechaPago":date(fecha),"Liquidacion":op,"Lote":"","Cupon":"","Terminal":"NAVE","Cantidad":1,"Importe":str(valor),"Nivel":"Cupón"})
+        elif desc.startswith("NAVE DEVOLUCI") and valor<0 and op in cobros:
+            detalles.append({"Fecha":date(fecha),"FechaPago":date(fecha),"Liquidacion":op,"Lote":"","Cupon":"","Terminal":"NAVE","Cantidad":1,"Importe":str(valor),"Nivel":"Cupón"})
+    result["Banco"]="Galicia";result["Comercio"]=cuenta.group(1) if cuenta else "";result["Tarjeta"]="NAVE"
+    total=sum((Decimal(d["Importe"]) for d in detalles),Decimal(0))
+    # El extracto no informa el bruto vendido: se toma el acreditado por NAVE con tarjeta como total del documento.
+    result["Bruto"]=str(total);result["Neto"]=str(total)
+    result["Avisos"].append("Extracto Galicia: los importes son los acreditados por NAVE (netos de comisiones e impuestos), no el bruto de la venta. Cada fila es un cobro individual sin número de cupón; se concilia por fecha e importe. Se omiten transferencias, débitos y devoluciones de otros medios.")
 def read_pdf(data, name):
     reader=PdfReader(io.BytesIO(data))
-    if len(reader.pages)>150: raise ValueError("El documento supera las 150 páginas.")
+    # Los extractos de cuenta corriente Galicia traen un renglón por cobro y superan las 150 páginas de una liquidación.
+    es_galicia=bool(reader.pages) and bool(re.search(r"\b007\d{19}\b",reader.pages[0].extract_text() or ""))
+    if len(reader.pages)>(400 if es_galicia else 150): raise ValueError("El documento supera las %d páginas."%(400 if es_galicia else 150))
     pages=[p.extract_text(extraction_mode="layout") or "" for p in reader.pages]
     first=pages[0]; text="\n".join(pages)
     monthly_bank=re.search(r"PAGADOR:\s*\d+\s+(BANCO HIPOTECARIO|BANCO DE LA NACION ARGENTINA|BANCO PATAGONIA)\b",first,re.I)
@@ -123,11 +177,14 @@ def read_pdf(data, name):
             if m and paid and present and liq and lot:
                 details.append({"Fecha":present,"FechaPago":paid,"Liquidacion":liq,"Lote":lot,"Cupon":"","Terminal":"","Cantidad":int(m.group(1)),"Importe":str(amount(m.group(2))),"Nivel":"Lote"})
         result["Avisos"].append("El resumen " + result["Banco"] + " identifica lotes, no cupones individuales.")
+    elif re.search(r"\b007\d{19}\b",first) and re.search(r"Resumen de\s+Cuenta Corriente en Pesos",first):
+        if len(set(re.findall(r"\b007\d{19}\b",text)))>1: raise ValueError("El PDF contiene más de una cuenta bancaria. Descargá un archivo por cuenta.")
+        galicia_nave(pages,result)
     elif "BANCO HIPOTECARIO" in first.upper() and "CUENTA CORRIENTE EN PESOS" in first.upper():
         raise ValueError("El documento es un extracto de cuenta corriente de Hipotecario, no una liquidación de tarjetas. No se importó. La lectura de este PDF bancario todavía no está habilitada en Conciliación bancaria.")
     elif "RESUMEN DE CUENTA" in first.upper() and re.search(r"CUENTA CORRIENTE\s*-?\s*PESOS",first,re.I):
         raise ValueError("El documento es un extracto de cuenta corriente, no una liquidación de tarjetas. No se importó. La lectura de este PDF bancario todavía no está habilitada en Conciliación bancaria.")
-    else: raise ValueError("Formato no reconocido. Esta etapa admite los resúmenes mensuales Nación, Patagonia e Hipotecario relevados.")
+    else: raise ValueError("Formato no reconocido. Esta etapa admite los resúmenes mensuales Nación, Patagonia e Hipotecario y el extracto Galicia con cobros NAVE.")
     if not details: raise ValueError("No se pudo extraer detalle conciliable; no se importó el documento.")
     total=sum((Decimal(d["Importe"]) for d in details),Decimal(0))
     result["TotalDetalle"]=str(total)

@@ -4,7 +4,7 @@ Desde **Caja y Bancos → Conciliación de tarjetas asistida con IA**, compará 
 
 ## Importar el documento testigo
 
-1. Elegí un PDF mensual de Nación, Patagonia o Hipotecario, de hasta 20 MB.
+1. Elegí un PDF mensual de Nación, Patagonia o Hipotecario, o el extracto de cuenta corriente en pesos de Galicia, de hasta 20 MB.
 2. Revisá banco, comercio, bruto, neto y avisos de lectura.
 3. Confirmá la cuenta del plan cuyo medio de pago sea **TJ**, activa, imputable y en pesos. La sugerencia por nombre de tarjeta es orientativa.
 4. Si corresponde, indicá la sucursal de Alfa que querés proponer como filtro. No es la sucursal impresa por el banco. No existe una relación fija entre 0001/Nación o 0002/Patagonia.
@@ -14,6 +14,8 @@ Desde **Caja y Bancos → Conciliación de tarjetas asistida con IA**, compará 
 Un archivo ya importado para la misma cuenta se rechaza aunque cambie el nombre. Los documentos que contienen operaciones ya importadas se rechazan completos para no duplicar ni importar parcialmente un resumen superpuesto.
 
 Podés leer el PDF y revisar los totales aunque todavía no exista su cuenta contable en esta base. Para guardarlo, elegí una cuenta TJ válida de la base correspondiente. No se crean cuentas automáticamente ni se trasladan asociaciones entre bases.
+
+**Galicia (NAVE):** el extracto de cuenta corriente en pesos se lee tomando solo los créditos «NAVE PAGO CON TARJETA» (un cobro por renglón, con su número de operación). Las transferencias NAVE, débitos, impuestos y demás movimientos se omiten, y una «NAVE DEVOLUCIÓN» se descuenta solo si corresponde a un cobro con tarjeta. Antes de importar se verifica el saldo corrido de todo el extracto. **Importante:** el banco acredita el importe **neto** de comisiones e impuestos, y no informa número de cupón; por eso se concilia por fecha e importe y los importes pueden no coincidir con la venta bruta registrada en Alfa.
 
 Los PDF de Hipotecario de agosto y septiembre de 2026 son resúmenes de liquidaciones. El archivo «CTA CTE» es un extracto bancario y no corresponde importarlo aquí; ese PDF de cuenta corriente se importa desde Conciliación bancaria.
 

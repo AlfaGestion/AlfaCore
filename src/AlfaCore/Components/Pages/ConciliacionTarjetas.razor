@@ -86,7 +86,7 @@
                     }
                 </tbody>
             </table>
-            @if(_importaciones.Count==0){<AlfaEmptyState Title="Sin liquidaciones importadas" Message="Seleccioná una liquidación PDF de Nación, Patagonia o Hipotecario para comenzar. Podés revisar la lectura antes de elegir la cuenta contable." />}
+            @if(_importaciones.Count==0){<AlfaEmptyState Title="Sin liquidaciones importadas" Message="Seleccioná una liquidación PDF de Nación, Patagonia o Hipotecario, o el extracto de cuenta corriente de Galicia (cobros NAVE con tarjeta), para comenzar. Podés revisar la lectura antes de elegir la cuenta contable." />}
         </div>
         <footer class="alfa-data-view-footer">@_importaciones.Count importaciones cargadas (hasta 500 recientes) · 50 por página</footer>
     }

@@ -198,16 +198,22 @@ def patagonia(reader):
     return rows, initial, previous
 
 
-GAL_IMPORTE = re.compile(r'(?<![\d.,])-?\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,])')
+# Los saldos deudores (sobregiro) vienen con el signo al final: 46.829,90-
+GAL_IMPORTE = re.compile(r'(?<![\d.,])-?\d{1,3}(?:\.\d{3})*,\d{2}-?(?![\d,])')
+
+
+def gal_monto(text):
+    value = Decimal(text.replace('-', '').replace('.', '').replace(',', '.'))
+    return -value if '-' in text else value
 
 
 def galicia(pages):
     """Resumen de cuenta corriente en pesos de Galicia: cada fila trae importe con signo (débito negativo) y saldo.
     El saldo corrido de cada fila valida el signo y el importe; las líneas siguientes son el detalle de la operación."""
-    saldos = re.findall(r'\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})', pages[0])
+    saldos = re.findall(r'\$\s*(\d{1,3}(?:\.\d{3})*,\d{2}-?)', pages[0])
     if len(saldos) < 2:
         raise ValueError('Extracto: no se encontraron los saldos inicial y final de Galicia. No se importó ningún movimiento.')
-    initial, closing = [Decimal(v.replace('.', '').replace(',', '.')) for v in saldos[:2]]
+    initial, closing = [gal_monto(v) for v in saldos[:2]]
     rows, state = [], {'previous': initial, 'current': None}
 
     def flush():
@@ -247,7 +253,7 @@ def galicia(pages):
             if row:
                 flush()
                 description = re.split(r'\s{2,}', row[2])[0].strip()
-                values = [Decimal(v.replace('.', '').replace(',', '.')) for v in GAL_IMPORTE.findall(row[2][len(description):])]
+                values = [gal_monto(v) for v in GAL_IMPORTE.findall(row[2][len(description):])]
                 if len(values) != 2 or not values[0]:
                     raise ValueError(f'Extracto: una fila de la página {page} de Galicia no tiene importe y saldo legibles. No se importó el archivo.')
                 state['current'] = dict(day=row[1], description=description, value=values[0], saldo=values[1], page=page, extra=[])

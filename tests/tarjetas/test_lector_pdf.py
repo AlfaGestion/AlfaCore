@@ -119,4 +119,35 @@ Total del día $ 150,00 $ 10,00 $ 140,00
     def test_resumen_cuenta_bna_no_se_importa_como_tarjetas(self):
         with self.assertRaisesRegex(ValueError,"extracto de cuenta corriente"):
             self.read("RESUMEN DE CUENTA\nRESUMEN DE EMISION MENSUAL\nCUENTA CORRIENTE- PESOS\nFECHA MOVIMIENTOS COMPROB. DEBITOS CREDITOS SALDO", "documento.pdf")
+    def test_galicia_extracto_toma_solo_cobros_nave_con_tarjeta_y_valida_saldos(self):
+        r=self.read("""Resumen de Cuenta Corriente en Pesos
+CBU
+0070067220000007209688
+N° 0007209-6 067-8
+$100,00
+$208,00
+Fecha Descripción Origen Crédito Débito Saldo
+01/10/26   NAVE PAGO CON TARJETA                                  50,00        150,00
+           Operaciìn AAA1111111
+01/10/26   NAVE PAGO CON TRANSFERENCIA                            30,00        180,00
+           Operaciìn BBB2222222
+02/10/26   NAVE PAGO CON TARJETA                                  40,00        220,00
+           Operaciìn CCC3333333
+02/10/26   NAVE DEVOLUCIäN                                       -10,00        210,00
+           Operaciìn CCC3333333
+02/10/26   IMP. CRE. LEY 25413                                    -2,00        208,00
+ Total $ 120,00 -$ 12,00 $ 208,00""","extracto.pdf")
+        self.assertEqual(r["Banco"],"Galicia");self.assertEqual(r["Tarjeta"],"NAVE")
+        self.assertEqual([d["Importe"] for d in r["Detalles"]],["50.00","40.00","-10.00"])
+        self.assertTrue(all(d["Cupon"]=="" and d["Nivel"]=="Cupón" for d in r["Detalles"]))
+        self.assertEqual(r["Bruto"],"80.00");self.assertTrue(r["DetalleCompleto"])
+    def test_galicia_extracto_con_saldo_que_no_cierra_no_se_importa(self):
+        with self.assertRaisesRegex(ValueError,"saldo"):
+            self.read("""Resumen de Cuenta Corriente en Pesos
+0070067220000007209688
+$100,00
+$150,00
+Fecha Descripción Origen Crédito Débito Saldo
+01/10/26   NAVE PAGO CON TARJETA                                  50,00        199,00
+           Operaciìn AAA1111111""")
 if __name__=="__main__":main()
