@@ -318,27 +318,44 @@
 
     private async Task ConectarAsync(Guid id)
     {
-        var selectedSession = SessionSvc.GetAllSessions().FirstOrDefault(x => x.Id == id);
+        var knownSession = SessionSvc.GetAllSessions().FirstOrDefault(x => x.Id == id);
+
+        // Sin cuenta central logueada (pantalla de login interno por ruta) la lista del drawer sale
+        // de ALFA_CENTRAL y la base elegida NO está en GetAllSessions(). Antes se retornaba en
+        // silencio y "Seleccionar" no hacía nada. En ese caso el cambio lo resuelve el
+        // layout navegando a /{idweb}/{idbase} de la base elegida.
+        var selectedSession = knownSession ?? _sesiones.FirstOrDefault(x => x.Id == id);
         if (selectedSession is null)
             return;
 
-        SessionSvc.SwitchSession(id);
-
-        try
+        if (knownSession is not null)
         {
-            await ActualizacionesSvc.ExecutePendingAsync(new ActualizacionesRunRequest
+            try
             {
-                UsuarioAccion = AppUserSession.GetCurrentUserName("SYSTEM"),
-                PcAccion = Environment.MachineName,
-                EsEjecucionAutomatica = true
-            });
-        }
-        catch
-        {
-            // El servicio ya registra el error internamente; no se bloquea el cambio de sesión.
+                SessionSvc.SwitchSession(id);
+            }
+            catch
+            {
+                // Si la base no pertenece a la cuenta, se resuelve igual por ruta en el layout.
+            }
+
+            try
+            {
+                await ActualizacionesSvc.ExecutePendingAsync(new ActualizacionesRunRequest
+                {
+                    UsuarioAccion = AppUserSession.GetCurrentUserName("SYSTEM"),
+                    PcAccion = Environment.MachineName,
+                    EsEjecucionAutomatica = true
+                });
+            }
+            catch
+            {
+                // El servicio ya registra el error internamente; no se bloquea el cambio de sesión.
+            }
+
+            await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
         }
 
-        await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
         await ReloadAsync();
         await OnSessionSelected.InvokeAsync(selectedSession);
     }
