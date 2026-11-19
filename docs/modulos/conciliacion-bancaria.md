@@ -503,3 +503,30 @@ Validación: 16 pruebas unitarias con los totales reales de octubre y, con `EXTR
 
 - El asiento mensual de gastos bancarios se graba con el tipo `GB` (clave `CONCILIACION-GASTOS-COMPROBANTE`) y su propia numeración y talonario, en vez de `CC`. El asiento individual de la conciliación sigue usando `CC`.
 - `BK_AsientoGastos.Tc` guarda el comprobante usado. El código ARCA del renglón del banco se toma de `V_TA_Cpte.CpteDGIX` del comprobante (039 para `GB`) y se graba en `MV_ASIENTOS.CodCpteDGI`.
+
+## Detalle de operaciones del procesador de cobro (NAVE, 2026-11-18)
+
+Pestaña Revisar: si la importación trae créditos con el texto de `CONCILIACION-NAVE-TEXTO` (por defecto `NAVE`, incluye pagos y devoluciones), se ofrece subir de forma opcional el Excel «Detalle de operaciones» de NAVE. El banco informa solo el neto; el reporte aporta bruto, comisión, IVA de la comisión, medio de pago y fecha de acreditación.
+
+- Lector: `ConciliacionDetalleProcesador` (perfiles por procesador, columnas por nombre normalizado). Rechaza operaciones donde bruto − comisión − IVA ≠ neto. Un mismo código puede aparecer dos veces (pago y devolución).
+- Persistencia: `BK_DetalleProcesador` y `BK_DetalleProcesadorOperacion` (script `2026-11-18-050`). El mismo archivo no se duplica (hash).
+- Emparejamiento determinístico: los primeros `CONCILIACION-NAVE-PREFIJO` caracteres (10 en Galicia, que corta el código) del código de operación contra `ReferenciaExterna` del extracto; se compara la suma por código. Informa emparejadas, neto distinto, operaciones sin crédito (el extracto termina antes que el reporte) y créditos sin operación.
+- Probado con el extracto de Galicia y el reporte de octubre 2026 (script Python): 722 de 726 créditos emparejados con neto idéntico; los 4 restantes son dos pagos con su devolución.
+- No genera asientos todavía. Pendiente: asiento por día y medio de pago (debe banco por el neto con la cuenta relacionada, debe 42209 por comisión e IVA, haber cuenta de tarjeta/QR por el bruto), tabla de equivalencias medio de pago → cuenta en `TA_CONFIGURACION`, y lectores de otros procesadores.
+
+### Propuesta de asiento de liquidación (solo lectura, 2026-11-18)
+
+Tras subir el detalle se arma, por día de acreditación del banco y medio de pago: Debe banco (neto), Debe cuenta de comisión (comisión neta), Debe IVA crédito fiscal (IVA de la comisión), Haber cuenta del medio de pago (bruto). Solo entran los cobros acreditados cuyo neto coincide al centavo con el banco. **No graba contabilidad**: el grabado (numeración CC, período, conciliación de los créditos contra el renglón del banco, historial del comprobante) es el paso siguiente y reutilizará el circuito del asiento de gastos bancarios.
+
+- Cuenta de cada medio: `CONCILIACION-NAVE-CUENTAS` (JSON en `ValorAux`, clave = nombre normalizado del medio). Se sugiere por nombre exacto contra las cuentas TJ activas (`SugerirCuentaMedio`); lo que no coincide (ej. «Dinero en cuenta», «Visa Prepaga») se elige en la tabla y queda guardado.
+- Cuenta de comisión: `CONCILIACION-NAVE-CUENTA-COMISION`; cuenta del IVA: `CONCILIACION-NAVE-CUENTA-IVA`. Si están vacías se toman «Comisiones y gastos bancarios» e «IVA crédito fiscal» de `CONCILIACION-GASTOS-BANCARIOS`.
+- Avisa si la cuenta relacionada (`MA_CUENTAS.CuentaPrincipal`) de la tarjeta no es el banco del extracto.
+
+### Grabado del asiento de liquidación (2026-11-18)
+
+Con la propuesta sin errores, el panel pide unidad, talonario y detalle y genera **un asiento por día de acreditación** (`CONCILIACION-NAVE-COMPROBANTE`, CC por defecto): Debe banco por el neto, Debe cuenta de comisión por la comisión neta, Debe IVA crédito fiscal por el IVA de la comisión, Haber una línea por medio de pago por el bruto. **Libro de IVA Compras:** el renglón del banco lleva el registro `LIVA_TIPO=COMPRAS` (proveedor = titular de la cuenta bancaria, neto gravado = comisión, alícuota deducida del IVA —21, 10,5, 27, 5 o 2,5—, `LIVA_TOTAL` = comisión + IVA, código de comprobante de ARCA del CC X). Si el IVA no corresponde a una alícuota vigente, la propuesta lo marca como error y no se graba. El reporte de NAVE no trae percepciones ni retenciones; las del extracto (percepción IVA, IIBB, ganancias) las toma el asiento de gastos bancarios, que ya las carga al libro. Los créditos de NAVE de ese día quedan conciliados contra el renglón del banco y marcados Registrado.
+
+- Mismo circuito que el asiento de gastos: numeración CC compartida con Alfa Gestión, período abierto, subdiario configurado, conciliación (`BK_Conciliacion*`) e historial del comprobante.
+- La propuesta se recalcula en el servidor al generar; cada día es una transacción propia (si uno falla se informa dónde se detuvo y los anteriores quedan firmes). Idempotente: un día de un extracto se liquida una sola vez (`BK_AsientoLiquidacion`, índice único por importación y fecha; cada crédito pertenece a un solo asiento).
+- Script `2026-11-18-052`. No se genera el Libro de IVA: la comisión y su IVA van completos al gasto.
+- Pendiente: probar en navegador con la base de pruebas y verificar en el Libro de IVA Compras y en el TXT de ARCA el registro de la comisión.

@@ -125,6 +125,8 @@ public sealed class ConciliacionGastosBancariosTests
     [InlineData("COMIS.MANTENIMIENTO CUENTA 10/26","Gastos")]
     [InlineData("MASTERCARD COM 9191467 685379",null)]
     [InlineData("TRANSFERENCIA ENTRE CUENTAS",null)]
+    [InlineData("TRF INMED PROVEED Gaston Andres Merani",null)]
+    [InlineData("GASTOS VARIOS","Gastos")]
     [InlineData("ECHEQ CAMARA COMPENSADORA 103822320",null)]
     public void ClasificaPorDescripcionDelExtracto(string descripcion,string? esperado)
         =>Assert.Equal(esperado,ConciliacionGastosBancarios.Clasificar(descripcion,new()));

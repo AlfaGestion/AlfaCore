@@ -63,11 +63,14 @@ public sealed partial class ConciliacionBancariaService
     }
 
     /// <summary>Comprobante contable del asiento de gastos bancarios (GB por defecto, clave CONCILIACION-GASTOS-COMPROBANTE). Si no existe en la tabla de comprobantes con letra X, se usa CC.</summary>
-    private static async Task<string> LeerComprobanteGastosAsync(SqlConnection cn,SqlTransaction? tx,CancellationToken ct)
+    private static Task<string> LeerComprobanteGastosAsync(SqlConnection cn,SqlTransaction? tx,CancellationToken ct)
+        => LeerComprobanteAsync(cn,tx,ClaveGastosComprobante,"GB",ct);
+
+    private static async Task<string> LeerComprobanteAsync(SqlConnection cn,SqlTransaction? tx,string clave,string defecto,CancellationToken ct)
     {
         CommandDefinition Q(string sql,object? args=null)=>new(sql,args,tx,commandTimeout:120,cancellationToken:ct);
-        var valor=(await cn.ExecuteScalarAsync<string?>(Q("SELECT TOP(1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE CLAVE=@clave AND NULLIF(LTRIM(RTRIM(VALOR)),'') IS NOT NULL;",new{clave=ClaveGastosComprobante})))?.ToUpperInvariant();
-        var tc=valor is { Length: >=1 and <=8 } v&&v.All(char.IsAsciiLetterOrDigit) ? v : "GB";
+        var valor=(await cn.ExecuteScalarAsync<string?>(Q("SELECT TOP(1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE CLAVE=@clave AND NULLIF(LTRIM(RTRIM(VALOR)),'') IS NOT NULL;",new{clave})))?.ToUpperInvariant();
+        var tc=valor is { Length: >=1 and <=8 } v&&v.All(char.IsAsciiLetterOrDigit) ? v : defecto;
         var existe=await cn.ExecuteScalarAsync<bool>(Q("""
             SELECT CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.V_TA_CPTE WHERE UPPER(LTRIM(RTRIM(CODIGO)))=@tc AND UPPER(LTRIM(RTRIM(SISTEMA)))='CONTABLE'
                 AND CHARINDEX('X',LETRAS)>0 AND ISNULL(Externo,0)=0) THEN 1 ELSE 0 END);

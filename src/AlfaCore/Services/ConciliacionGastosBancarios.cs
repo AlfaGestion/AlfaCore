@@ -29,7 +29,7 @@ internal static class ConciliacionGastosBancarios
         [Iibb]=["SIRCREB","RET IIBB","IIBB","ING BRUTOS","INGRESOS BRUTOS"],
         [Ganancias]=["RET GANANCIAS","RETENCION GANANCIAS","IMP GANANCIAS","RET GAN"],
         [Idc]=["IMP DB CR","DB CR BANCARIOS","25413","IMPUESTO AL CHEQUE","IMP DEBITOS Y CREDITOS","IMPUESTO DEBITOS Y CREDITOS","IMP CREDITOS Y DEBITOS","IMP CRED Y DEB"],
-        [Gastos]=["COMIS*","MANTENIM*","EMISION ECHEQ","GASTO*"]
+        [Gastos]=["COMIS*","MANTENIM*","EMISION ECHEQ","GASTOS","GASTO"]
     };
     private static readonly HashSet<string> EstadosRegistrados=new(["Cobrado","Pagado","Registrado"],StringComparer.OrdinalIgnoreCase);
 

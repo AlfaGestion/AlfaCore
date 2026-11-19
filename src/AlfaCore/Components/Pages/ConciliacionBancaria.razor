@@ -119,6 +119,87 @@
     }
     else
     {
+        @if (_creditosProcesador > 0)
+        {
+            <section class="panel-card conciliacion-importar" aria-busy="@_busy">
+                <h3 class="panel-card__title">Detalle de operaciones del procesador (opcional)</h3>
+                <p>Detectamos <strong>@_creditosProcesador</strong> créditos de NAVE en @(_filtro.HasValue ? $"la importación #{_filtro}" : "las importaciones"). El banco informa solo el neto: subí el reporte «Detalle de operaciones» de NAVE (Excel) para conocer el bruto, la comisión, el IVA y la tarjeta de cada cobro.</p>
+                <label class="conciliacion-archivo">
+                    <span>Excel de NAVE (.xlsx, hasta 20 MB)</span>
+                    <InputFile OnChange="SeleccionarDetalle" accept=".xlsx" disabled="@_busy" />
+                </label>
+                @if (_resumenDetalle is { } r)
+                {
+                    <div class="conciliacion-resumen">
+                        <span><strong>@r.Operaciones</strong> operaciones</span>
+                        <span>Emparejadas con el extracto: <strong>@r.Emparejadas</strong></span>
+                        <span>Neto distinto: <strong>@r.NetoDistinto</strong></span>
+                        <span>Sin crédito en el extracto: <strong>@r.OperacionesSinCredito</strong></span>
+                        <span>Créditos sin operación: <strong>@r.CreditosSinOperacion</strong></span>
+                    </div>
+                    <div class="conciliacion-resumen">
+                        <span>Bruto: <strong>@Dinero(r.Bruto)</strong></span>
+                        <span>Comisión: <strong>@Dinero(r.Comision)</strong></span>
+                        <span>IVA comisión: <strong>@Dinero(r.IvaComision)</strong></span>
+                        <span>Neto: <strong>@Dinero(r.Neto)</strong></span>
+                    </div>
+                    @foreach (var aviso in r.Avisos) { <p role="status">@aviso</p> }
+                    <div class="conciliacion-scroll">
+                        <table class="conciliacion-tabla">
+                            <thead><tr><th>Medio de pago</th><th>Cuenta en Alfa</th><th>Operaciones</th><th>Bruto</th><th>Comisión</th><th>IVA</th><th>Neto</th></tr></thead>
+                            <tbody>
+                                @foreach (var m in r.PorMedio)
+                                {
+                                    <tr><td>@m.MedioPago</td>
+                                        <td>@if (_liquidacion is { } liq)
+                                            {
+                                                <AlfaSelect Label="" Value="@CuentaDeMedio(m.MedioPago)" ValueChanged="v => GuardarCuentaMedio(m.MedioPago,v)"
+                                                    Options="@OpcionesTarjeta" Placeholder="Elegir cuenta" Disabled="@_busy" />
+                                            }</td>
+                                        <td class="conciliacion-numero">@m.Operaciones</td><td class="conciliacion-numero">@Dinero(m.Bruto)</td>
+                                        <td class="conciliacion-numero">@Dinero(m.Comision)</td><td class="conciliacion-numero">@Dinero(m.IvaComision)</td><td class="conciliacion-numero">@Dinero(m.Neto)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (_liquidacion is { } l)
+                    {
+                        <h4>Asientos de liquidación propuestos (@l.Dias.Count días)</h4>
+                        <p>Por cada día de acreditación: <strong>Debe</strong> @l.CuentaBanco (neto), @(l.CuentaComision.Length > 0 ? l.CuentaComision : "cuenta de comisión sin definir") (comisión) y @(l.CuentaIva.Length > 0 ? l.CuentaIva : "cuenta de IVA crédito fiscal sin definir") (IVA de la comisión, que además se registra en el Libro de IVA Compras); <strong>Haber</strong> la cuenta de cada medio de pago por el bruto. Solo se incluyen los cobros que el banco acreditó y coinciden al centavo. Todavía no se graba nada.</p>
+                        @foreach (var e in l.Errores) { <p role="alert">@e</p> }
+                        @foreach (var a in l.Avisos) { <p role="status">@a</p> }
+                        <div class="conciliacion-resumen">
+                            <span>Operaciones: <strong>@l.Operaciones</strong></span>
+                            <span>Haber (bruto): <strong>@Dinero(l.Bruto)</strong></span>
+                            <span>Debe comisión + IVA: <strong>@Dinero(l.Comision + l.IvaComision)</strong></span>
+                            <span>Debe banco (neto): <strong>@Dinero(l.Neto)</strong></span>
+                        </div>
+                        @if (l.Errores.Count == 0 && _liqCatalogo is { } cat)
+                        {
+                            <div class="conciliacion-campos">
+                                <AlfaSelect Label="Unidad de negocio" Value="@_liqUnidad" ValueChanged="CambiarUnidadLiquidacion" Options="@UnidadesLiq" Placeholder="Seleccionar unidad" Disabled="@_busy" />
+                                <AlfaSelect Label="@($"Talonario {cat.Tc}")" Value="@_liqTalonario" ValueChanged="v => _liqTalonario = v ?? string.Empty" Options="@TalonariosLiq" Placeholder="Seleccionar talonario" Disabled="@_busy" />
+                                <AlfaInput Label="Detalle del asiento" Value="@_liqDetalle" ValueChanged="v => _liqDetalle = v ?? string.Empty" MaxLength="150" Disabled="@_busy" />
+                                <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || _liqUnidad.Length == 0 || _liqTalonario.Length == 0)" OnClick="GenerarLiquidacion">Generar @l.Dias.Count asientos</AlfaButton>
+                            </div>
+                            <p>Se genera un asiento @cat.Tc por día y los créditos de NAVE de ese día quedan conciliados contra el renglón del banco. Cada día se graba por separado: si alguno falla, los anteriores quedan hechos.</p>
+                        }
+                        <div class="conciliacion-scroll">
+                            <table class="conciliacion-tabla">
+                                <thead><tr><th>Día</th><th>Medios</th><th>Operaciones</th><th>Bruto (haber)</th><th>Comisión + IVA (debe)</th><th>Neto (debe banco)</th></tr></thead>
+                                <tbody>
+                                    @foreach (var d in l.Dias)
+                                    {
+                                        <tr><td>@d.Fecha.ToString("dd/MM/yyyy")</td><td>@string.Join(", ", d.Lineas.Select(x => x.Medio))</td><td class="conciliacion-numero">@d.Operaciones</td>
+                                            <td class="conciliacion-numero">@Dinero(d.Bruto)</td><td class="conciliacion-numero">@Dinero(d.Comision + d.IvaComision)</td><td class="conciliacion-numero">@Dinero(d.Neto)</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </section>
+        }
         <section class="panel-card">
             <div class="conciliacion-alcance">
                 <span>@(_filtro.HasValue ? $"Importación #{_filtro}" : "Todas las importaciones")</span>
@@ -720,6 +801,7 @@
         _importaciones = await Servicio.ImportacionesAsync(1,ct);
         _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1),ct);
         _seleccion = null; _detalle = [];
+        await ActualizarCreditosProcesador(ct);
     });
     private Task DescargarOriginal(long id) => Operar(async ct =>
     {
@@ -732,11 +814,85 @@
         var rows = await Servicio.MovimientosAsync(FiltrosMovimientos(1,id),ct);
         ct.ThrowIfCancellationRequested();
         _filtro = id; _paginaMov = 1; _movimientos = rows; _tab = "revisar"; _seleccion = null; _detalle = [];
+        _resumenDetalle = null; _liquidacion = null;
+        await ActualizarCreditosProcesador(ct);
     });
     private Task VerTodas() => Operar(async ct =>
     {
         _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1,todas:true),ct);
         _filtro = null; _paginaMov = 1; _seleccion = null; _detalle = [];
+        _resumenDetalle = null; _liquidacion = null;
+        await ActualizarCreditosProcesador(ct);
+    });
+    // Detalle de operaciones del procesador de cobro (NAVE): se ofrece solo si el extracto trae sus créditos.
+    private int _creditosProcesador;
+    private DetalleEmparejamiento? _resumenDetalle;
+    private async Task ActualizarCreditosProcesador(CancellationToken ct)
+        => _creditosProcesador = await Servicio.CreditosProcesadorAsync(_filtro,ct);
+    private Task SeleccionarDetalle(InputFileChangeEventArgs e) => Operar(async ct =>
+    {
+        if (e.File.Size > ConciliacionExtractoLector.MaxBytes)
+            throw new InvalidOperationException("El archivo supera los 20 MB.");
+        using var ms = new MemoryStream();
+        await e.File.OpenReadStream(ConciliacionExtractoLector.MaxBytes,ct).CopyToAsync(ms,ct);
+        ct.ThrowIfCancellationRequested();
+        _resumenDetalle = await Servicio.ImportarDetalleAsync(new(e.File.Name,ms.ToArray()),_filtro,ct);
+        await PrepararLiquidacion(ct);
+    });
+    private LiquidacionPropuesta? _liquidacion;
+    private LiquidacionCatalogo? _liqCatalogo;
+    private string _liqUnidad = "", _liqTalonario = "", _liqDetalle = "Liquidación NAVE";
+    private Guid _liqOperacion = Guid.NewGuid();
+    private async Task PrepararLiquidacion(CancellationToken ct)
+    {
+        _liquidacion = _resumenDetalle is not null && _filtro.HasValue ? await Servicio.PrepararLiquidacionAsync(_resumenDetalle.DetalleId,_filtro,ct) : null;
+        if (_liquidacion is { Errores.Count: 0 } && _liqCatalogo is null)
+        {
+            _liqCatalogo = await Servicio.LiquidacionCatalogoAsync(ct);
+            CambiarUnidadLiquidacion(_liqCatalogo.Catalogo.UnidadInicial);
+        }
+    }
+    private IReadOnlyList<AlfaSelectOption> UnidadesLiq => _liqCatalogo?.Catalogo.Unidades.Select(u => new AlfaSelectOption(u.Codigo,$"{u.Codigo} — {u.Descripcion}")).ToList() ?? [];
+    private IReadOnlyList<CobranzaTalonario> TalonariosUnidadLiq
+    {
+        get
+        {
+            var todos = _liqCatalogo?.Catalogo.Talonarios ?? [];
+            var propios = todos.Where(t => t.Unidad == _liqUnidad).ToList();
+            return propios.Count > 0 ? propios : todos.Where(t => t.Unidad is "" or "0").ToList();
+        }
+    }
+    private IReadOnlyList<AlfaSelectOption> TalonariosLiq => TalonariosUnidadLiq.Select(t => new AlfaSelectOption(t.Talonario.ToString(),$"{_liqCatalogo?.Tc} X · Sucursal {t.Sucursal:D4} · Talonario {t.Talonario}")).ToList();
+    private void CambiarUnidadLiquidacion(string? unidad)
+    {
+        _liqUnidad = unidad ?? "";
+        var tal = TalonariosUnidadLiq;
+        _liqTalonario = tal.Count == 1 ? tal[0].Talonario.ToString() : "";
+    }
+    private Task GenerarLiquidacion() => Operar(async ct =>
+    {
+        if (_resumenDetalle is null || !_filtro.HasValue || !int.TryParse(_liqTalonario,out var talonario)) return;
+        var r = await Servicio.GenerarLiquidacionAsync(new(_liqOperacion,_filtro.Value,_resumenDetalle.DetalleId,_liqUnidad,talonario,_liqDetalle),ct);
+        ct.ThrowIfCancellationRequested();
+        var lista = r.Generados.Count == 0 ? "" : $" Primero: {r.Generados[0].Comprobante}; último: {r.Generados[^1].Comprobante}.";
+        _feedback = new AppUiMessage
+        {
+            Severity = r.Error is null ? AppUiFeedbackSeverity.Success : AppUiFeedbackSeverity.Warning,
+            Title = r.Error is null ? "Asientos de liquidación generados" : "Liquidación incompleta",
+            Message = $"{r.Generados.Count} asientos generados ({Dinero(r.Generados.Sum(g => g.Bruto))} bruto), {r.Omitidos} días ya liquidados.{lista}" + (r.Error is null ? "" : $" Se detuvo en {r.Error}")
+        };
+        _liqOperacion = Guid.NewGuid();
+        _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1),ct);
+        await PrepararLiquidacion(ct);
+    });
+    private IReadOnlyList<AlfaSelectOption> OpcionesTarjeta => _liquidacion?.CuentasTarjeta.Select(c => new AlfaSelectOption(c.Codigo,$"{c.Codigo} — {c.Descripcion}")).ToList() ?? [];
+    private string CuentaDeMedio(string medio)
+        => _liquidacion?.Dias.SelectMany(d => d.Lineas).FirstOrDefault(l => l.Medio == medio)?.Cuenta
+           ?? _liquidacion?.CuentasPorMedio.GetValueOrDefault(AlfaCore.Services.ConciliacionGastosBancarios.Normalizar(medio)) ?? "";
+    private Task GuardarCuentaMedio(string medio,string? cuenta) => Operar(async ct =>
+    {
+        await Servicio.GuardarCuentaMedioAsync(medio,cuenta ?? "",ct);
+        await PrepararLiquidacion(ct);
     });
     private Task CambiarTab(string? tab) => Operar(async ct =>
     {
@@ -747,7 +903,7 @@
     {
         if (_tab == "importar") _importaciones = await Servicio.ImportacionesAsync(_paginaImport,ct);
         else if (_tab=="conciliar") { if(_comparacion is not null) await _comparacion.ActualizarAsync(); }
-        else { _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(_paginaMov),ct); _seleccion = null; _detalle = []; }
+        else { _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(_paginaMov),ct); _seleccion = null; _detalle = []; await ActualizarCreditosProcesador(ct); }
     }
     private Task AbrirCobranza(ConciliacionMovimiento row,string? preferido=null) => Operar(async ct =>
     {
