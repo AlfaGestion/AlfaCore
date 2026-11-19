@@ -523,6 +523,16 @@ public class Program
         builder.Services.AddScoped<FilterStateService>();
         builder.Services.AddScoped<GestionFilterStateService>();
         builder.Services.AddHttpClient();
+        builder.Services.AddHttpClient(LegacyPythonApiProxy.HttpClientName, (client, provider) =>
+        {
+            var settings = provider.GetRequiredService<IOptions<LegacyPythonApiOptions>>().Value;
+            client.Timeout = settings.TimeoutSeconds > 0
+                ? TimeSpan.FromSeconds(settings.TimeoutSeconds)
+                : TimeSpan.FromSeconds(120);
+        }).RemoveAllLoggers();
+        builder.Services.Configure<LegacyPythonApiOptions>(
+            builder.Configuration.GetSection(LegacyPythonApiOptions.SectionName));
+        builder.Services.AddScoped<LegacyPythonApiProxy>();
         builder.Services.AddSingleton<IIaBackendProxyService, IaBackendProxyService>();
         builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
         builder.Services.AddHttpClient("MetaEmbeddedSignupManagement").RemoveAllLoggers();
@@ -643,6 +653,42 @@ public class Program
         });
         app.UseRateLimiter();
         app.UseAntiforgery();
+
+        // Fachada temporal de wsAlfa. Las rutas públicas se mantienen iguales mientras la
+        // implementación Python se migra por módulos a AlfaCore.
+        var legacyApiMethods = new[]
+        {
+            HttpMethods.Get,
+            HttpMethods.Post,
+            HttpMethods.Put,
+            HttpMethods.Patch,
+            HttpMethods.Delete,
+            HttpMethods.Options,
+            HttpMethods.Head
+        };
+        var legacyApiRoutes = new[]
+        {
+            "/api/ping",
+            "/api/test",
+            "/api/serie/{codigo}",
+            "/api/v1",
+            "/api/v1/{**path}",
+            "/api/v2",
+            "/api/v2/{**path}",
+            "/api/v3",
+            "/api/v3/{**path}",
+            "/AGW/V1",
+            "/AGW/V1/{**path}",
+            "/ia/v1",
+            "/ia/v1/{**path}"
+        };
+        foreach (var route in legacyApiRoutes)
+        {
+            app.MapMethods(route, legacyApiMethods,
+                (HttpContext context, LegacyPythonApiProxy proxy, CancellationToken ct) =>
+                    proxy.ForwardAsync(context, ct))
+                .DisableAntiforgery();
+        }
 
         app.MapGet("/manifest.webmanifest", () =>
         {

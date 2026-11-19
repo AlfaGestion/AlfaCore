@@ -1,0 +1,8 @@
+1. Facturar movil (EFC,FP,eNC,eND,NCFP,NFFP)
+2. Carga pedido grafico (movil)
+
+Facturador
+Clientes
+Articulos
+Cierre caja
+Stock

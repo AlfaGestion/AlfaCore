@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración Web Service</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col-md-offset-4 col-md-4 pt-3">
+                <div class="card card-body">
+                    <h3>Configuración del Web Service</h3>
+                    <form action="/api/save_configuration" method="POST">   
+                        <div class="form-group">
+                            <label for="gservidor">Servidor</label> 
+                            <input class="form-control" type="text" placeholder="Servidor" name="gservidor" />
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="gdbname">Base de datos</label> 
+                            <input class="form-control" type="text" placeholder="Base de datos" name="gdbname" />
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="gusuario">Usuario</label> 
+                            <input class="form-control" type="text" placeholder="Usuario" name="gusuario" />
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="gpassword">Password</label> 
+                            <input class="form-control" type="text" placeholder="Password" name="gpassword" />
+                        </div>
+                        
+                        <button class="btn btn-success btn-block">Grabar</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

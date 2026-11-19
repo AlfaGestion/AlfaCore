@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
+
+    <title>Alfa Net Plus</title>
+    <style>
+      * {
+        font-family: "Roboto", sans-serif;
+      }
+      body {
+        padding: 0;
+        margin: 0;
+        min-height: 100vh;
+        background-color: #ffffff;
+        width: 100%;
+      }
+
+      .container {
+        width: 80mm;
+        border: 1px solid #e1e1e1;
+        padding: 10px;
+      }
+
+      .d-flex {
+        display: flex !important;
+      }
+
+      .align-items-center {
+        align-items: center !important;
+      }
+
+      .justify-content-center {
+        justify-content: center !important;
+      }
+
+      .flex-column {
+        flex-direction: column !important;
+      }
+
+      .mb-3 {
+        margin-bottom: 5px !important;
+      }
+
+      .w-100 {
+        width: 100% !important;
+      }
+
+      .justify-content-between {
+        justify-content: space-between !important;
+      }
+
+      .mt-2 {
+        margin-top: 3px !important;
+      }
+
+      .justify-content-end {
+        justify-content: flex-end !important;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Hemos registrado una compra, te adjuntamos el detalle del comprobante</p>
+
+    <div class="container">
+      <div class="w-100mb-3 ticket-header">
+        <h4>{{ company.nombre }}</h4>
+        <span>{{ company.telefono }}</span><br />
+        <span>{{ company.calle }}, {{ company.localidad }} {{ company.cpostal }}</span><br /><br />
+      </div>
+
+      {% for item in detail %}
+      <div
+        class="d-flex align-items-center flex-column justify-content-center w-100 ticket-item-container"
+        style="border-bottom: 1px solid #e1e1e1; font-size: 0.8em"
+      >
+        <div class="d-flex align-items-center justify-content-between w-100 ticket-item">
+          <span>{{ item.descripcion }}</span><span>${{ item.total }}</span>
+        </div>
+        <div class="d-flex align-items-center justify-content-between w-100 ticket-item-price">
+          <span>{{ item.cantidad }} x ${{ item.importe }}</span>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="d-flex justify-content-end w-100 mt-2 ticket-total-container">
+        <span style="font-size: 1.1em"><b>TOTAL $ {{ header[0].importe }}</b></span>
+      </div>
+
+      {% for item in payment %}
+      <div class="d-flex justify-content-between w-100 mt-2 ticket-container-payments">
+        <span>{{ item.descripcion }}</span><span>$ {{ item.importe }}</span>
+      </div>
+      {% endfor %}
+
+      <p style="text-align: center; margin-top: 30px">Gracias por su compra!</p>
+    </div>
+  </body>
+</html>

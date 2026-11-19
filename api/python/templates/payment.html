@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;1,300;1,400&display=swap"
+      rel="stylesheet"
+    />
+
+    <title>Alfa Net Plus</title>
+    <style>
+      * {
+        font-family: "Roboto", sans-serif;
+      }
+      body {
+        padding: 0;
+        margin: 0;
+        min-height: 100vh;
+        background-color: #ffffff;
+        width: 100%;
+      }
+
+      .container {
+        /* position: relative; */
+        background-color: #ffffff;
+        width: 60%;
+        height: 100vh;
+        border: 1px solid #e1e1e1;
+        margin: 1rem;
+        padding: 1rem;
+      }
+
+      .header {
+        width: 100%;
+        border: 2px solid #141313;
+        height: 220px;
+        /* height: 100%; */
+      }
+
+      .left {
+        width: 45%;
+        float: left;
+        line-height: 1;
+        padding: 10px;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .left p {
+        line-height: 1;
+        margin-bottom: -5px;
+        font-size: 16px;
+      }
+
+      .right {
+        width: 45%;
+        float: left;
+        padding: 10px;
+        /* height: 100%; */
+        border-left: 2px solid #141313;
+      }
+
+      .right h3 {
+        padding-left: 20px;
+      }
+
+      .body {
+        width: 100%;
+
+        clear: both;
+      }
+
+      .table-detail {
+        /* border: 1px solid #141313; */
+        width: 100%;
+      }
+
+      .table-detail tr th {
+        padding: 0.5rem;
+        border: 1px solid #141313;
+      }
+
+      .table-detail tr td {
+        padding: 0.5rem;
+        border: 1px solid #141313;
+      }
+
+      .title {
+        text-align: center;
+        background-color: #9e9d9d;
+        padding: 5px;
+        font-size: 18px;
+      }
+
+      .table-header tr td {
+        padding-left: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="left">
+          <h3>{{ company.nombre }}</h3>
+          <p>{{ company.localidad }}</p>
+          <p>{{ company.cpostal }} {{ company.calle }}</p>
+          <p>Tel.: {{ company.telefono }}</p>
+          <p>IVA: {{ company.iva }}</p>
+          <p>CUIT: {{ company.cuit }}</p>
+        </div>
+        <div class="right">
+          <h3>Recibo Oficial - No válido como factura</h3>
+
+          <table class="table-header">
+            <tr>
+              <td>Recibo Nro:</td>
+              <td><b>{{ payment_id }}</b></td>
+            </tr>
+            <tr>
+              <td>Fecha:</td>
+              <td><b>03/07/2022</b></td>
+            </tr>
+
+            <tr>
+              <td>Sr./es:</td>
+              <td><b>{{ account.nombre }}</b></td>
+            </tr>
+
+            <tr>
+              <td>Domicilio:</td>
+              <td><b>{{ account.calle }}</b></td>
+            </tr>
+
+            <tr>
+              <td>Localidad:</td>
+              <td><b>{{ account.localidad }}</b></td>
+            </tr>
+
+            <tr>
+              <td>C.U.I.T:</td>
+              <td><b>{{ account.documento }}</b></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="body">
+        <p class="title">Detalles del pago</p>
+        <table class="table-detail">
+          <thead>
+            <tr>
+              <th style="text-align: left">Medio de pago</th>
+              <th style="text-align: right">Importe</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="text-align: left">{{ method }}</td>
+              <td style="text-align: right">$ {{ amount }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <br />
+        <br />
+
+        <p>Importe total recibido $ {{ amount }}</p>
+        <p>En concepto de: Cob. {{ account.nombre }}</p>
+        <p>Comprobante cargado por {{ seller }} el {{ date }}</p>
+      </div>
+    </div>
+  </body>
+</html>

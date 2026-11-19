@@ -1,0 +1,11 @@
+.venv
+.venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+app.log
+.log
+logs/
+log/
+.jsonl

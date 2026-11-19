@@ -1,0 +1,25 @@
+
+GO
+
+/****** Object:  Table [dbo].[S_TA_UBICACIONES_VENDEDOR]    Script Date: 13/08/2022 12:03:42 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[S_TA_UBICACIONES_VENDEDOR](
+	[id] [int] IDENTITY(1,1) NOT NULL,
+	[lat] [nvarchar](15) NULL,
+	[long] [nvarchar](15) NULL,
+	[idvendedor] [nvarchar](4) NULL,
+	[fechahora] [datetime] NULL,
+	[idcomprobante] [nvarchar](13) NULL,
+ CONSTRAINT [PK_S_TA_UBICACIONES_VENDEDOR] PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+
