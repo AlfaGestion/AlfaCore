@@ -509,7 +509,7 @@ Validación: 16 pruebas unitarias con los totales reales de octubre y, con `EXTR
 Pestaña Revisar: si la importación trae créditos con el texto de `CONCILIACION-NAVE-TEXTO` (por defecto `NAVE`, incluye pagos y devoluciones), se ofrece subir de forma opcional el Excel «Detalle de operaciones» de NAVE. El banco informa solo el neto; el reporte aporta bruto, comisión, IVA de la comisión, medio de pago y fecha de acreditación.
 
 - Lector: `ConciliacionDetalleProcesador` (perfiles por procesador, columnas por nombre normalizado). Rechaza operaciones donde bruto − comisión − IVA ≠ neto. Un mismo código puede aparecer dos veces (pago y devolución).
-- Persistencia: `BK_DetalleProcesador` y `BK_DetalleProcesadorOperacion` (script `2026-11-18-050`). El mismo archivo no se duplica (hash).
+- Persistencia: `BK_DetalleProcesador` y `BK_DetalleProcesadorOperacion` (script `2026-11-18-070`). El mismo archivo no se duplica (hash).
 - Emparejamiento determinístico: los primeros `CONCILIACION-NAVE-PREFIJO` caracteres (10 en Galicia, que corta el código) del código de operación contra `ReferenciaExterna` del extracto; se compara la suma por código. Informa emparejadas, neto distinto, operaciones sin crédito (el extracto termina antes que el reporte) y créditos sin operación.
 - Probado con el extracto de Galicia y el reporte de octubre 2026 (script Python): 722 de 726 créditos emparejados con neto idéntico; los 4 restantes son dos pagos con su devolución.
 - No genera asientos todavía. Pendiente: asiento por día y medio de pago (debe banco por el neto con la cuenta relacionada, debe 42209 por comisión e IVA, haber cuenta de tarjeta/QR por el bruto), tabla de equivalencias medio de pago → cuenta en `TA_CONFIGURACION`, y lectores de otros procesadores.
@@ -528,5 +528,5 @@ Con la propuesta sin errores, el panel pide unidad, talonario y detalle y genera
 
 - Mismo circuito que el asiento de gastos: numeración CC compartida con Alfa Gestión, período abierto, subdiario configurado, conciliación (`BK_Conciliacion*`) e historial del comprobante.
 - La propuesta se recalcula en el servidor al generar; cada día es una transacción propia (si uno falla se informa dónde se detuvo y los anteriores quedan firmes). Idempotente: un día de un extracto se liquida una sola vez (`BK_AsientoLiquidacion`, índice único por importación y fecha; cada crédito pertenece a un solo asiento).
-- Script `2026-11-18-052`. No se genera el Libro de IVA: la comisión y su IVA van completos al gasto.
+- Script `2026-11-18-072`. El IVA de la comisión va a IVA crédito fiscal y se registra en el Libro de IVA Compras.
 - Pendiente: probar en navegador con la base de pruebas y verificar en el Libro de IVA Compras y en el TXT de ARCA el registro de la comisión.
