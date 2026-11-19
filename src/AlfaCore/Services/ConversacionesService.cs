@@ -6113,6 +6113,7 @@ public sealed partial class ConversacionesService(
 
             var items = new List<ConversacionAdjuntoDto>();
             var pathUpdates = new List<(long IdAdjunto, string RutaLocal)>();
+            var mediaVistos = new HashSet<(long IdMensaje, string MediaId)>();
             var tenant = ResolveActiveTenantContext(null, "GetConversationAttachments");
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -6190,6 +6191,12 @@ public sealed partial class ConversacionesService(
                     MensajePayloadJson = GetString(rd, 10),
                     FechaHora = rd.IsDBNull(11) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(11))
                 };
+
+                // Un mismo archivo de WhatsApp grabado dos veces en el mensaje (pasaba cuando el webhook y la
+                // recuperación lo descargaban a la vez) se muestra una sola vez: queda la primera fila.
+                var mediaId = TryExtractMediaId(record.AdjuntoPayloadJson, record.TipoArchivo);
+                if (!string.IsNullOrWhiteSpace(mediaId) && !mediaVistos.Add((record.IdMensaje, mediaId)))
+                    continue;
 
                 var rutaLocal = ResolveExistingAttachmentPath(record, tenant);
                 var hasSqlContent = !rd.IsDBNull(12) && rd.GetBoolean(12);
@@ -6590,7 +6597,8 @@ public sealed partial class ConversacionesService(
                         media.MimeType
                     }),
                     bytes,
-                    ct);
+                    ct,
+                    mediaIdUnico: attachment.MediaId);
                 stored++;
             }
             catch (Exception ex)
@@ -6613,7 +6621,8 @@ public sealed partial class ConversacionesService(
                         }),
                         null,
                         ct,
-                        "NO_DISPONIBLE_META");
+                        "NO_DISPONIBLE_META",
+                        attachment.MediaId);
                     stored++;
                 }
 
@@ -6736,10 +6745,13 @@ public sealed partial class ConversacionesService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdMensaje", messageId);
         cmd.Parameters.AddWithValue("@MediaId", mediaId ?? string.Empty);
-        cmd.Parameters.AddWithValue("@MediaIdLike", $"%{(mediaId ?? string.Empty).Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]")}%");
+        cmd.Parameters.AddWithValue("@MediaIdLike", MediaIdLikePattern(mediaId));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
     }
+
+    private static string MediaIdLikePattern(string? mediaId)
+        => $"%{(mediaId ?? string.Empty).Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]")}%";
 
     private async Task HydrateMissingIncomingMediaAsync(List<PendingMediaHydration> pendingItems, CancellationToken ct)
     {
@@ -13171,7 +13183,8 @@ public sealed partial class ConversacionesService(
         string payloadJson,
         byte[]? archivoContenido,
         CancellationToken ct,
-        string? almacenamientoEstado = null)
+        string? almacenamientoEstado = null,
+        string? mediaIdUnico = null)
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
@@ -13239,8 +13252,33 @@ public sealed partial class ConversacionesService(
                 SELECT CAST(SCOPE_IDENTITY() AS bigint);
                 """;
 
+        if (!string.IsNullOrWhiteSpace(mediaIdUnico))
+        {
+            // El webhook y la recuperación desde la pantalla pueden descargar el mismo adjunto a la vez:
+            // los dos veían que no existía y los dos lo grababan (imagen doble en el chat, 2026-11-19).
+            // Revisar y grabar en la misma transacción, con bloqueo, deja una sola fila por MediaId.
+            sql = $"""
+                SET XACT_ABORT ON;
+                BEGIN TRAN;
+                DECLARE @IdAdjuntoExistente bigint;
+                SELECT TOP 1 @IdAdjuntoExistente = IdAdjunto
+                FROM dbo.CONV_ADJUNTOS WITH (UPDLOCK, HOLDLOCK)
+                WHERE IdMensaje = @IdMensaje
+                  AND ISNULL(PayloadJson, N'') LIKE @MediaIdLike;
+                IF @IdAdjuntoExistente IS NULL
+                BEGIN
+                {sql}
+                END
+                ELSE
+                    SELECT @IdAdjuntoExistente;
+                COMMIT;
+                """;
+        }
+
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdMensaje", messageId);
+        if (!string.IsNullOrWhiteSpace(mediaIdUnico))
+            cmd.Parameters.AddWithValue("@MediaIdLike", MediaIdLikePattern(mediaIdUnico));
         cmd.Parameters.AddWithValue("@TipoArchivo", NormalizeMessageType(tipoArchivo));
         cmd.Parameters.AddWithValue("@NombreArchivo", DbNullable(nombreArchivo));
         cmd.Parameters.AddWithValue("@MimeType", DbNullable(mimeType));
