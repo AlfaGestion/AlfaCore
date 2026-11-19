@@ -5,12 +5,20 @@
 @using AlfaCore.Services
 @using AlfaCore.Components.Shared
 @using AlfaCore.Components.Shared.AlfaDesign
+@inject AlfaCore.Services.IPermissionService Permisos
 @inject ReclamoSaldosService Servicio
 @inject IPageHeaderService PageHeader
 @inject IRouteContextService RouteContext
 @implements IDisposable
 
 <PageTitle>Reclamo de saldos | AlfaCore</PageTitle>
+@if (_sinPermiso)
+{
+    <SinPermisoAviso Titulo="No tenés permiso para el reclamo de saldos"
+                     Mensaje="Para enviar reclamos de saldo a los clientes hace falta el permiso «Reclamo de saldos» de Ventas." />
+}
+else
+{
 
 <div class="gd-page gd reclamo-page">
     <header class="gd-header">
@@ -490,8 +498,10 @@
         }
     </Footer>
 </AlfaDialog>
+}
 
 @code {
+    private bool _sinPermiso;
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
     private const string DefSaldo = "1", DefDias = "0", DefCanal = "Email";
     private const int TamPagina = 50;
@@ -696,6 +706,8 @@
         UpdateHeader();
         try
         {
+            _sinPermiso = !await Permisos.HasAccessAsync(ReclamoSaldosService.MenuKey, _cts.Token);
+            if (_sinPermiso) { UpdateHeader(); return; }
             _unidades = await Servicio.UnidadesAsync(_cts.Token);
             _cfg = await Servicio.ConfigAsync(_cts.Token);
             _saldoMin = _cfg.SaldoMinimo.ToString(CultureInfo.InvariantCulture);
@@ -714,8 +726,8 @@
         Title = "Reclamo de saldos", ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas",
         ShowHistoryNavigation = false, Breadcrumb = ["Ventas", "Reclamo de saldos"],
         TopNavigationItems = [new() { Key = "reclamo", Label = "Reclamo de saldos", Active = true }],
-        SearchContent = _tab == "clientes" ? RenderFiltros() : null,
-        Actions = _tab != "clientes" ? [] : [
+        SearchContent = _tab == "clientes" && !_sinPermiso ? RenderFiltros() : null,
+        Actions = _tab != "clientes" || _sinPermiso ? [] : [
             new() { Key = "enviar", Label = _marcados.Count > 0 ? $"Enviar reclamo ({_marcados.Count})" : "Enviar reclamo", Icon = "bi-send", Style = PageHeaderActionStyle.Primary,
                 Disabled = _busy || _marcados.Count == 0, OnClick = () => { AbrirEnvio(); return Task.CompletedTask; } },
             new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Disabled = _busy,

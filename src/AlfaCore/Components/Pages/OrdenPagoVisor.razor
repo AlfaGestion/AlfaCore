@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/compras/pagos/ordenes"
 @using AlfaCore.Models
 @using AlfaCore.Services
+@inject AlfaCore.Services.IPermissionService Permisos
 @inject OrdenPagoService Servicio
 @inject CompraDocumentoMailService Correo
 @inject IJSRuntime Js
@@ -15,6 +16,13 @@
 @implements IDisposable
 
 <PageTitle>Ver órdenes de pago | AlfaCore</PageTitle>
+@if (_sinPermiso)
+{
+    <SinPermisoAviso Titulo="No tenés permiso para ver órdenes de pago"
+                     Mensaje="Para consultar las órdenes de pago hace falta el permiso «Ver órdenes de pago» (o el de cargarlas) de Compras." />
+}
+else
+{
 
 @* Órdenes de pago (OPG) y pagos proforma (PGFP) ya cargados: buscar, ver (trazabilidad e historial), reimprimir y enviar por mail. *@
 <div class="gd-page gd cv-page">
@@ -104,8 +112,10 @@
     </AlfaDialog>
 }
 @if (_ver is { } ver) { <OrdenPagoDetalleDialog @key="@(ver.Tc + ver.Comprobante)" Tc="@ver.Tc" IdComprobante="@ver.Comprobante" OnClose="CerrarDetalle" /> }
+}
 
 @code {
+    private bool _sinPermiso;
     private readonly CancellationTokenSource _vida = new();
     private readonly HashSet<int> _seleccion = [];
     private bool _busy, _buscado, _disposed, _confirmarLote, _mailCargando, _iniciado;
@@ -135,6 +145,9 @@
             var tenant = await TenantGuard.ResolveAsync(idbase, idweb, _vida.Token);
             if (!tenant.IsValid) throw new InvalidOperationException("No se pudo resolver la base de esta URL.");
             _sesion = Sesiones.GetActiveSession()?.Id;
+            _sinPermiso = !await Permisos.HasAccessAsync(OrdenPagoService.MenuKey, _vida.Token)
+                && !await Permisos.HasAccessAsync(OrdenPagoService.MenuKeyVer, _vida.Token);
+            if (_sinPermiso) { UpdateHeader(); return; }
             await ConsultarAsync();
         });
     }
@@ -241,15 +254,11 @@
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "compras", Title = "Ver órdenes de pago",
         ShowHistoryNavigation = false,
-        Breadcrumb = ["Compras", "Órdenes de pago", "Ver comprobantes"],
+        Breadcrumb = ["Compras", "Ver órdenes de pago"],
         TopNavigationItems =
-        [
-            new() { Key = "orden", Label = "Orden de Pago", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/pagos/orden-de-pago")); return Task.CompletedTask; } },
-            new() { Key = "visor", Label = "Ver comprobantes", Active = true },
-            new() { Key = "pagos", Label = "Pagos y retenciones", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/pagos")); return Task.CompletedTask; } }
-        ],
+        AlfaCore.Services.ModuleTopNavPresets.BuildComprasOperacion(RouteContext, Nav, "ordenes"),
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
-        Actions = [new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = BuscarAsync }]
+        Actions = _sinPermiso ? [] : [new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = BuscarAsync }]
     });
 
     private void CambiarSesion()

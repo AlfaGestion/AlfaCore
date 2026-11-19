@@ -3,7 +3,7 @@
 El módulo Compras tiene dos partes:
 
 - **Análisis** (tablero, reportes, proveedores, comprobantes, rubros, familias, artículos, actividad e InformesIA): consultas sobre lo que ya se compró.
-- **Operación**: carga de comprobantes de compras, órdenes de pago y consulta de órdenes. La carga de comprobantes tiene su propio manual (**Compras: carga de comprobantes**).
+- **Operación**: carga de comprobantes de compras, órdenes de pago y consulta de órdenes. Estas pantallas comparten una misma barra: **Inicio de Compras**, **Carga de comprobantes**, **Ver comprobantes**, **Pagos y retenciones**, **Orden de pago** y **Ver órdenes de pago**. La carga de comprobantes tiene su propio manual (**Carga de comprobantes de compras**).
 
 En todas las pantallas de análisis el **período** y los filtros se eligen en el buscador de la barra superior (ícono del embudo). Los rangos rápidos (este mes, mes anterior, últimos 12 meses…) actualizan la pantalla enseguida.
 

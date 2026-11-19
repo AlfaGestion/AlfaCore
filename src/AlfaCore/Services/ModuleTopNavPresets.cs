@@ -25,6 +25,44 @@ public static class ModuleTopNavPresets
             ("informesia", "InformesIA", "/compras/informesia")
         ]);
 
+    /// <summary>
+    /// Barra única de la operación de Compras (carga, ver comprobantes, pagos y retenciones, orden de pago y ver
+    /// órdenes de pago). Con ?directo=1 (instalación solo de carga) queda solo la carga y conserva el parámetro.
+    /// </summary>
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildComprasOperacion(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+    {
+        var directo = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query)
+            .TryGetValue("directo", out var d) && d == "1";
+        (string Key, string Label, string Route)[] items = directo
+            ?
+            [
+                ("carga", "Carga de comprobantes", "/compras/carga"),
+                ("visor", "Ver comprobantes", "/compras/carga/visor"),
+                ("pagos", "Pagos y retenciones", "/compras/carga/pagos")
+            ]
+            :
+            [
+                ("inicio", "Inicio de Compras", "/compras"),
+                ("carga", "Carga de comprobantes", "/compras/carga"),
+                ("visor", "Ver comprobantes", "/compras/carga/visor"),
+                ("pagos", "Pagos y retenciones", "/compras/carga/pagos"),
+                ("orden", "Orden de pago", "/compras/pagos/orden-de-pago"),
+                ("ordenes", "Ver órdenes de pago", "/compras/pagos/ordenes")
+            ];
+        return items.Select(item =>
+        {
+            var url = routeContext.BuildRoute(item.Route) + (directo ? "?directo=1" : "");
+            return new PageHeaderTopNavItem
+            {
+                Key = item.Key,
+                Label = item.Label,
+                Url = url,
+                Active = string.Equals(item.Key, activeKey, StringComparison.OrdinalIgnoreCase),
+                OnClick = () => { nav.NavigateTo(url); return Task.CompletedTask; }
+            };
+        }).ToList();
+    }
+
     public static IReadOnlyList<PageHeaderTopNavItem> BuildVentas(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [

@@ -197,7 +197,7 @@ public class PermisosWebTests
         var permitidas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Ventas:ventas-dashboard", "Seguridad:usuarios" };
         var codigo = File.ReadAllText(Path.Combine(RepoRoot(), "src", "AlfaCore", "Services", "ModuleTopNavPresets.cs"));
         var presets = System.Text.RegularExpressions.Regex.Matches(codigo,
-            @"public static IReadOnlyList<PageHeaderTopNavItem> Build(\w+)\(.*?\]\);", System.Text.RegularExpressions.RegexOptions.Singleline);
+            @"public static IReadOnlyList<PageHeaderTopNavItem> Build(\w+)\((?:(?!public static).)*?\]\);", System.Text.RegularExpressions.RegexOptions.Singleline);
         Assert.NotEmpty(presets);
         foreach (System.Text.RegularExpressions.Match preset in presets)
         {

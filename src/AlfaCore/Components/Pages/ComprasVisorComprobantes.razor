@@ -237,11 +237,7 @@
         ShowHistoryNavigation = false,
         Breadcrumb = ["Compras", "Carga de comprobantes de compras", "Ver comprobantes"],
         TopNavigationItems =
-        [
-            new() { Key = "carga", Label = "Carga de comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga") + (Directo ? "?directo=1" : "")); return Task.CompletedTask; } },
-            new() { Key = "visor", Label = "Ver comprobantes", Active = true },
-            new() { Key = "pagos", Label = "Pagos y retenciones", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/pagos") + (Directo ? "?directo=1" : "")); return Task.CompletedTask; } }
-        ],
+        AlfaCore.Services.ModuleTopNavPresets.BuildComprasOperacion(RouteContext, Nav, "visor"),
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
         Actions = [new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = BuscarAsync }]
     });
