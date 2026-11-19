@@ -136,6 +136,77 @@ public sealed class ActualizacionesService(
             return salteados.Count;
         }, "No se pudieron ignorar los scripts salteados.", ct);
 
+    /// <summary>
+    /// Ejecuta a mano los scripts salteados (versión igual o anterior a la actual, nunca aplicados). No cambia
+    /// FECHAUPDATE_CORE: la versión de la base no retrocede. Deja cada uno en el historial como OK y se detiene en el primer error.
+    /// </summary>
+    public Task<ActualizacionesRunResultDto> AplicarSalteadosAsync(string? usuario, string? pc, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Actualizaciones", "AplicarSalteados", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await EnsureHistoryTableAsync(cn, token);
+            var source = ResolveSource(await GetSettingsAsync(token), validateAvailability: false);
+            var lockHandle = await AcquireLockAsync(cn, token);
+            try
+            {
+                var scripts = GetScripts(source, requireAvailability: false);
+                var currentVersionText = await GetConfigValueAsync(cn, detailColumn, FechaUpdateKey, token);
+                var currentVersion = ParseVersionToken(currentVersionText);
+                var (aplicadosOk, primeraVersion) = await GetAplicadosOkAsync(cn, token);
+                var salteados = CalcularSalteados(
+                    scripts,
+                    currentVersion is { } cv ? $"{cv.Date:yyyy-MM-dd}-{cv.Sequence:000}" : null,
+                    aplicadosOk,
+                    primeraVersion);
+                var version = NormalizeVersionText(currentVersion);
+                var actor = NormalizeActor(usuario, Environment.UserName, 50);
+                var equipo = NormalizeActor(pc, Environment.MachineName, 100);
+                var applied = new List<string>();
+                if (salteados.Count == 0)
+                    return new ActualizacionesRunResultDto { CantidadAplicada = 0, VersionAnterior = version, VersionFinal = version, RutaOrigen = source.RutaOrigenActiva, SinCambios = true };
+
+                var legacyGuard = await LegacyTablesUpdateGuard.BeginAsync(cn, token);
+                try
+                {
+                    foreach (var script in salteados.OrderBy(s => s.VersionKey, StringComparer.Ordinal))
+                    {
+                        try
+                        {
+                            var sql = await File.ReadAllTextAsync(script.RutaCompleta, token);
+                            foreach (var batch in SplitSqlBatches(sql))
+                            {
+                                if (string.IsNullOrWhiteSpace(batch)) continue;
+                                await using var cmd = new SqlCommand(LegacyTablesUpdateGuard.Rewrite(batch), cn) { CommandTimeout = 1200 };
+                                await cmd.ExecuteNonQueryAsync(token);
+                            }
+                            await InsertHistoryAsync(cn, script, version, version, source.RutaOrigenActiva, "OK",
+                                "Script salteado aplicado a mano desde el panel (no cambia la versión de la base).", actor, equipo, null, token);
+                            applied.Add(script.Archivo);
+                        }
+                        catch (Exception ex)
+                        {
+                            await InsertHistoryAsync(cn, script, version, version, source.RutaOrigenActiva, "ERROR",
+                                "La aplicación manual del script salteado falló.", actor, equipo, ex.ToString(), token);
+                            var incidentId = await appEvents.LogErrorAsync("Actualizaciones", "AplicarSalteados", ex,
+                                $"No se pudo aplicar el script salteado {script.Archivo}.", new { script.Archivo }, AppEventSeverity.Error, token);
+                            throw new AppUserFacingException($"No se pudo aplicar {script.Archivo}. Revisá el historial del módulo.", incidentId, ex);
+                        }
+                    }
+                }
+                finally
+                {
+                    await RestoreLegacyTablesAsync(legacyGuard, applied);
+                }
+                return new ActualizacionesRunResultDto { CantidadAplicada = applied.Count, VersionAnterior = version, VersionFinal = version, RutaOrigen = source.RutaOrigenActiva, SinCambios = false, ScriptsAplicados = applied };
+            }
+            finally
+            {
+                await ReleaseLockAsync(cn, lockHandle, token);
+            }
+        }, "No se pudieron aplicar los scripts salteados.", ct);
+
     public Task<ActualizacionesRunResultDto> ExecutePendingAsync(ActualizacionesRunRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Actualizaciones", "ExecutePending", async token =>
         {

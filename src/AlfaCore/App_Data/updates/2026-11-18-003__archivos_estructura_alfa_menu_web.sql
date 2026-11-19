@@ -22,7 +22,8 @@ IF COL_LENGTH(N'dbo.ALFACORE_MENU_WEB', N'PadreClave') IS NULL RETURN;
 -- 1) Permisos, calculados con la ubicación vieja (D0105 = Tablas de referencia mientras tenga esa ruta).
 --    Quien tenía la clave Origen recibe también la clave Nueva (mismo usuario o perfil).
 IF OBJECT_ID(N'tempdb..#map') IS NOT NULL DROP TABLE #map;
-CREATE TABLE #map (Origen nvarchar(50) NOT NULL, Nueva nvarchar(50) NOT NULL);
+-- COLLATE DATABASE_DEFAULT: la temporal toma la intercalación de tempdb, que puede diferir de la de la base.
+CREATE TABLE #map (Origen nvarchar(50) COLLATE DATABASE_DEFAULT NOT NULL, Nueva nvarchar(50) COLLATE DATABASE_DEFAULT NOT NULL);
 
 IF EXISTS (SELECT 1 FROM dbo.ALFACORE_MENU_WEB
            WHERE Menu = N'ALFA' AND Clave = N'D0105' AND ISNULL(RutaWeb, N'') = N'/archivos/tablas')
