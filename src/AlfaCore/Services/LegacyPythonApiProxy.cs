@@ -62,6 +62,12 @@ public sealed class LegacyPythonApiProxy(
             request.Content = new StreamContent(context.Request.Body);
             if (!string.IsNullOrWhiteSpace(context.Request.ContentType))
                 request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(context.Request.ContentType);
+            if (context.Request.ContentLength is long contentLength)
+                request.Content.Headers.ContentLength = contentLength;
+
+            // wsAlfa corre detrás de IIS/wfastcgi y algunas rutas POST no aceptan el cuerpo
+            // enviado como chunked ni la negociación Expect: 100-continue.
+            request.Headers.ExpectContinue = false;
         }
 
         try

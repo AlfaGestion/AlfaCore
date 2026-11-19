@@ -1037,7 +1037,7 @@
     private string? _selectedClientId;
     private bool _lookupLoading;
     private AdminBaseDto? _syncConfigBase;
-    private string _syncConfigRutaWebService = "https://alfanetac.ddns.net/api/v3/";
+    private string _syncConfigRutaWebService = "https://alfacentral.ddns.net/api/v3/";
     private string _syncConfigUser = string.Empty;
     private string _syncConfigPassword = string.Empty;
 
@@ -1886,7 +1886,7 @@
     private async Task OpenSyncConfigAsync(AdminBaseDto item)
     {
         _syncConfigBase = item;
-        _syncConfigRutaWebService = "https://alfanetac.ddns.net/api/v3/";
+        _syncConfigRutaWebService = "https://alfacentral.ddns.net/api/v3/";
         _syncConfigUser = string.Empty;
         _syncConfigPassword = string.Empty;
         _showSyncConfigModal = true;
