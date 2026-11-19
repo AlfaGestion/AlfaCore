@@ -559,6 +559,7 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             return Task.CompletedTask;
         }
 
+        public Task SaveWhatsAppNumeroUsuariosAsync(int idNumero, IReadOnlyList<string> usuarios, CancellationToken ct = default) => throw new NotSupportedException();
         public async Task<ConversacionWhatsAppNumeroDto> UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(
             int idBase,
             ConversacionWhatsAppNumeroDto numero,

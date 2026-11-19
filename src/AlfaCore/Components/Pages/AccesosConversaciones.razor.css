@@ -1,0 +1,14 @@
+.accesos-conv-page {
+    display: grid;
+    gap: 1.5rem;
+    max-width: 72rem;
+}
+
+.accesos-conv__estado {
+    min-height: 10rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    opacity: .85;
+}

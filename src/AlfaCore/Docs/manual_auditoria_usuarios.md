@@ -1,5 +1,23 @@
-# Manual de Usuario — Auditoría de usuarios
-### Alfa Gestión · Módulo Auditoría
+# Auditoría
+
+El **Reporte de auditoría** está en **Archivos → Seguridad**, como en Alfa Gestión. Sus pestañas son **Resumen**, **Errores**, **Actividad de usuarios** y **Comprobantes**.
+
+## Resumen de auditoría
+
+Muestra los errores de hoy y de los últimos 7 días, el proceso con más errores, el usuario más afectado, los **Errores por día**, los **Procesos con más errores** y los **Usuarios con más errores**. Desde cada tarjeta, **Abrir** lleva al detalle.
+
+## Errores del sistema
+
+Lista los incidentes registrados (cada uno con su **código de incidente**, el mismo que ve el usuario en el aviso). Filtrá por fecha, proceso o usuario y pulsá **Aplicar**; **Limpiar** quita los filtros. Al abrir un error se ven los **Datos principales**, la **Descripción** y el detalle técnico. **Volver a errores** regresa a la lista. Cuando un cliente te pasa un código de incidente, buscalo acá.
+
+## Auditoría de comprobantes
+
+Revisa los comprobantes con controles automáticos y muestra **alertas** por nivel de riesgo (alto, medio). Elegí el período en la barra superior; al abrir una alerta se ve su **Detalle de alerta**. **Recargar** vuelve a calcular.
+
+## Actividad de usuarios
+
+Lo que sigue explica en detalle la pestaña **Actividad de usuarios**.
+
 
 ---
 

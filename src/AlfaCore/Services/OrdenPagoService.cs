@@ -13,6 +13,8 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
 {
     /// <summary>Clave del menú legacy «Orden de pago y Liquidación» (D509012).</summary>
     public const string MenuKey = "D509012";
+    /// <summary>Opción web «Ver órdenes de pago» (D50-OPG-VER-WEB): alcanza para consultar, no para grabar ni anular.</summary>
+    public const string MenuKeyVer = "D50-OPG-VER-WEB";
     public const string TcOrdenPago = "OPG";
     public const string TcProforma = "PGFP";
 
@@ -30,10 +32,16 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
         if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var session))
             throw new InvalidOperationException("Iniciá sesión en la base donde querés cargar la orden de pago.");
         var connection = sessions.GetConnectionString();
+        // La falta de permiso no es un incidente: se avisa sin registrarlo en AUX_ERR.
+        // Consultar y ver el detalle también se permite con «Ver órdenes de pago».
+        var soloConsulta = accion is "Consultar" or "Detalle";
+        if (!await permissions.HasAccessAsync(MenuKey, ct)
+            && !(soloConsulta && await permissions.HasAccessAsync(MenuKeyVer, ct)))
+            throw new InvalidOperationException(soloConsulta
+                ? "No tenés permiso para ver órdenes de pago."
+                : "No tenés permiso para cargar órdenes de pago.");
         try
         {
-            if (!await permissions.HasAccessAsync(MenuKey, ct))
-                throw new InvalidOperationException("No tenés permiso para cargar órdenes de pago.");
             VerificarSesion(session);
             await using var cn = new SqlConnection(connection);
             await cn.OpenAsync(ct);

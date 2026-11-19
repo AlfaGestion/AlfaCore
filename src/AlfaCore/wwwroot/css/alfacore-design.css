@@ -189,7 +189,12 @@
     white-space: nowrap;
 }
 
-.alfa-app-topbar__nav-item:hover,
+/* Al pasar el mouse, subrayado tenue: que no parezca otra pestaña activa. */
+.alfa-app-topbar__nav-item:hover:not(.is-active) {
+    border-bottom-color: color-mix(in srgb, var(--alfa-accent) 35%, transparent);
+    color: var(--alfa-text-primary);
+}
+
 .alfa-app-topbar__nav-item.is-active {
     border-bottom-color: var(--alfa-accent);
     background: transparent;

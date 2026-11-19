@@ -27,6 +27,38 @@ Criterio aplicado:
 - Datos que usa: `BK_ImportacionExtracto`, `BK_ExtractoMovimiento`, `BK_MovimientoClasificado`, `BK_MovimientoMatch`, `BK_MovimientoAplicacion`, `BK_ReglaInterpretacion`, `BK_AliasClienteBanco`, `BK_GeneracionAlfaLog`, `MA_CUENTAS`, `VT_CLIENTES`, `VE_CPTES_SALDOS_VENTAS`, `VE_COBRANZAS_REALIZADAS`, `TA_CONFIGURACION`.
 - Observaciones: usa sesión activa, permisos, Dapper y transacción; permite corrección manual versionada de clasificación y consulta contextual de facturas/orígenes en `ConciliacionBancariaService.Revision.cs` y cuenta corriente con recibos legacy, contrapartidas y aplicaciones en `ConciliacionBancariaService.CuentaCorriente.cs` (MV_ASIENTOS, MV_APLICACION, V_MV_CPTE, TA_MONEDAS y TA_USUARIOS). El parcial `ConciliacionBancariaService.Vinculos.cs` compara banco/contabilidad, confirma y deshace vínculos auditados en BK_Conciliacion/Banco/Alfa, respetando MV_CONCILIACION legacy y MV_ASIENTOS.Conciliado. El parcial `ConciliacionBancariaService.CobroExistente.cs` reconoce recibos legacy en BK_CobroExistente, con confirmación e idempotencia, sin generar nuevas registraciones ni conciliar. ConciliacionExtractoLector admite XLSX, XLS, CSV y PDF de texto Nación/Hipotecario (pypdf local, saldos verificados, mismo Python de Recepción documental y transporte PdfPythonProceso compartido con tarjetas), con normalización mediante ConciliacionArchivoTabular/ExcelDataReader y detección de la variante Provincia con cabecera en fila 6. Mercado Pago admite archivos renombrados con fecha de referencia explícita, sugerida desde creación del XLSX cuando existe y revalidada al importar; las conversiones no inventan fechas de descarga. El parcial ConciliacionBancariaService.Clientes.cs permite asignar cliente con prioridad manual, regenerar la propuesta y recordar un alias bancario en BK_AliasClienteBanco para próximas importaciones, con auditoría, reevaluación individual y controles de conflicto. Normaliza CUIT y distingue cuentas del mismo titular por coincidencia única de saldo/importe, incluso con alias recordado. No genera cobranzas ni asientos. El parcial `ConciliacionBancariaService.Gastos.cs` genera el asiento CC mensual de gastos e impuestos bancarios con Libro de IVA Compras y concilia todos sus movimientos contra el renglón del banco; el cálculo y la clasificación por concepto están en `ConciliacionGastosBancarios.cs` y la reserva de numeración CC (`ReservarNumeracionCcAsync`) se comparte con el asiento individual. Ver `docs/modulos/conciliacion-bancaria.md`.
 
+### PermissionService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PermissionService.cs`
+- Propósito: regla única de permisos web para el menú y las pantallas: sin permisos cargados ve todo, con permisos ve solo lo tildado; los permisos explícitos se dan solo si están tildados.
+- Datos que usa: `ALFACORE_TAREAS_WEB`, `ALFACORE_PERMISOS_WEB_EXPLICITOS`, `CONV_ADMINISTRADORES`.
+- Observaciones: ante un error de lectura niega el acceso. Usar `HasAccessAsync(clave)` en vez de consultar las tablas de permisos a mano.
+
+### PermisosWebCatalogo
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PermisosWebCatalogo.cs`
+- Propósito: catálogo único de permisos de acción (partes de un módulo sin pantalla propia), dónde se guarda cada uno y cuáles son explícitos.
+- Datos que usa: no usa SQL; las filas en `ALFACORE_MENU_WEB` las crea el script 2026-11-18-001.
+- Observaciones: primeros permisos: Plantillas de WhatsApp, Configurar Conversaciones y Ver todos los números.
+
+### AutorizacionTareasService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/AutorizacionTareasService.cs`
+- Propósito: Seguridad > Autorización de tareas y Seguridad > Perfiles: árbol de permisos por usuario, asignaciones (unidad, caja, depósito), perfiles y su aplicación a los usuarios.
+- Datos que usa: `ALFACORE_MENU_WEB`, `ALFACORE_TAREAS_WEB`, `ALFACORE_PERMISOS_WEB_EXPLICITOS`, `ALFACORE_PERFILES_WEB`, `ALFACORE_PERFILES_WEB_CLAVES`, `ALFACORE_PERFILES_WEB_USUARIOS`, `CONV_ADMINISTRADORES`, `TA_USUARIOS`, `V_TA_UnidadNegocio`, `V_TA_CAJAS`, `V_TA_DEPOSITO`.
+- Observaciones: los permisos del perfil se copian marcados con `IdPerfil` (NULL = propio) y se resincronizan al cambiar el perfil; filtra por módulos contratados. Árbol compartido de las pantallas en `Models/MenuAutorizacionArbol.cs`; aviso de pantalla sin permiso en `Components/Shared/SinPermisoAviso.razor`.
+
+### AccesosConversaciones
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/AccesosConversaciones.razor`
+- Propósito: Seguridad > Accesos a Conversaciones: quién ve todos los números de WhatsApp y qué usuarios atienden cada número (antes en Conversaciones > Configuración > Operación y accesos).
+- Datos que usa: `CONV_ADMINISTRADORES`, `CONV_WHATSAPP_NUMERO_USUARIOS`, `CONV_WHATSAPP_NUMEROS`, `TA_USUARIOS` (vía `IConversacionesConfigService`).
+- Observaciones: requiere "Configurar Conversaciones" o administrador del sistema; lee con la base de la ruta y guarda solo los usuarios de cada número (`SaveWhatsAppNumeroUsuariosAsync`). Un número sin usuarios lo ven todos.
+
 ### Launcher
 
 - Tipo: Page
@@ -49,7 +81,7 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/AyudaManuales.cs`
 - Propósito: catálogo cerrado de manuales embebidos (`src/AlfaCore/Docs/manual_*.md`) y mapa pantalla → manual y artículo que abre el ícono de ayuda (`Pantallas`, `TemaParaRuta`, `SeccionParaRuta`).
 - Datos que usa: recursos Markdown embebidos; no lee base de datos ni rutas aportadas por el usuario.
-- Observaciones: cada `##`/`###` de un manual es un artículo. Al documentar una pantalla nueva, agregar su ruta a `Pantallas`; `AyudaContextualTests` falla si el artículo no existe en el manual.
+- Observaciones: un manual por módulo (`AyudaTema.Grupo` = módulo del menú; la ventana de ayuda los muestra en un selector agrupado). Cada `##`/`###` con texto propio es un artículo (los títulos que solo agrupan y el «Índice» no). `BuscarEnTodo` busca en todos los manuales (primero el actual). Al crear una pantalla, documentarla en el manual de su módulo y agregar su ruta a `Pantallas` (lo específico antes que lo general; `$` al final = la ruta termina ahí). `AyudaContextualTests` falla si el artículo no existe o si una pestaña de módulo o una entrada del engranaje no tiene ayuda. El chat con IA (`AyudaIaService`) usa los mismos manuales.
 
 ### FiltroPeriodo
 
@@ -685,7 +717,7 @@ Criterio aplicado:
 
 - Tipo: Page
 - Ubicación: `src/AlfaCore/Components/Pages/ConfiguracionGeneralContable.razor`
-- Propósito: pantalla `/configuracion-general/contable`: plan general de cuentas, índices de ajuste, datos generales, centros de costo y fechas del ejercicio.
+- Propósito: pantalla `/contabilidad/configuracion` (pestaña Configuración de Gestión contable; la ruta vieja `/configuracion-general/contable` redirige): plan general de cuentas, índices de ajuste, datos generales, centros de costo y fechas del ejercicio.
 - Datos que usa: `ConfiguracionContableService`
 - Observaciones: el ejercicio vigente se muestra solo como referencia; queda afuera el «Utilitario CD-W» del legacy.
 

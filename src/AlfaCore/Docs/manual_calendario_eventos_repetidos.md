@@ -1,4 +1,10 @@
-# Calendario: eventos repetidos e indicador de la barra
+# Calendario
+
+El Calendario está en **CRM → Calendario**. Sirve para guardias, turnos, vencimientos y reuniones del equipo, y para que los clientes reserven reuniones o capacitaciones.
+
+## Ver el calendario y crear un evento
+
+El calendario muestra el mes. Tocá un día para ver sus eventos y usá **Nuevo evento este día**, o pulsá **Nuevo** en la barra superior. Completá el título, el horario, los responsables y si se repite, y pulsá **Guardar**. **Cancelar** cierra sin guardar. **Panel** muestra los próximos eventos en una lista.
 
 ## Eventos que se repiten
 

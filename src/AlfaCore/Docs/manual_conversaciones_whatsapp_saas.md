@@ -213,32 +213,32 @@ Reglas:
 
 Para quitar un número del listado, seleccionarlo y usar `Quitar de AlfaCore` desde el menú de opciones. La acción no lo elimina de Meta ni borra conversaciones, mensajes o historial. Si se vuelve a agregar el mismo Phone Number ID, AlfaCore reactiva el registro existente.
 
-## 8. Usuarios y administradores
+## 8. Usuarios y permisos
+
+Desde el 18/11/2026 los accesos se manejan en **Seguridad**, no en la Configuración de Conversaciones.
 
 ### 8.1 Usuarios por número
 
-En el detalle de cada número, elegir `Asignar usuarios`, marcar los agentes y guardar el diálogo.
+En **Seguridad → Accesos a Conversaciones**, en "Quién atiende cada número", marcar los usuarios de cada
+número y guardar. También se puede hacer desde el detalle del número con `Asignar usuarios`.
 
-Para restringir realmente un número debe tener al menos un usuario asignado. Dejarlo sin usuarios
-significa acceso abierto por compatibilidad con instalaciones anteriores.
+Un número sin ningún usuario marcado lo ven todos. Para restringirlo debe tener al menos un usuario.
 
-### 8.2 Administrador de Conversaciones
+### 8.2 Ver todos los números
 
-En `Operación y accesos`, marcar a los responsables del módulo. Un administrador de
-Conversaciones ve y puede atender todos los números, aunque no figure en cada asignación.
+En **Seguridad → Accesos a Conversaciones**, en "Ven todos los números", marcar a quienes coordinan la
+atención. Ven y pueden atender todos los números aunque no figuren en cada uno. Es el mismo permiso
+"Ver todos los números" de Seguridad → Autorización de tareas.
 
-Este rol es independiente del administrador general del sistema.
+### 8.3 Quién puede configurar
 
-La política efectiva de Configuración es:
-
-- un administrador general del sistema puede administrar Conversaciones;
-- un administrador de Conversaciones también puede abrir y modificar la configuración;
-- cuando todavía no hay administradores de Conversaciones, el primero debe ser designado por un
-  administrador general;
-- los agentes normales no pueden modificar números, credenciales, asignaciones, administradores ni
-  automatizaciones;
-- ser administrador general no concede automáticamente acceso operativo a todos los números: para
-  atenderlos debe figurar también como administrador de Conversaciones o como usuario del número.
+- Configurar Conversaciones (canales, números, asistente IA, automatizaciones): el administrador general
+  del sistema o quien tenga tildado el permiso **Configurar Conversaciones** (Autorización de tareas o perfil).
+- "Ver todos los números" **no** habilita a configurar: son permisos separados.
+- **Respuestas rápidas**: quien tenga ese permiso puede editarlas sin poder cambiar el resto; al entrar a
+  Configuración ve solo esa sección.
+- La sección **Soporte** (webhooks, diagnóstico, AnyDesk) la ve solo el personal de ALFA NET.
+- El estilo del informe mensual se define en la pestaña **Informes**.
 
 ### 8.3 Matriz mínima de prueba
 

@@ -396,3 +396,30 @@
         justify-content: flex-start;
     }
 }
+
+/* ── Avisos de "ve todo / ve solo lo tildado" (2026-11-18) ──────────── */
+
+.autorizacion-page .auth-aviso {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    padding: .7rem .9rem;
+    border-radius: .75rem;
+    border: 1px solid transparent;
+    font-size: .88rem;
+    line-height: 1.45;
+}
+
+.autorizacion-page .auth-aviso i {
+    margin-top: .1rem;
+}
+
+.autorizacion-page .auth-aviso--info {
+    background: rgba(56, 189, 248, .1);
+    border-color: rgba(56, 189, 248, .25);
+}
+
+.autorizacion-page .auth-aviso--warning {
+    background: rgba(245, 158, 11, .12);
+    border-color: rgba(245, 158, 11, .3);
+}

@@ -79,7 +79,9 @@ public sealed partial class CompraCargaService(ISessionService sesiones,IAppUser
         var defaults=(await datos.ReadAsync<DefaultFiscal>()).ToList();
         var tipos=(await datos.ReadAsync<CompraCargaTipo>()).AsList();var centros=(await datos.ReadAsync<CompraCargaOpcion>()).AsList();var depositos=(await datos.ReadAsync<CompraCargaOpcion>()).AsList();
         if(tipos.GroupBy(x=>x.Clave).Any(g=>g.Count()>1))throw new InvalidOperationException("Hay comprobantes de compras repetidos para el mismo talonario y unidad. Revisá su configuración.");
-        if(defaults.Count>1)throw new InvalidOperationException("Hay más de una configuración en TA_CUENTASIVA; revisala antes de preparar compras.");
+        // Filas repetidas con las mismas cuentas no son ambiguas: se usa una. Si las cuentas difieren, no se adivina cuál vale.
+        defaults=defaults.DistinctBy(d=>(d.Iva,d.IvaConsumidor,d.IvaMono,d.PercepcionIva,d.PercepcionIibb,d.PercepcionGanancias,d.ImpuestoInterno)).ToList();
+        if(defaults.Count>1)throw new InvalidOperationException($"Las cuentas de IVA y percepciones de compras (TA_CUENTASIVA) están cargadas {defaults.Count} veces con cuentas distintas. Dejá una sola configuración en Alfa Gestión y volvé a abrir la carga.");
         if(reglas.GroupBy(r=>(r.Motivo,r.CondicionIva)).Any(g=>g.Count()>1))throw new InvalidOperationException("Hay imputaciones de compras repetidas para un motivo y condición de IVA.");
         if(defaults.FirstOrDefault() is {} df)
             foreach(var r in reglas)

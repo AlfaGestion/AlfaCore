@@ -3,6 +3,7 @@
 @using System.Globalization
 @using AlfaCore.Models
 @using AlfaCore.Services
+@inject AlfaCore.Services.IPermissionService Permisos
 @inject OrdenPagoService Servicio
 @inject CompraDocumentoMailService Documentos
 @inject IJSRuntime Js
@@ -16,6 +17,13 @@
 @implements IDisposable
 
 <PageTitle>Orden de Pago | AlfaCore</PageTitle>
+@if (_sinPermiso)
+{
+    <SinPermisoAviso Titulo="No tenés permiso para cargar órdenes de pago"
+                     Mensaje="Para registrar órdenes de pago hace falta el permiso «Orden de pago» de Compras." />
+}
+else
+{
 
 @* Orden de pago a proveedores: proveedor → comprobantes a pagar (y créditos a aplicar) → medios de pago. Con «Proforma» graba PGFP. *@
 <div class="gd-page gd op-page">
@@ -211,8 +219,10 @@
         SecondaryMessage="Revisá los importes si no querías dejar un anticipo."
         ConfirmLabel="Grabar con anticipo" OnConfirm="GrabarConAnticipoAsync" OnCancel="() => _confirmaAnticipo = false" />
 }
+}
 
 @code {
+    private bool _sinPermiso;
     private sealed class MedioFila
     {
         public Guid Id { get; } = Guid.NewGuid();
@@ -291,6 +301,8 @@
             var tenant = await TenantGuard.ResolveAsync(idbase, idweb, _vida.Token);
             if (!tenant.IsValid) throw new InvalidOperationException("No se pudo resolver la base de esta URL.");
             _sesion = Sesiones.GetActiveSession()?.Id;
+            _sinPermiso = !await Permisos.HasAccessAsync(OrdenPagoService.MenuKey, _vida.Token);
+            UpdateHeader();
         });
     }
 
@@ -431,16 +443,11 @@
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "compras", Title = "Orden de Pago",
         ShowHistoryNavigation = false,
-        Breadcrumb = ["Compras", "Órdenes de pago", "Orden de Pago"],
+        Breadcrumb = ["Compras", "Orden de pago"],
         TopNavigationItems =
-        [
-            new() { Key = "carga", Label = "Carga de comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga")); return Task.CompletedTask; } },
-            new() { Key = "pagos", Label = "Pagos y retenciones", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/pagos")); return Task.CompletedTask; } },
-            new() { Key = "orden", Label = "Orden de Pago", Active = true },
-            new() { Key = "visor", Label = "Ver comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/pagos/ordenes")); return Task.CompletedTask; } }
-        ],
+        AlfaCore.Services.ModuleTopNavPresets.BuildComprasOperacion(RouteContext, Nav, "orden"),
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
-        Actions =
+        Actions = _sinPermiso ? [] :
         [
             new() { Key = "grabar", Label = _proforma ? "Grabar pago proforma" : "Grabar orden de pago", Icon = "bi-check2-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy || !PuedeGrabar, Busy = _busy, OnClick = () => InvokeAsync(IntentarGrabarAsync) },
             new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _busy || !(TieneCargado || _medios.Count > 0 || _cheques.Count > 0), OnClick = () => InvokeAsync(() => { Cancelar(); StateHasChanged(); }) },

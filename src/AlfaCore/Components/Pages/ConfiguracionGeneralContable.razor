@@ -1,3 +1,5 @@
+@page "/contabilidad/configuracion"
+@page "/{idweb}/{idbase:int}/contabilidad/configuracion"
 @page "/configuracion-general/contable"
 @page "/{idweb}/{idbase:int}/configuracion-general/contable"
 @using AlfaCore.Models
@@ -129,7 +131,13 @@
     private static string DeIso(string? v) => DateTime.TryParseExact(v, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var f)
         ? f.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
 
-    protected override void OnInitialized() => UpdateHeader();
+    protected override void OnInitialized()
+    {
+        // Antes estaba en Configuración General; ahora es la pestaña Configuración de su módulo.
+        if (ModuleTopNavPresets.RedirigirRutaMudada(Nav, "/configuracion-general/contable", "/contabilidad/configuracion"))
+            return;
+        UpdateHeader();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -180,9 +188,9 @@
 
     private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
     {
-        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "configuracion-general", Title = "Gestión contable",
-        Breadcrumb = ["Configuración General", "Gestión contable"],
-        TopNavigationItems = ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "contable"),
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Configuración",
+        Breadcrumb = ["Gestión contable", "Configuración"],
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "configuracion"),
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
         Actions =
         [

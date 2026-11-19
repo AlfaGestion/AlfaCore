@@ -641,7 +641,12 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("ConfigSvc.GetClasificacionesAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
         Assert.Contains("ConfigSvc.GetPrioridadConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
         Assert.Contains("ConfigSvc.GetUsuariosSistemaAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
-        Assert.Contains("ConfigSvc.GetConversacionAdministradoresAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        // "Ven todos los números" se mudó a Seguridad > Accesos a Conversaciones (2026-11-18): también lee con la base de la ruta.
+        var accesos = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "AccesosConversaciones.razor"));
+        Assert.Contains("AuthorizationSvc.CanManageAsync(BaseIdRuta)", accesos, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetConversacionAdministradoresAsync(BaseIdRuta)", accesos, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetWhatsAppNumerosAsync(BaseIdRuta)", accesos, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetUsuariosSistemaAsync(BaseIdRuta)", accesos, StringComparison.Ordinal);
         Assert.Contains("ConfigSvc.GetReglasAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
         Assert.Contains("ConfigSvc.GetWhatsAppNumerosAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
         Assert.Contains("ConvSvc.GetTechniciansAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);

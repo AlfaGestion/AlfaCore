@@ -6,32 +6,51 @@ using Markdig;
 
 namespace AlfaCore.Services;
 
-public sealed record AyudaTema(string Clave,string Nombre,string Recurso);
+public sealed record AyudaTema(string Clave,string Nombre,string Recurso,string Grupo="General");
 public sealed record AyudaArticulo(string Id,string Titulo,string Contenido);
 public sealed record AyudaManual(AyudaTema Tema,string Contenido,IReadOnlyList<AyudaArticulo> Articulos);
+public sealed record AyudaResultado(AyudaTema Tema,AyudaArticulo Articulo);
 
 // Catálogo cerrado de documentación funcional. No lee rutas aportadas por el usuario ni datos contables.
+// Un manual por módulo (Grupo = módulo del menú), con una sección (##) por pantalla y una (###) por acción.
 public static class AyudaManuales
 {
     public static IReadOnlyList<AyudaTema> Temas { get; }=Array.AsReadOnly(new[] {
-        new AyudaTema("general","General","AlfaCore.Docs.manual_usuario.md"),
-        new AyudaTema("contabilidad","Contabilidad","AlfaCore.Docs.manual_contabilidad.md"),
-        new AyudaTema("ventas","Ventas: comprobantes","AlfaCore.Docs.manual_carga_comprobantes.md"),
-        new AyudaTema("reportes","Reportes","AlfaCore.Docs.manual_reportes_comerciales.md"),
-        new AyudaTema("seguridad","Seguridad","AlfaCore.Docs.manual_seguridad.md"),
-        new AyudaTema("consultas","Consultas","AlfaCore.Docs.manual_consultas.md"),
-        new AyudaTema("conciliacion","Conciliación","AlfaCore.Docs.manual_conciliacion_bancaria.md"),
-        new AyudaTema("tarjetas","Conciliación de tarjetas asistida con IA","AlfaCore.Docs.manual_conciliacion_tarjetas.md"),
-        new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md"),
-        new AyudaTema("stock","Stock","AlfaCore.Docs.manual_stock_movimientos.md"),
-        new AyudaTema("salon","Punto de Venta: Salón y carta QR","AlfaCore.Docs.manual_punto_venta_salon.md"),
-        new AyudaTema("mostrador","Punto de Venta: Mostrador y delivery","AlfaCore.Docs.manual_punto_venta_mostrador.md") });
+        new AyudaTema("general","Uso general de AlfaCore","AlfaCore.Docs.manual_usuario.md","General"),
+        new AyudaTema("archivos","Maestros, tablas y precios","AlfaCore.Docs.manual_archivos.md","Archivos"),
+        new AyudaTema("seguridad","Seguridad y usuarios","AlfaCore.Docs.manual_seguridad.md","Archivos"),
+        new AyudaTema("auditoria","Auditoría","AlfaCore.Docs.manual_auditoria_usuarios.md","Archivos"),
+        new AyudaTema("compras","Compras","AlfaCore.Docs.manual_compras.md","Compras"),
+        new AyudaTema("carga-compras","Carga de comprobantes de compras","AlfaCore.Docs.manual_carga_compras.md","Compras"),
+        new AyudaTema("reportes","Reportes de compras y ventas","AlfaCore.Docs.manual_reportes_comerciales.md","Compras"),
+        new AyudaTema("ventas-modulo","Ventas","AlfaCore.Docs.manual_ventas.md","Ventas"),
+        new AyudaTema("ventas","Carga de comprobantes de ventas","AlfaCore.Docs.manual_carga_comprobantes.md","Ventas"),
+        new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md","Ventas"),
+        new AyudaTema("mostrador","Punto de Venta: mostrador y delivery","AlfaCore.Docs.manual_punto_venta_mostrador.md","Ventas"),
+        new AyudaTema("salon","Punto de Venta: salón y carta QR","AlfaCore.Docs.manual_punto_venta_salon.md","Ventas"),
+        new AyudaTema("catalogos","Catálogos, carrito y recepción documental","AlfaCore.Docs.manual_catalogos_interfaces.md","Ventas"),
+        new AyudaTema("caja","Caja y cierre de caja","AlfaCore.Docs.manual_cierre_caja.md","Caja y Bancos"),
+        new AyudaTema("conciliacion","Conciliación bancaria","AlfaCore.Docs.manual_conciliacion_bancaria.md","Caja y Bancos"),
+        new AyudaTema("tarjetas","Conciliación de tarjetas","AlfaCore.Docs.manual_conciliacion_tarjetas.md","Caja y Bancos"),
+        new AyudaTema("stock","Stock","AlfaCore.Docs.manual_stock_movimientos.md","Stock"),
+        new AyudaTema("contabilidad","Gestión contable","AlfaCore.Docs.manual_contabilidad.md","Gestión contable"),
+        new AyudaTema("utilidades","Utilidades y configuración","AlfaCore.Docs.manual_utilidades.md","Utilidades"),
+        new AyudaTema("consultas","Diseñador de Consultas","AlfaCore.Docs.manual_consultas.md","Utilidades"),
+        new AyudaTema("conversaciones","Conversaciones","AlfaCore.Docs.manual_conversaciones.md","Conversaciones"),
+        new AyudaTema("asistente","Asistente IA de Conversaciones","AlfaCore.Docs.manual_alfaknowledge_conversaciones.md","Conversaciones"),
+        new AyudaTema("chat-web","Chat del sitio web","AlfaCore.Docs.manual_conversaciones_chat_web.md","Conversaciones"),
+        new AyudaTema("crm","Oportunidades y cotizaciones","AlfaCore.Docs.manual_crm.md","CRM"),
+        new AyudaTema("calendario","Calendario","AlfaCore.Docs.manual_calendario_eventos_repetidos.md","CRM"),
+        new AyudaTema("tickets","Tickets y partes de horas","AlfaCore.Docs.manual_tickets_horas.md","Tickets y horas"),
+        new AyudaTema("informes","Informes y comunicados","AlfaCore.Docs.manual_novedades.md","Informes"),
+        new AyudaTema("logistica","Carga de viajes","AlfaCore.Docs.manual_logistica.md","Logística") });
     private static readonly Lazy<IReadOnlyDictionary<string,AyudaManual>> Manuales=new(()=>Temas.ToDictionary(t=>t.Clave,Cargar));
     private static readonly MarkdownPipeline Pipeline=new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
     public static AyudaManual Obtener(string tema)=>Manuales.Value.TryGetValue(tema,out var manual)
         ? manual : throw new ArgumentException("El tema de ayuda no está disponible.",nameof(tema));
-    // Ayuda por pantalla: tema (pestaña) y artículo que se abre al pulsar "?". El orden importa:
-    // la primera coincidencia gana (por eso "visor" va antes que "carga-comprobantes").
+    // Ayuda por pantalla: tema y artículo que se abre al pulsar "?". La ruta se busca contenida en la
+    // dirección (o al final, si termina en $). El orden importa: la primera coincidencia gana, así que
+    // lo más específico va antes (por ejemplo "/compras/articulos" antes que "/articulos").
     // Al documentar una pantalla nueva, agregarla acá; AyudaContextualTests verifica que el artículo exista.
     internal static readonly IReadOnlyList<(string Ruta,string Tema,string? Articulo)> Pantallas=Array.AsReadOnly(new (string,string,string?)[] {
         ("/ventas/punto-venta/salon/qr","salon","Imprimir los QR de las mesas"),
@@ -46,6 +65,8 @@ public static class AyudaManuales
         ("conciliacion-tarjetas","tarjetas",null),
         ("cobranzas","cobranzas",null),
         ("consultas","consultas",null),
+        ("/caja-bancos/cierre","caja","Cierre de caja"),
+        ("/caja-bancos","caja","Tablero de Caja y Bancos"),
         ("/contabilidad/plan-de-cuentas","contabilidad","Plan de cuentas"),
         ("/contabilidad/diario","contabilidad","Libro diario"),
         ("/contabilidad/subdiarios","contabilidad","Subdiarios"),
@@ -54,36 +75,135 @@ public static class AyudaManuales
         ("/contabilidad/balance-general","contabilidad","Balance general"),
         ("/contabilidad/asientos","contabilidad","Asientos"),
         ("/contabilidad/retenciones","contabilidad","Retenciones y percepciones"),
+        ("/contabilidad/posicion-iva","contabilidad","Posición de IVA"),
+        ("/contabilidad/control-arca","contabilidad","Control contra ARCA"),
+        ("/contabilidad/fechas-de-cierre","contabilidad","Fechas de cierre"),
+        ("/contabilidad/estudio-contable","contabilidad","Estudio contable"),
+        ("/contabilidad/paquete-estudio","contabilidad","Paquete para el estudio: libros de IVA"),
+        ("/contabilidad/configuracion","contabilidad","Configuración contable"),
         ("/libro-iva","contabilidad","Libros de IVA"),
         ("/contabilidad","contabilidad","Cómo usar los reportes contables"),
         ("/ventas/carga-comprobantes/visor","ventas","Ver comprobantes"),
         ("/ventas/carga-comprobantes","ventas","Buscar pendientes y filtrar"),
         ("/ventas/reportes","reportes","Buscar y generar"),
+        ("/ventas/configuracion","ventas-modulo","Configuración de ventas"),
+        ("/ventas/reclamo-saldos","ventas-modulo","Reclamo de saldos"),
+        ("/ventas/comparativo","ventas-modulo","Comparativo de ventas y compras"),
+        ("/ventas/vendedores","ventas-modulo","Vendedores y unidades de negocio"),
+        ("/ventas/unidades-negocio","ventas-modulo","Vendedores y unidades de negocio"),
+        ("/ventas/clientes","ventas-modulo","Clientes del período"),
+        ("/ventas/comprobantes","ventas-modulo","Comprobantes de ventas"),
+        ("/ventas/rubros","ventas-modulo","Rubros, familias y artículos"),
+        ("/ventas/familias","ventas-modulo","Rubros, familias y artículos"),
+        ("/ventas/articulos","ventas-modulo","Rubros, familias y artículos"),
+        ("/ventas-dashboard","ventas-modulo","Inicio de Ventas (tablero)"),
+        ("carrito-compras","catalogos","Carrito de compras"),
+        ("/catalogo","catalogos","Crear y publicar un catálogo"),
+        ("/interfaces","catalogos","Recepción documental"),
+        ("/compras/carga","carga-compras",null),
         ("/compras/reportes","reportes","Buscar y generar"),
         ("/compras/actividad","reportes","Actividad de compras"),
-        ("/seguridad/autorizacion-tareas","seguridad","Autorización de tareas"),
+        ("/compras/pagos/ordenes","compras","Ver órdenes de pago"),
+        ("/compras/pagos","compras","Registrar una orden de pago"),
+        ("/compras/proveedores","compras","Proveedores del período"),
+        ("/compras/comprobantes","compras","Comprobantes de compras"),
+        ("/compras/rubros","compras","Rubros y familias"),
+        ("/compras/familias","compras","Rubros y familias"),
+        ("/compras/articulos","compras","Artículos comprados"),
+        ("/compras/informesia","compras","InformesIA"),
+        ("/compras","compras","Inicio de Compras (tablero)"),
         ("/stock/reportes","stock","Reportes de stock"),
-        ("/stock/movimientos","stock","Cargar un movimiento") });
+        ("/stock/movimientos","stock","Cargar un movimiento"),
+        ("/stock","stock","Tablero de stock"),
+        ("/costos/perfiles","archivos","Perfiles de importación"),
+        ("/costos/historial","archivos","Historial de actualizaciones"),
+        ("/costos","archivos","Importar una lista de costos"),
+        ("/tareas","general","Tareas"),
+        ("/articulos/listas-precios","archivos","Listas de precios"),
+        ("/articulos/configuracion","archivos","Configuración de artículos"),
+        ("/articulos","archivos","Dar de alta un artículo"),
+        ("/clientes","archivos","Dar de alta un cliente"),
+        ("/proveedores","archivos","Dar de alta un proveedor"),
+        ("/tecnicos","archivos","Dar de alta un técnico"),
+        ("/contactos","archivos","Crear o editar un contacto"),
+        ("/archivos/tablas","archivos","Tablas de referencia"),
+        ("/archivos/chequeras","archivos","Chequeras"),
+        ("/archivos/bancos","archivos","Bancos"),
+        ("/auditoria/error","auditoria","Errores del sistema"),
+        ("/auditoria/comprobantes","auditoria","Auditoría de comprobantes"),
+        ("/auditoria/usuarios","auditoria","Actividad de usuarios"),
+        ("/auditoria","auditoria","Resumen de auditoría"),
+        ("/seguridad/autorizacion-tareas","seguridad","Autorización de tareas"),
+        ("/seguridad/perfiles","seguridad","Perfiles de permisos"),
+        ("/seguridad/accesos-conversaciones","seguridad","Accesos a Conversaciones"),
+        ("/usuarios","seguridad","Usuarios"),
+        ("/conversaciones/plantillas","conversaciones","Plantillas"),
+        ("/conversaciones/configuracion","conversaciones","Configuración de Conversaciones"),
+        ("/conversaciones/estadisticas","conversaciones","Estadísticas"),
+        ("/conversaciones/informes","conversaciones","Informes mensuales"),
+        ("/conversaciones","conversaciones","La bandeja de conversaciones"),
+        ("/cotizaciones/configuracion","crm","Configuración de cotizaciones"),
+        ("/cotizaciones","crm","Armar una cotización"),
+        ("partes-horas","tickets","Cargar un parte"),
+        ("partes-de-horas","tickets","Cargar un parte"),
+        ("/horas$","tickets","Cargar un parte"),
+        ("/crm","crm","Crear y trabajar una oportunidad"),
+        ("/calendario/reuniones","calendario","Reservas desde el link público (reuniones y capacitaciones)"),
+        ("/calendario","calendario","Ver el calendario y crear un evento"),
+        ("/tickets","tickets","Crear un ticket"),
+        ("/informes/novedades","informes","Escribir un comunicado (Informes → Comunicados)"),
+        ("/novedades","informes","Dónde se ven"),
+        ("/informes","informes","Artículos e informes"),
+        ("/carga-viajes/tarifas","logistica","Tarifas"),
+        ("/carga-viajes/reportes","logistica","Reportes de viajes"),
+        ("/carga-viajes/liquidacion","logistica","Liquidaciones a choferes y fleteros"),
+        ("/carga-viajes/choferes","logistica","Choferes, destinos y tipos de vehículo"),
+        ("/carga-viajes/destinos","logistica","Choferes, destinos y tipos de vehículo"),
+        ("/carga-viajes/tipo-vehiculo","logistica","Choferes, destinos y tipos de vehículo"),
+        ("/carga-viajes/configuracion","logistica","Configuración"),
+        ("/carga-viajes","logistica","Cargar un viaje"),
+        ("/configuracion-general/logo","utilidades","Logo y estilo"),
+        ("/configuracion-general/email","utilidades","Correo saliente"),
+        ("/configuracion-general","utilidades","Datos de la empresa"),
+        ("/configuracion-web-portal","utilidades","Portal web"),
+        ("/documentos","utilidades","Diseñador de comprobantes"),
+        ("/actualizaciones","utilidades","Actualizaciones"),
+        ("/configuracion$","utilidades","Dónde está cada configuración") });
 
     public static string TemaParaRuta(string ruta)=>Ubicar(ruta).Tema;
     /// <summary>Id del artículo de la pantalla (para abrir la ayuda directo ahí), o null.</summary>
     public static string? SeccionParaRuta(string ruta)=>Ubicar(ruta).Articulo is { } titulo ? IdArticulo(titulo) : null;
     private static (string Tema,string? Articulo) Ubicar(string ruta)
     {
-        var path=ruta.Split('?','#')[0].ToLowerInvariant();
+        var path=ruta.Split('?','#')[0].ToLowerInvariant().TrimEnd('/');
         foreach(var p in Pantallas)
-            if(path.Contains(p.Ruta,StringComparison.Ordinal))return (p.Tema,p.Articulo);
+        {
+            var coincide=p.Ruta.EndsWith('$')
+                ? path.EndsWith(p.Ruta[..^1],StringComparison.Ordinal)
+                : path.Contains(p.Ruta,StringComparison.Ordinal);
+            if(coincide)return (p.Tema,p.Articulo);
+        }
         return ("general",null);
     }
     internal static string IdArticulo(string titulo)=>Regex.Replace(Normalizar(titulo),@"[^a-z0-9]+","-").Trim('-');
     public static string Html(string contenido)=>Markdown.ToHtml(contenido,Pipeline);
     public static IReadOnlyList<AyudaArticulo> Buscar(AyudaManual manual,string consulta)
     {
-        var terminos=Regex.Matches(Normalizar(consulta),@"[\p{L}\p{N}]+")
-            .Select(m=>m.Value).Where(t=>t.Length>1)
-            .Select(t=>t.EndsWith("ciones",StringComparison.Ordinal) ? t[..^2] : t.Length>4 && t.EndsWith('s') ? t[..^1] : t).ToArray();
+        var terminos=Terminos(consulta);
         return manual.Articulos.Where(a=>terminos.All(t=>Normalizar(a.Titulo+" "+a.Contenido).Contains(t,StringComparison.Ordinal))).ToArray();
     }
+    /// <summary>Busca en todos los manuales: primero el manual actual, después lo que más coincide en el título.</summary>
+    public static IReadOnlyList<AyudaResultado> BuscarEnTodo(string consulta,string? temaActual=null,int maximo=40)
+    {
+        var terminos=Terminos(consulta);
+        return Temas.SelectMany(t=>Buscar(Obtener(t.Clave),consulta).Select(a=>new AyudaResultado(t,a)))
+            .OrderByDescending(r=>r.Tema.Clave==temaActual)
+            .ThenByDescending(r=>terminos.Count(x=>Normalizar(r.Articulo.Titulo).Contains(x,StringComparison.Ordinal)))
+            .Take(maximo).ToArray();
+    }
+    private static string[] Terminos(string consulta)=>Regex.Matches(Normalizar(consulta),@"[\p{L}\p{N}]+")
+        .Select(m=>m.Value).Where(t=>t.Length>1)
+        .Select(t=>t.EndsWith("ciones",StringComparison.Ordinal) ? t[..^2] : t.Length>4 && t.EndsWith('s') ? t[..^1] : t).ToArray();
     private static AyudaManual Cargar(AyudaTema tema)
     {
         using var stream=typeof(AyudaManuales).Assembly.GetManifestResourceStream(tema.Recurso)
@@ -93,7 +213,8 @@ public static class AyudaManuales
         string? titulo=null;var texto=new StringBuilder();var ids=new HashSet<string>();
         void Guardar()
         {
-            if(titulo is null)return;
+            // Un título sin texto propio (solo agrupa subsecciones) o el índice del documento no es una tarea.
+            if(titulo is null || texto.ToString().Trim().Length==0 || IdArticulo(titulo)=="indice") { texto.Clear();return; }
             var id=IdArticulo(titulo);
             var unico=id;var n=2;while(!ids.Add(unico))unico=id+"-"+n++;
             articulos.Add(new(unico,titulo,texto.ToString().Trim()));texto.Clear();

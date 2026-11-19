@@ -174,7 +174,7 @@
         {
             var path = new Uri(Nav.Uri).AbsolutePath;
             var i = path.IndexOf("/archivos/tablas", StringComparison.OrdinalIgnoreCase);
-            return (i >= 0 ? path[..i] : string.Empty) + "/configuracion-general/ventas?tab=factura";
+            return (i >= 0 ? path[..i] : string.Empty) + "/ventas/configuracion?tab=factura";
         }
     }
 

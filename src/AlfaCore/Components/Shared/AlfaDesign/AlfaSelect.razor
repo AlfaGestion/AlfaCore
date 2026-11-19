@@ -14,9 +14,24 @@
         {
             <option value="">@Placeholder</option>
         }
-        @foreach (var option in Options)
+        @foreach (var grupo in Grupos)
         {
-            <option value="@option.Value" disabled="@option.Disabled">@option.Label</option>
+            @if (grupo.Key is null)
+            {
+                @foreach (var option in grupo.Items)
+                {
+                    <option value="@option.Value" disabled="@option.Disabled">@option.Label</option>
+                }
+            }
+            else
+            {
+                <optgroup label="@grupo.Key">
+                    @foreach (var option in grupo.Items)
+                    {
+                        <option value="@option.Value" disabled="@option.Disabled">@option.Label</option>
+                    }
+                </optgroup>
+            }
         }
     </select>
     @if (HasError)
@@ -27,6 +42,25 @@
 
 @code {
     private readonly string _id = $"alfa-select-{Guid.NewGuid():N}";
+
+    // Opciones consecutivas con el mismo Group van juntas; sin Group se muestran sueltas, como siempre.
+    private IEnumerable<(string? Key, List<AlfaSelectOption> Items)> Grupos
+    {
+        get
+        {
+            (string? Key, List<AlfaSelectOption> Items)? actual = null;
+            foreach (var option in Options)
+            {
+                if (actual is null || !string.Equals(actual.Value.Key, option.Group, StringComparison.Ordinal))
+                {
+                    if (actual is not null) yield return actual.Value;
+                    actual = (option.Group, []);
+                }
+                actual.Value.Items.Add(option);
+            }
+            if (actual is not null) yield return actual.Value;
+        }
+    }
 
     [Parameter] public string? Label { get; set; }
     [Parameter] public string? Value { get; set; }

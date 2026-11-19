@@ -276,8 +276,8 @@ public partial class ComprasCarga
         if(_puedeAltaProveedor&&_contexto is not null)acciones.Add(new(){Key="proveedor-nuevo",Label="Nuevo proveedor",Icon="bi-person-plus",Disabled=EdicionBloqueada,OnClick=()=>{_mostrarAltaProveedor=true;return InvokeAsync(StateHasChanged);}});
         if(!Directo&&_origen is {} o)acciones.Add(new(){Key="origen",Label="Recepción documental",Icon="bi-file-earmark",Disabled=_busy,OnClick=()=>{Nav.NavigateTo(RouteContext.BuildRoute($"/interfaces/{o.Documento.IdComprobanteRecibido}"));return Task.CompletedTask;}});
         PageHeader.Set(_header=new(){ModuleKey="compras",ShellMode=PageHeaderShellMode.AlfaDesignPilot,Title="Carga de comprobantes de compras",Breadcrumb=["Compras","Carga de comprobantes de compras"],ShowHistoryNavigation=false,ResponsiveToolbar=true,
-            // Solo las solapas propias, como Ventas: cargar y ver comprobantes.
-            TopNavigationItems=[new(){Key="carga",Label="Carga de comprobantes",Active=true},new(){Key="visor",Label="Ver comprobantes",OnClick=()=>{Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/visor")+(Directo?"?directo=1":""));return Task.CompletedTask;}},new(){Key="pagos",Label="Pagos y retenciones",OnClick=()=>{Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/pagos")+(Directo?"?directo=1":""));return Task.CompletedTask;}}],Actions=acciones});
+            // Barra única de la operación de Compras (con ?directo=1, solo la carga).
+            TopNavigationItems=AlfaCore.Services.ModuleTopNavPresets.BuildComprasOperacion(RouteContext, Nav, "carga"),Actions=acciones});
     }
     private void CambioSesion()
     {

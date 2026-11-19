@@ -38,6 +38,7 @@ public enum AlfaEmptyStateKind
     Error
 }
 
-public sealed record AlfaSelectOption(string Value, string Label, bool Disabled = false);
+/// <param name="Group">Si se informa, las opciones consecutivas del mismo grupo se muestran juntas bajo ese título (optgroup).</param>
+public sealed record AlfaSelectOption(string Value, string Label, bool Disabled = false, string? Group = null);
 
 public sealed record AlfaTabItem(string Key, string Label, bool Disabled = false, string? Badge = null);

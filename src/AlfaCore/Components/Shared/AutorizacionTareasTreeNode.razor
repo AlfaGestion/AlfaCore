@@ -22,12 +22,20 @@
             <input type="checkbox"
                    @ref="_checkboxRef"
                    checked="@Item.Autorizado"
-                   disabled="@(!Item.Habilitado)"
+                   disabled="@(!Item.Habilitado || Item.PorPerfil)"
                    @onchange="OnCheckedChanged" />
             <span class="auth-tree-node__name">@Item.Nombre</span>
         </label>
 
         <div class="auth-tree-node__badges">
+            @if (Item.PorPerfil)
+            {
+                <span class="auth-badge auth-badge--perfil" title="Viene del perfil del usuario: se cambia desde Seguridad > Perfiles">Perfil</span>
+            }
+            @if (Item.Explicito)
+            {
+                <span class="auth-badge auth-badge--explicito" title="Solo lo tiene quien lo tenga tildado: no se da por tener todo el menú">Solo si se tilda</span>
+            }
             @if (Item.Parcial)
             {
                 <span class="auth-badge auth-badge--partial" title="Autorización parcial">Parcial</span>

@@ -78,6 +78,34 @@
                     </div>
                 </div>
 
+                @if (_treeLoaded && !_loadingTree)
+                {
+                    @if (!_restringido && CantidadOpcionesMenu == 0)
+                    {
+                        <div class="auth-aviso auth-aviso--info">
+                            <i class="bi bi-info-circle"></i>
+                            <span><strong>@_selectedUser no tiene opciones cargadas: hoy ve todo el menú web.</strong>
+                                Si tildás alguna opción y grabás, va a ver <strong>solo</strong> lo tildado.
+                                Los permisos marcados <em>Solo si se tilda</em> no cuentan para esto.</span>
+                        </div>
+                    }
+                    else if (!_restringido && CantidadOpcionesMenu > 0)
+                    {
+                        <div class="auth-aviso auth-aviso--warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span><strong>Atención:</strong> hasta ahora @_selectedUser veía todo el menú web. Al grabar, va a ver
+                                <strong>solo las @CantidadOpcionesMenu opciones tildadas</strong>.</span>
+                        </div>
+                    }
+                    else if (_restringido && CantidadOpcionesMenu == 0)
+                    {
+                        <div class="auth-aviso auth-aviso--warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span>No queda ninguna opción del menú tildada: al grabar, @_selectedUser va a volver a ver <strong>todo</strong> el menú web.</span>
+                        </div>
+                    }
+                }
+
                 @if (_loadingTree)
                 {
                     <div class="auth-tree-state"><i class="bi bi-hourglass-split"></i> Cargando árbol de autorizaciones...</div>
@@ -107,6 +135,24 @@
             </div>
 
             <aside class="auth-sidebar">
+                @if (_perfilesDisponibles)
+                {
+                    <div class="auth-panel auth-panel--compact">
+                        <div class="field field--full">
+                            <label>Perfil</label>
+                            <select value="@(_idPerfil?.ToString() ?? string.Empty)" @onchange="OnPerfilChanged" disabled="@(!_treeLoaded || _loadingTree)">
+                                <option value="">Sin perfil</option>
+                                @foreach (var perfil in _perfiles)
+                                {
+                                    <option value="@perfil.IdPerfil">@perfil.Nombre</option>
+                                }
+                            </select>
+                            <small>Las opciones del perfil se suman a las del usuario y aparecen con la marca <strong>Perfil</strong>.
+                                Se cambian desde <a href="@RouteContext.BuildRoute("/seguridad/perfiles")">Perfiles</a>.</small>
+                        </div>
+                    </div>
+                }
+
                 <div class="auth-panel auth-panel--compact">
                     <div class="field field--full">
                         <label>Aplicar mismos permisos que...</label>
@@ -226,6 +272,14 @@
     private bool _originalAdministrador;
     private bool _currentUserVerProforma = true;
     private bool _originalVerProforma = true;
+    private bool _restringido;
+    private bool _perfilesDisponibles;
+    private List<PerfilWebResumenDto> _perfiles = [];
+    private int? _idPerfil;
+    private int? _originalIdPerfil;
+
+    /// <summary>Opciones del menú tildadas (sin contar los permisos que se dan solo si se tildan).</summary>
+    private int CantidadOpcionesMenu => CountMenuKeys(_tree);
     private bool _loadingUsers;
     private bool _loadingTree;
     private bool _treeLoaded;
@@ -250,7 +304,7 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => $"{_loadingUsers}|{_loadingTree}|{_dirty}|{_selectedUser}|{_consultaUsuario}|{_selectedUNegocio}|{_searchText}";
+    private string HeaderSnapshot() => $"{_loadingUsers}|{_loadingTree}|{_dirty}|{_selectedUser}|{_consultaUsuario}|{_selectedUNegocio}|{_searchText}|{_idPerfil}";
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -347,8 +401,8 @@
             _selectedUser = usuario;
             var dto = result.Value!;
             var items = dto.Items ?? Array.Empty<MenuAutorizacionItemDto>();
-            _tree = CloneTree(items);
-            _originalTree = CloneTree(items);
+            _tree = MenuAutorizacionArbol.CloneTree(items);
+            _originalTree = MenuAutorizacionArbol.CloneTree(items);
             _treeLoaded = true;
             _dirty = false;
             _copyFromUser = string.Empty;
@@ -366,6 +420,11 @@
             _originalUNegocio = _selectedUNegocio;
             _originalIdCaja = _selectedIdCaja;
             _originalIdDeposito = _selectedIdDeposito;
+            _restringido = dto.Restringido;
+            _perfilesDisponibles = dto.PerfilesDisponibles;
+            _perfiles = (dto.Perfiles ?? Array.Empty<PerfilWebResumenDto>()).ToList();
+            _idPerfil = dto.IdPerfil;
+            _originalIdPerfil = dto.IdPerfil;
 
             SeedExpandedKeys(_tree);
             RebuildVisibleTree();
@@ -386,7 +445,8 @@
         }
 
         var sourceItems = result.Value?.Items ?? Array.Empty<MenuAutorizacionItemDto>();
-        var sourceSelected = new HashSet<string>(EnumerateAuthorizedKeys(sourceItems), StringComparer.OrdinalIgnoreCase);
+        // Se copian las opciones propias del otro usuario; las de su perfil no (el perfil se elige aparte).
+        var sourceSelected = new HashSet<string>(EnumerateOwnAuthorizedKeys(sourceItems), StringComparer.OrdinalIgnoreCase);
         ApplySelectedKeys(_tree, sourceSelected);
         _dirty = true;
         RebuildVisibleTree();
@@ -396,12 +456,13 @@
     private async Task GuardarAsync()
     {
         if (!_canSave) return;
-        var selectedKeys = EnumerateAuthorizedKeys(_tree).ToArray();
+        var selectedKeys = MenuAutorizacionArbol.AuthorizedKeys(_tree).ToArray();
         var result = await UiOps.RunAsync(() => AutorizacionSvc.GuardarAutorizacionAsync(new GuardarAutorizacionTareasRequest
         {
             MenuSistema = MenuSistema,
             PermisosSistema = PermisosSistema,
             Usuario = _selectedUser,
+            IdPerfil = _perfilesDisponibles ? _idPerfil : null,
             Administrador = _currentUserAdministrador,
             VerProforma = _currentUserVerProforma,
             UNegocio = _selectedUNegocio,
@@ -416,25 +477,30 @@
             return;
         }
 
-        _originalTree = CloneTree(_tree);
+        _originalTree = MenuAutorizacionArbol.CloneTree(_tree);
         _originalAdministrador = _currentUserAdministrador;
         _originalVerProforma = _currentUserVerProforma;
         _originalUNegocio = _selectedUNegocio;
         _originalIdCaja = _selectedIdCaja;
         _originalIdDeposito = _selectedIdDeposito;
+        _originalIdPerfil = _idPerfil;
+        _restringido = CantidadOpcionesMenu > 0;
         _dirty = false;
         RebuildVisibleTree();
-        SetFeedback(AppUiMessage.Success("Permisos actualizados", $"Se guardaron los permisos y asignaciones de {_selectedUser}."));
+        SetFeedback(AppUiMessage.Success("Permisos actualizados", _restringido
+            ? $"Se guardaron los permisos de {_selectedUser}: ve solo las {CantidadOpcionesMenu} opciones tildadas."
+            : $"Se guardaron los permisos de {_selectedUser}: no tiene opciones cargadas, ve todo el menú web."));
     }
 
     private void CancelarCambios()
     {
-        _tree = CloneTree(_originalTree);
+        _tree = MenuAutorizacionArbol.CloneTree(_originalTree);
         _currentUserAdministrador = _originalAdministrador;
         _currentUserVerProforma = _originalVerProforma;
         _selectedUNegocio = _originalUNegocio;
         _selectedIdCaja = _originalIdCaja;
         _selectedIdDeposito = _originalIdDeposito;
+        _idPerfil = _originalIdPerfil;
         _dirty = false;
         _copyFromUser = string.Empty;
         RebuildVisibleTree();
@@ -461,22 +527,61 @@
         if (!_treeLoaded)
             return Task.CompletedTask;
 
-        var target = FindNode(_tree, request.Clave);
-        if (target is null || !target.Habilitado)
-            return Task.CompletedTask;
-
-        var visibleNode = FindNode(_visibleTree, request.Clave);
-        var visibleKeys = visibleNode is null ? GatherDescendantKeys(target) : GatherDescendantKeys(visibleNode);
-        foreach (var key in visibleKeys)
-        {
-            var fullNode = FindNode(_tree, key);
-            if (fullNode is not null && fullNode.Habilitado)
-                fullNode.Autorizado = request.Checked;
-        }
-
+        MenuAutorizacionArbol.Toggle(_tree, _visibleTree, request.Clave, request.Checked);
         MarkDirty();
         return Task.CompletedTask;
     }
+
+    private Task OnPerfilChanged(ChangeEventArgs args)
+    {
+        var raw = Convert.ToString(args.Value);
+        int? nuevo = int.TryParse(raw, out var id) ? id : null;
+        if (nuevo == _idPerfil)
+            return Task.CompletedTask;
+
+        var claves = new HashSet<string>(_perfiles.FirstOrDefault(p => p.IdPerfil == nuevo)?.Claves ?? [], StringComparer.OrdinalIgnoreCase);
+        AplicarPerfil(_tree, claves);
+        _idPerfil = nuevo;
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Saca las opciones del perfil anterior y marca (bloqueadas) las del perfil nuevo.</summary>
+    private static void AplicarPerfil(IEnumerable<MenuAutorizacionItemDto> items, HashSet<string> clavesPerfil)
+    {
+        foreach (var item in items)
+        {
+            if (item.PorPerfil)
+            {
+                item.PorPerfil = false;
+                item.Autorizado = false;
+            }
+
+            if (clavesPerfil.Contains(item.Clave))
+            {
+                item.PorPerfil = true;
+                item.Autorizado = true;
+            }
+
+            AplicarPerfil(item.Hijos, clavesPerfil);
+        }
+    }
+
+    private static IEnumerable<string> EnumerateOwnAuthorizedKeys(IEnumerable<MenuAutorizacionItemDto> items)
+    {
+        foreach (var item in items)
+        {
+            if (item.Autorizado && item.Habilitado && !item.PorPerfil)
+                yield return item.Clave;
+
+            foreach (var child in EnumerateOwnAuthorizedKeys(item.Hijos))
+                yield return child;
+        }
+    }
+
+    /// <summary>Opciones del menú tildadas (propias o del perfil) sin contar los permisos explícitos.</summary>
+    private static int CountMenuKeys(IEnumerable<MenuAutorizacionItemDto> items)
+        => items.Sum(x => (x.Autorizado && x.Habilitado && !x.Explicito ? 1 : 0) + CountMenuKeys(x.Hijos));
 
     private Task OnUnidadNegocioChanged(ChangeEventArgs args)
     {
@@ -577,8 +682,8 @@
 
         foreach (var key in _visibleTree.SelectMany(item => GatherAllKeys(new[] { item })))
         {
-            var node = FindNode(_tree, key);
-            if (node is not null && node.Habilitado)
+            var node = MenuAutorizacionArbol.Find(_tree, key);
+            if (node is not null && node.Habilitado && !node.PorPerfil && !node.Explicito)
                 node.Autorizado = value;
         }
 
@@ -593,10 +698,10 @@
 
     private void RebuildVisibleTree()
     {
-        _visibleTree = BuildFilteredTree(_tree, _searchText);
-        _visibleTreeCount = CountNodes(_visibleTree);
-        _authorizedCount = EnumerateAuthorizedKeys(_tree).Count();
-        NormalizePartialState(_visibleTree);
+        _visibleTree = MenuAutorizacionArbol.Filter(_tree, _searchText);
+        _visibleTreeCount = MenuAutorizacionArbol.Count(_visibleTree);
+        _authorizedCount = MenuAutorizacionArbol.AuthorizedKeys(_tree).Count();
+        MenuAutorizacionArbol.NormalizePartial(_visibleTree);
     }
 
     private string ResolveUnidadNegocio(string? value)
@@ -622,92 +727,22 @@
         return match?.Codigo ?? string.Empty;
     }
 
-    private static List<MenuAutorizacionItemDto> BuildFilteredTree(IEnumerable<MenuAutorizacionItemDto> source, string searchText)
-    {
-        var term = searchText?.Trim() ?? string.Empty;
-        var result = new List<MenuAutorizacionItemDto>();
 
-        foreach (var item in source)
-        {
-            var children = BuildFilteredTree(item.Hijos, term);
-            var matchesSelf = MatchesSearch(item, term) && MatchesWebScope(item);
-            if (!matchesSelf && children.Count == 0)
-                continue;
 
-            var clone = CloneNode(item);
-            clone.Hijos.AddRange(children);
-            result.Add(clone);
-        }
 
-        return result;
-    }
 
-    private static bool MatchesSearch(MenuAutorizacionItemDto item, string term)
-    {
-        if (string.IsNullOrWhiteSpace(term))
-            return true;
 
-        var text = string.Join(" ", new[]
-        {
-            item.Nombre,
-            item.Clave,
-            item.Descripcion,
-            item.RutaWeb ?? string.Empty
-        });
-
-        return text.Contains(term, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Esta pantalla es exclusivamente para permisos de AlfaCore (web) — un ítem entra si tiene ruta web habilitada, sea exclusivo de web o compartido con Desktop.</summary>
-    private static bool MatchesWebScope(MenuAutorizacionItemDto item) => item.EsWeb;
-
-    private static MenuAutorizacionItemDto CloneNode(MenuAutorizacionItemDto item)
-        => new()
-        {
-            Menu = item.Menu,
-            Clave = item.Clave,
-            Titulo = item.Titulo,
-            Nombre = item.Nombre,
-            Descripcion = item.Descripcion,
-            Proceso = item.Proceso,
-            Habilitado = item.Habilitado,
-            RutaWeb = item.RutaWeb,
-            HabilitadoWeb = item.HabilitadoWeb,
-            Autorizado = item.Autorizado,
-            Parcial = item.Parcial
-        };
-
-    private static List<MenuAutorizacionItemDto> CloneTree(IEnumerable<MenuAutorizacionItemDto> items)
-        => items.Select(CloneTreeNode).ToList();
-
-    private static MenuAutorizacionItemDto CloneTreeNode(MenuAutorizacionItemDto item)
-    {
-        var clone = CloneNode(item);
-        foreach (var child in item.Hijos)
-            clone.Hijos.Add(CloneTreeNode(child));
-        return clone;
-    }
 
     private static void ApplySelectedKeys(IEnumerable<MenuAutorizacionItemDto> items, HashSet<string> selected)
     {
         foreach (var item in items)
         {
-            item.Autorizado = selected.Contains(item.Clave);
+            if (!item.PorPerfil)
+                item.Autorizado = selected.Contains(item.Clave);
             ApplySelectedKeys(item.Hijos, selected);
         }
     }
 
-    private static IEnumerable<string> EnumerateAuthorizedKeys(IEnumerable<MenuAutorizacionItemDto> items)
-    {
-        foreach (var item in items)
-        {
-            if (item.Autorizado && item.Habilitado)
-                yield return item.Clave;
-
-            foreach (var child in EnumerateAuthorizedKeys(item.Hijos))
-                yield return child;
-        }
-    }
 
     private static IEnumerable<string> GatherAllKeys(IEnumerable<MenuAutorizacionItemDto> items)
     {
@@ -719,51 +754,9 @@
         }
     }
 
-    private static List<string> GatherDescendantKeys(MenuAutorizacionItemDto item)
-    {
-        var keys = new List<string> { item.Clave };
-        foreach (var child in item.Hijos)
-            keys.AddRange(GatherDescendantKeys(child));
-        return keys;
-    }
 
-    private static MenuAutorizacionItemDto? FindNode(IEnumerable<MenuAutorizacionItemDto> items, string key)
-    {
-        foreach (var item in items)
-        {
-            if (string.Equals(item.Clave, key, StringComparison.OrdinalIgnoreCase))
-                return item;
 
-            var child = FindNode(item.Hijos, key);
-            if (child is not null)
-                return child;
-        }
 
-        return null;
-    }
-
-    private static void NormalizePartialState(IEnumerable<MenuAutorizacionItemDto> items)
-    {
-        foreach (var item in items)
-        {
-            NormalizePartialState(item.Hijos);
-            if (item.Hijos.Count == 0)
-            {
-                item.Parcial = false;
-                continue;
-            }
-
-            var total = CountNodes(item.Hijos);
-            var selected = EnumerateAuthorizedKeys(item.Hijos).Count();
-            item.Parcial = selected > 0 && selected < total;
-
-            if (selected == total && total > 0)
-                item.Autorizado = true;
-        }
-    }
-
-    private static int CountNodes(IEnumerable<MenuAutorizacionItemDto> items)
-        => items.Sum(x => 1 + CountNodes(x.Hijos));
 
     private void SeedExpandedKeys(IEnumerable<MenuAutorizacionItemDto> items)
     {

@@ -2,6 +2,10 @@
 
 Pantalla **Stock → Movimientos de stock** (`/stock/movimientos`). Reemplaza en la web a la carga de comprobantes de stock de Alfa Gestión (V_MV_STOCK) y graba exactamente igual, así que lo que se carga acá se ve en Alfa Gestión y al revés.
 
+## Tablero de stock
+
+En **Stock** (inicio del módulo) se ve el **Stock valorizado** y los **Artículos críticos** (por debajo del mínimo o sin stock). **Buscar artículo** filtra la lista. Los movimientos y reportes están en las pestañas del módulo.
+
 ## Tipos de movimiento
 
 Los tipos salen de la tabla de comprobantes, los que tienen sistema **Stock**. Si un tipo no aparece, revisá que exista para tu unidad de negocio.

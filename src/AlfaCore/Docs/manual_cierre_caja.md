@@ -1,4 +1,12 @@
-# Cierre de caja
+# Caja y Bancos
+
+El módulo Caja y Bancos tiene el tablero, el cierre de caja y las conciliaciones (bancaria y de tarjetas), que tienen su propio manual.
+
+## Tablero de Caja y Bancos
+
+Resumen del período elegido en el buscador de la barra superior: el **Flujo diario de caja** (ingresos y egresos por día) y los **Movimientos recientes**. El campo **Buscar en el detalle** filtra los movimientos por texto.
+
+## Cierre de caja
 
 Entrá a **Caja y Bancos → Cierre de caja**.
 

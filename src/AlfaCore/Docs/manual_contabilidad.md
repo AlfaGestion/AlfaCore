@@ -174,3 +174,38 @@ El botón **Ver** del libro de IVA abre la compra de la cuenta indicada en esa f
 Al importar Mis Comprobantes Recibidos, AlfaCore controla tipo, punto de venta, número, letra y CUIT del emisor en las compras y asientos existentes, aunque estén en Proveedores varios u otra cuenta. Se usa el CUIT guardado en el movimiento; si no está informado, se consulta el del proveedor. El control se repite dentro de la transacción antes de grabar. Si ya existe, indica la cuenta y no lo vuelve a importar ni crea una cuenta nueva por ese comprobante. Dos proveedores con distintos CUIT pueden tener el mismo número de factura.
 
 Los duplicados anteriores no se eliminan automáticamente: revisalos en su módulo de origen y resolvelos con las opciones y permisos correspondientes.
+
+## Posición de IVA
+
+En **Gestión contable → Posición de IVA** se compara el IVA débito (ventas) con el IVA crédito (compras) del período elegido en la barra superior. Muestra **IVA Débito vs. Crédito por mes**, el **Saldo IVA de los últimos 12 meses**, el **Detalle por concepto** y el resumen por alícuota de ventas y de compras. Es una consulta: no genera asientos ni presentaciones.
+
+## Control contra ARCA
+
+En **Gestión contable → Control ARCA** se controla lo cargado en el sistema contra **Mis Comprobantes** de ARCA (emitidos o recibidos).
+
+1. Elegí si controlás ventas (emitidos) o compras (recibidos), el mes y la **Unidad de negocio**.
+2. Subí el Excel o CSV descargado de ARCA, o usá la descarga automática si está configurada (**Configurar descarga**: CUIT de ingreso, clave fiscal y CUIT representado; la clave queda guardada protegida).
+3. El sistema marca qué comprobantes coinciden, cuáles faltan en el sistema y cuáles tienen diferencias. Si todo coincide, lo informa.
+4. En compras, los comprobantes que faltan se pueden importar; para proveedores nuevos se usa la **Condición de compra** elegida.
+
+**Historial** muestra los controles anteriores. **Excel** descarga el resultado. **Volver al paquete** regresa al Paquete para el estudio si llegaste desde ahí.
+
+## Fechas de cierre
+
+En **Utilidades → Fechas de cierre** se define hasta qué fecha está cerrado cada tipo de movimiento: no se pueden cargar ni modificar movimientos con fecha anterior al cierre (por ejemplo, después de presentar el libro de IVA).
+
+Cambiá las fechas y pulsá **Grabar**; **Deshacer cambios** vuelve a lo grabado. Para volver a habilitar un período ya cerrado usá **Reabrir períodos cerrados**, elegí **Desde** / **Hasta** y confirmá con **Reabrir y grabar**: queda registrado en la auditoría.
+
+## Estudio contable
+
+En **Utilidades → Estudio contable** le das acceso a tu contador para que consulte la empresa desde el portal del estudio.
+
+1. Pulsá **Invitar estudio**.
+2. Cargá el **Email del contador** y el **Perfil**: **Completo (recomendado)** o **Solo consulta**. Opcionalmente, el **Usuario en la empresa** con el que va a figurar.
+3. Pulsá **Crear invitación**: el contador recibe un enlace para entrar.
+
+**Nuevo enlace** genera una invitación nueva si la anterior venció. **Quitar acceso** le saca el permiso al estudio. Solo quien administra los usuarios de la empresa puede dar o quitar el acceso.
+
+## Configuración contable
+
+En **Gestión contable → Configuración** se definen el plan de cuentas (dígitos, niveles y codificación), los índices de ajuste, los centros de costo y las fechas del ejercicio. Pulsá **Guardar** para aplicar o **Cancelar** para volver a leer lo grabado.
