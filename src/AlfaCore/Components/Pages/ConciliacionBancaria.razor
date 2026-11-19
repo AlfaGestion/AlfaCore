@@ -117,11 +117,19 @@
     {
         <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" AccionesChanged="PublicarAccionesConciliacion" OnGenerarAsiento="AbrirAsiento" OnAsientoIa="AbrirAsientoIa" />
     }
-    else
+    else if (_tab=="liquidacion")
     {
-        @if (_creditosProcesador > 0)
+        @if (_creditosProcesador == 0)
+        {
+            <section class="panel-card">
+                <AlfaEmptyState Title="Sin créditos de procesadores de cobro" Message="Esta solapa liquida los cobros de NAVE (tarjetas y QR) que el banco acredita por el neto. El extracto seleccionado no tiene créditos de NAVE. Elegí una importación en «Importación» o importá el extracto de Banco Galicia." />
+            </section>
+        }
+        else
         {
             <section class="panel-card conciliacion-importar" aria-busy="@_busy">
+                <h3 class="panel-card__title">Liquidación de NAVE</h3>
+                <p class="conciliacion-pasos"><strong>Cómo se usa:</strong> 1) subí el Excel «Detalle de operaciones» de NAVE · 2) revisá la cuenta de cada medio de pago y las de comisión e IVA · 3) revisá los asientos propuestos por día y generá. La comisión y su IVA salen de este Excel porque el banco acredita solo el neto.</p>
                 <h3 class="panel-card__title">Detalle de operaciones del procesador (opcional)</h3>
                 <p>Detectamos <strong>@_creditosProcesador</strong> créditos de NAVE en @(_filtro.HasValue ? $"la importación #{_filtro}" : "las importaciones"). El banco informa solo el neto: subí el reporte «Detalle de operaciones» de NAVE (Excel) para conocer el bruto, la comisión, el IVA y la tarjeta de cada cobro.</p>
                 <label class="conciliacion-archivo">
@@ -205,6 +213,16 @@
                         </div>
                     }
                 }
+            </section>
+        }
+    }
+    else
+    {
+        @if (_creditosProcesador > 0)
+        {
+            <section class="panel-card">
+                <p>Esta importación tiene <strong>@_creditosProcesador</strong> créditos de NAVE. La comisión, el IVA y el asiento de liquidación están en la solapa <strong>Liquidación</strong>.</p>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="IrALiquidacion">Ir a Liquidación</AlfaButton>
             </section>
         }
         <section class="panel-card">
@@ -655,7 +673,7 @@
     private Task PublicarAccionesConciliacion(IReadOnlyList<PageHeaderAction> acciones) { if(_disposed)return Task.CompletedTask;_accionesConciliacion=acciones;PublicarHeader();return Task.CompletedTask; }
     private Task PublicarBusquedaConciliacion(RenderFragment contenido) { if(_disposed)return Task.CompletedTask;_busquedaConciliacion=contenido;PublicarHeader();return Task.CompletedTask; }
     private ConciliacionComparacionPanel? _comparacion;
-    private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("conciliar","Conciliar cuenta")];
+    private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("liquidacion", "Liquidación"), new("conciliar","Conciliar cuenta")];
     private static readonly IReadOnlyList<AlfaSelectOption> Bancos = Enum.GetValues<BankSource>().Select(b => new AlfaSelectOption(b.ToString(), b switch {BankSource.MercadoPago=>"Mercado Pago",BankSource.Nacion=>"Nación",_=>b.ToString()})).ToList();
     private IReadOnlyList<AlfaSelectOption> OpcionesCuentas => _cuentas.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} — {c.Descripcion}")).ToList();
     private static readonly IReadOnlyList<AlfaSelectOption> Clasificaciones = Enum.GetValues<MovementCategory>()
@@ -908,6 +926,7 @@
         await Servicio.GuardarCuentaMedioAsync(medio,cuenta ?? "",ct);
         await PrepararLiquidacion(ct);
     });
+    private Task IrALiquidacion() => CambiarTab("liquidacion");
     private Task CambiarTab(string? tab) => Operar(async ct =>
     {
         _tab = tab ?? "importar";
@@ -917,6 +936,7 @@
     {
         if (_tab == "importar") _importaciones = await Servicio.ImportacionesAsync(_paginaImport,ct);
         else if (_tab=="conciliar") { if(_comparacion is not null) await _comparacion.ActualizarAsync(); }
+        else if (_tab=="liquidacion") await ActualizarCreditosProcesador(ct);
         else { _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(_paginaMov),ct); _seleccion = null; _detalle = []; await ActualizarCreditosProcesador(ct); }
     }
     private Task AbrirCobranza(ConciliacionMovimiento row,string? preferido=null) => Operar(async ct =>
@@ -1064,7 +1084,7 @@
             Title = "Conciliación bancaria asistida con IA", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria asistida con IA"],
             TopNavigationItems = Navegacion(),
             SearchContent = _tab=="conciliar" ? _busquedaConciliacion : _tab=="revisar" ? RenderBusquedaRevision() : null,
-            Search = _tab=="conciliar" ? null : new PageHeaderSearchConfig
+            Search = _tab is "conciliar" or "liquidacion" ? null : new PageHeaderSearchConfig
             {
                 Text=_buscarGlobal,Placeholder="Todos los bancos: importe, detalle o referencia…",Disabled=_busy,
                 OnTextChanged=value=> { _buscarGlobal=value; PublicarHeader(); return Task.CompletedTask; },
@@ -1083,7 +1103,7 @@
                     Title="Genera el asiento mensual de comisiones, IVA, retenciones e impuesto a los débitos y créditos. Elegí antes un extracto en Importación.",OnClick=AbrirGastos },
                 new() { Key="cuentas-asientos",Label="Cuentas para asientos",Icon="bi-journal-text",Disabled=_busy,OnClick=ConfigurarAsientos }
             ],
-            Pagination = _tab=="conciliar" ? null : new() { Label = $"{total} registros",PageLabel = $"{pagina} / {Math.Max(1,(int)Math.Ceiling(total/50d))}",
+            Pagination = _tab is "conciliar" or "liquidacion" ? null : new() { Label = $"{total} registros",PageLabel = $"{pagina} / {Math.Max(1,(int)Math.Ceiling(total/50d))}",
                 HasPrevious = pagina>1,HasNext = pagina*50<total,Disabled = _busy,OnPrevious = () => Paginar(-1),OnNext = () => Paginar(1) }
         });
     }
