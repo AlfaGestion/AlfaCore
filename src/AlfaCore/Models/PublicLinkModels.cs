@@ -12,7 +12,10 @@ public static class PublicLinkTipos
     // QR de una mesa del modo Salón del POS (IdReferencia = POS_MESA.ID de la base del cliente).
     public const string Mesa = "MESA";
 
-    public static readonly string[] All = [Catalogo, Carrito, Comprobante, Mesa];
+    // Informe al cliente de un ticket de asistencia (IdReferencia = TICK_INFORMES.IdInforme de la base del ticket).
+    public const string Informe = "INFORME";
+
+    public static readonly string[] All = [Catalogo, Carrito, Comprobante, Mesa, Informe];
 
     /// <summary>CHECK de ALFA_PUBLIC_LINK.Tipo con todos los tipos vigentes (idempotente).</summary>
     public const string CheckConstraintScript = """
@@ -20,7 +23,7 @@ public static class PublicLinkTipos
                    WHERE name = N'CK_ALFA_PUBLIC_LINK_Tipo' AND parent_object_id = OBJECT_ID(N'dbo.ALFA_PUBLIC_LINK'))
             ALTER TABLE dbo.ALFA_PUBLIC_LINK DROP CONSTRAINT CK_ALFA_PUBLIC_LINK_Tipo;
         ALTER TABLE dbo.ALFA_PUBLIC_LINK
-            ADD CONSTRAINT CK_ALFA_PUBLIC_LINK_Tipo CHECK ([Tipo] IN ('CARRITO', 'CATALOGO', 'CPTE', 'MESA'));
+            ADD CONSTRAINT CK_ALFA_PUBLIC_LINK_Tipo CHECK ([Tipo] IN ('CARRITO', 'CATALOGO', 'CPTE', 'MESA', 'INFORME'));
         """;
 }
 

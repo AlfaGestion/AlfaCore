@@ -558,6 +558,10 @@
                         </div>
                     }
                     </div>
+
+                    <div class="tk-solapa" hidden="@(_fichaTab != FichaTabInformes)">
+                        <TicketInformes IdTicket="@_detail.IdTicket" TituloTicket="@_detail.Titulo" OnActividad="RefrescarActividadAsync" />
+                    </div>
                 }
             </div>
         </section>
@@ -1359,7 +1363,7 @@
         if (firstRender)
         {
             UpdatePageHeader();
-            _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+            _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20261119a");
             _ticketsKanbanJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-kanban.js?v=20260519a");
             _ticketsListJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-list.js?v=20260714b");
             _kanbanDotNetRef = DotNetObjectReference.Create(this);
@@ -2370,6 +2374,7 @@
     private const string FichaTabMensajes = "mensajes";
     private const string FichaTabActividad = "actividad";
     private const string FichaTabHoras = "horas";
+    private const string FichaTabInformes = "informes";
     private string _fichaTab = FichaTabDescripcion;
     private bool _showTagPicker;
     private bool _cambiandoEtapa;
@@ -2381,8 +2386,18 @@
             new(FichaTabDescripcion, "Descripción"),
             new(FichaTabMensajes, "Mensajes", Badge: _detail.MensajesOrigenDetalle.Count > 0 ? _detail.MensajesOrigenDetalle.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null),
             new(FichaTabActividad, "Actividad", Badge: _detail.Actividad.Count > 0 ? _detail.Actividad.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null),
-            new(FichaTabHoras, "Partes de horas", Badge: _ticketPartesHoras.Count > 0 ? _ticketPartesHoras.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null)
+            new(FichaTabHoras, "Partes de horas", Badge: _ticketPartesHoras.Count > 0 ? _ticketPartesHoras.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null),
+            new(FichaTabInformes, "Informes")
         ];
+
+    /// <summary>Recarga solo la actividad del ticket (la solapa Informes la agrega) sin tocar lo que se está editando.</summary>
+    private async Task RefrescarActividadAsync()
+    {
+        if (_detail is null) return;
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetByIdAsync(_detail.IdTicket), "No se pudo actualizar la actividad del ticket.");
+        if (result.Success && result.Value is { } fresco && _detail is not null && fresco.IdTicket == _detail.IdTicket)
+            _detail.Actividad = fresco.Actividad;
+    }
 
     private IReadOnlyList<TicketEstadoDto> EtapasOrdenadas
         => _lookups.Estados.OrderBy(x => x.Orden).ThenBy(x => x.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList();

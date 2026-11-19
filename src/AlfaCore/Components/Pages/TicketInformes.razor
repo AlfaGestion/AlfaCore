@@ -1,0 +1,304 @@
+@using AlfaCore.Models
+@using Microsoft.JSInterop
+@inject AlfaCore.Services.ITicketInformesService InformesSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* Solapa "Informes" del ticket: informes al cliente (TICK_INFORMES) con plantilla, redacción por IA y link público. *@
+<div class="tki">
+    @if (_feedback is not null)
+    {
+        <div class="tki-aviso @(_feedback.Severity == AppUiFeedbackSeverity.Success ? "is-ok" : "is-error")">
+            <span>@_feedback.Message</span>
+            <button type="button" class="tki-aviso__cerrar" aria-label="Cerrar aviso" @onclick="() => _feedback = null"><i class="bi bi-x"></i></button>
+        </div>
+    }
+
+    <div class="tki-grid">
+        <aside class="tki-lista">
+            <div class="tki-lista__acciones">
+                <button type="button" class="btn btn--primary btn--sm" disabled="@_ocupado" @onclick="NuevoDesdePlantillaAsync"><i class="bi bi-file-earmark-plus"></i> Nuevo informe</button>
+                <button type="button" class="btn btn--sm" disabled="@(_ocupado || !InformesSvc.IaDisponible)" title="@(InformesSvc.IaDisponible ? "La IA redacta el informe con la descripción, la actividad, los mensajes y las horas del ticket" : "La IA no está configurada en este servidor")" @onclick="AbrirIa"><i class="bi bi-stars"></i> Generar con IA</button>
+            </div>
+            @if (_cargando)
+            {
+                <div class="usuarios-empty">Cargando informes…</div>
+            }
+            else if (_informes.Count == 0)
+            {
+                <div class="usuarios-empty">Todavía no hay informes para el cliente. Creá uno desde la plantilla o pedile a la IA que lo redacte.</div>
+            }
+            else
+            {
+                @foreach (var i in _informes)
+                {
+                    <button type="button" class="tki-item @(_actual?.IdInforme == i.IdInforme ? "is-activo" : "")" disabled="@_ocupado" @onclick="() => SeleccionarAsync(i)">
+                        <span class="tki-item__titulo">@i.Titulo</span>
+                        <span class="tki-item__meta">
+                            <span class="tki-chip @(i.Publicado ? "is-publicado" : "")">@(i.Publicado ? "Publicado" : "Borrador")</span>
+                            @(i.FechaHoraModificacion ?? i.FechaHoraAlta).ToString("dd/MM/yyyy HH:mm")
+                        </span>
+                        @if (i.Publicado)
+                        {
+                            <span class="tki-item__meta">@(i.Vistas == 0 ? "El cliente todavía no lo abrió" : $"Abierto {i.Vistas} {(i.Vistas == 1 ? "vez" : "veces")} · último {i.UltimaVista:dd/MM HH:mm}")</span>
+                        }
+                    </button>
+                }
+            }
+        </aside>
+
+        <section class="tki-editor" hidden="@(_actual is null)">
+            @if (_mostrarIa)
+            {
+                <div class="tki-ia">
+                    <label for="tki-indicaciones">Indicaciones para la IA (opcional)</label>
+                    <textarea id="tki-indicaciones" rows="3" placeholder="Ej.: tono tranquilizador; destacar que el precio de venta no se vio afectado; no detallar el procedimiento técnico." @bind="_indicaciones"></textarea>
+                    <div class="tki-ia__acciones">
+                        <button type="button" class="btn btn--primary btn--sm" disabled="@_ocupado" @onclick="GenerarConIaAsync"><i class="bi bi-stars"></i> @(_generando ? "Redactando…" : "Redactar informe")</button>
+                        <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="() => _mostrarIa = false">Cancelar</button>
+                    </div>
+                    <small>La IA usa solo lo que está en el ticket. Revisá el texto antes de publicarlo.</small>
+                </div>
+            }
+            <div class="field">
+                <label for="tki-titulo">Título del informe</label>
+                <input id="tki-titulo" type="text" maxlength="200" @bind="_titulo" @bind:event="oninput" />
+            </div>
+            <div class="tickets-rich-editor">
+                <div class="tickets-rich-editor__surface tki-superficie" @ref="_superficie" contenteditable="@(!_ocupado)"
+                     data-placeholder="Escribí el informe para el cliente" @oninput="() => _sucio = true"></div>
+                <div class="tickets-rich-editor__bar">
+                    @foreach (var c in Herramientas)
+                    {
+                        <button type="button" class="tickets-rich-editor__tool" title="@c.Titulo" disabled="@_ocupado" @onclick="() => ComandoAsync(c.Comando)"><i class="bi @c.Icono"></i></button>
+                    }
+                </div>
+            </div>
+            @if (_actual is { } a)
+            {
+                <div class="tki-acciones">
+                    <button type="button" class="btn btn--primary btn--sm" disabled="@_ocupado" @onclick="GuardarAsync"><i class="bi bi-save"></i> Guardar</button>
+                    @if (a.IdInforme > 0)
+                    {
+                        <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="PublicarAsync" title="Guarda los cambios y deja el informe disponible en un link para el cliente">
+                            <i class="bi bi-link-45deg"></i> @(a.Publicado ? "Guardar y copiar link" : "Publicar y copiar link")
+                        </button>
+                        @if (a.Publicado && !string.IsNullOrEmpty(_link))
+                        {
+                            <a class="btn btn--sm" href="@_link" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Ver como cliente</a>
+                            <button type="button" class="btn btn--sm" disabled="@_ocupado" @onclick="DespublicarAsync" title="El link deja de funcionar"><i class="bi bi-eye-slash"></i> Despublicar</button>
+                        }
+                        <button type="button" class="btn btn--sm tki-peligro" disabled="@_ocupado" @onclick="() => _confirmarBaja = true"><i class="bi bi-trash"></i> Eliminar</button>
+                    }
+                </div>
+                @if (a.Publicado && !string.IsNullOrEmpty(_link))
+                {
+                    <div class="tki-link">
+                        <span>Link para el cliente</span>
+                        <input type="text" readonly value="@_link" aria-label="Link para el cliente" onclick="this.select()" />
+                    </div>
+                }
+                @if (_confirmarBaja)
+                {
+                    <div class="tki-confirmar">
+                        <span>¿Eliminar este informe? @(a.Publicado ? "El link dejará de funcionar." : "")</span>
+                        <button type="button" class="btn btn--sm tki-peligro" disabled="@_ocupado" @onclick="EliminarAsync">Sí, eliminar</button>
+                        <button type="button" class="btn btn--sm" @onclick="() => _confirmarBaja = false">Cancelar</button>
+                    </div>
+                }
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public long IdTicket { get; set; }
+    [Parameter] public string TituloTicket { get; set; } = string.Empty;
+    /// <summary>Avisa a la ficha que se agregó actividad (crear, publicar, despublicar).</summary>
+    [Parameter] public EventCallback OnActividad { get; set; }
+
+    private sealed record Herramienta(string Titulo, string Icono, string Comando);
+    private static readonly IReadOnlyList<Herramienta> Herramientas =
+    [
+        new("Título", "bi-type-h2", "h2"), new("Subtítulo", "bi-type-h3", "h3"), new("Texto", "bi-paragraph", "paragraph"),
+        new("Lista de viñetas", "bi-list-ul", "bulletList"), new("Lista numerada", "bi-list-ol", "numberedList"),
+        new("Aviso informativo", "bi-info-circle", "infoBanner"), new("Aviso de éxito", "bi-check-circle", "successBanner"),
+        new("Aviso de advertencia", "bi-exclamation-triangle", "warningBanner"), new("Separador", "bi-dash-lg", "separator"), new("Enlace", "bi-link-45deg", "link")
+    ];
+
+    private IJSObjectReference? _js;
+    private ElementReference _superficie;
+    private List<TicketInformeDto> _informes = [];
+    private TicketInformeDto? _actual;
+    private string _titulo = string.Empty;
+    private string? _htmlPendiente;
+    private string? _link;
+    private string _indicaciones = string.Empty;
+    private bool _cargando = true, _ocupado, _generando, _mostrarIa, _sucio, _confirmarBaja, _generadoIa;
+    private long _ticketCargado;
+    private AppUiMessage? _feedback;
+
+    private string Usuario => AppUserSession.GetCurrentUserName(string.Empty).Trim();
+    private TicketInformeDestino Destino => new(
+        AppUserSession.CurrentUser?.IdWeb ?? string.Empty, SessionSvc.GetActiveSession()?.BaseId ?? 0, Nav.BaseUri);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_ticketCargado == IdTicket) return;
+        _ticketCargado = IdTicket;
+        _actual = null; _link = null; _mostrarIa = false; _confirmarBaja = false; _feedback = null;
+        await CargarAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_htmlPendiente is null) return;
+        _js ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20261119a");
+        var html = _htmlPendiente; _htmlPendiente = null;
+        await _js.InvokeVoidAsync("setHtml", _superficie, html);
+    }
+
+    private async Task CargarAsync(int? seleccionar = null)
+    {
+        _cargando = true;
+        var r = await UiOps.RunAsync(() => InformesSvc.ListarAsync(IdTicket), "No se pudieron cargar los informes.");
+        _cargando = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _informes = r.Value!.ToList();
+        if (seleccionar is { } id && _informes.FirstOrDefault(x => x.IdInforme == id) is { } sel) await SeleccionarAsync(sel, forzar: true);
+    }
+
+    private async Task SeleccionarAsync(TicketInformeDto informe, bool forzar = false)
+    {
+        if (!forzar && _actual?.IdInforme == informe.IdInforme) return;
+        _actual = informe; _titulo = informe.Titulo; _htmlPendiente = informe.Html; _sucio = false; _generadoIa = false; _confirmarBaja = false;
+        _link = null;
+        if (informe.Publicado)
+        {
+            var r = await UiOps.RunAsync(() => InformesSvc.ObtenerLinkAsync(informe.IdInforme, Destino), "No se pudo leer el link del informe.");
+            _link = r.Success ? r.Value : null;
+        }
+    }
+
+    private async Task NuevoDesdePlantillaAsync()
+    {
+        _ocupado = true;
+        var r = await UiOps.RunAsync(() => InformesSvc.PlantillaAsync(IdTicket), "No se pudo armar la plantilla.");
+        _ocupado = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        Borrador(r.Value!, generadoIa: false);
+    }
+
+    private void AbrirIa()
+    {
+        if (_actual is null) Borrador("<p></p>", generadoIa: false);
+        _mostrarIa = true;
+    }
+
+    private async Task GenerarConIaAsync()
+    {
+        _ocupado = true; _generando = true; _feedback = null;
+        StateHasChanged();
+        var r = await UiOps.RunAsync(() => InformesSvc.GenerarConIaAsync(IdTicket, _indicaciones), "No se pudo generar el informe con IA.");
+        _ocupado = false; _generando = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _mostrarIa = false;
+        if (_actual is { IdInforme: > 0 })
+        {
+            // Sobre un informe existente la IA reemplaza el texto del editor; se guarda recién al tocar Guardar.
+            _htmlPendiente = r.Value; _sucio = true; _generadoIa = true;
+        }
+        else Borrador(r.Value!, generadoIa: true);
+        _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Message = "La IA redactó el informe. Revisalo y guardalo." };
+    }
+
+    private void Borrador(string html, bool generadoIa)
+    {
+        _actual = new TicketInformeDto { IdTicket = IdTicket, Titulo = $"Informe del ticket: {TituloTicket}".Trim() };
+        _titulo = _actual.Titulo.Length > 200 ? _actual.Titulo[..200] : _actual.Titulo;
+        _htmlPendiente = html; _sucio = true; _generadoIa = generadoIa; _link = null;
+    }
+
+    private Task ComandoAsync(string comando)
+        => _js is null ? Task.CompletedTask : _js.InvokeVoidAsync("runCommand", _superficie, comando).AsTask().ContinueWith(_ => _sucio = true);
+
+    private async Task<int?> GuardarInternoAsync()
+    {
+        if (_actual is null || _js is null) return null;
+        var html = await _js.InvokeAsync<string>("getHtml", _superficie);
+        var request = new TicketInformeGuardarRequest
+        {
+            IdInforme = _actual.IdInforme > 0 ? _actual.IdInforme : null, IdTicket = IdTicket, Titulo = _titulo, Html = html,
+            GeneradoIA = _generadoIa, Usuario = Usuario
+        };
+        var r = await UiOps.RunAsync(() => InformesSvc.GuardarAsync(request), "No se pudo guardar el informe.");
+        if (!r.Success) { _feedback = r.Feedback; return null; }
+        var nuevo = _actual.IdInforme == 0;
+        _sucio = false; _generadoIa = false;
+        await CargarAsync(r.Value);
+        if (nuevo) await OnActividad.InvokeAsync();
+        return r.Value;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _ocupado = true; _feedback = null;
+        var id = await GuardarInternoAsync();
+        _ocupado = false;
+        if (id is not null) _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Message = _actual?.Publicado == true ? "Informe guardado. El cliente ya ve esta versión en el link." : "Informe guardado." };
+    }
+
+    private async Task PublicarAsync()
+    {
+        _ocupado = true; _feedback = null;
+        var id = await GuardarInternoAsync();
+        if (id is null) { _ocupado = false; return; }
+        var r = await UiOps.RunAsync(() => InformesSvc.PublicarAsync(id.Value, Usuario, Destino), "No se pudo publicar el informe.");
+        _ocupado = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _link = r.Value;
+        await CargarAsync(id);
+        _link = r.Value;
+        await OnActividad.InvokeAsync();
+        var copiado = false;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _link); copiado = true; } catch (JSException) { } catch (JSDisconnectedException) { }
+        _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Message = copiado ? "Informe publicado. El link quedó copiado: pegalo en WhatsApp o en un mail." : "Informe publicado. Copiá el link de abajo para mandárselo al cliente." };
+    }
+
+    private async Task DespublicarAsync()
+    {
+        if (_actual is null) return;
+        _ocupado = true;
+        var r = await UiOps.RunAsync(async () => { await InformesSvc.DespublicarAsync(_actual.IdInforme, Usuario, Destino); return true; }, "No se pudo despublicar el informe.");
+        _ocupado = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _link = null;
+        await CargarAsync(_actual.IdInforme);
+        await OnActividad.InvokeAsync();
+        _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Message = "Informe despublicado: el link ya no funciona. Si lo volvés a publicar se genera uno nuevo." };
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_actual is null) return;
+        _ocupado = true;
+        var r = await UiOps.RunAsync(async () => { await InformesSvc.EliminarAsync(_actual.IdInforme, Usuario, Destino); return true; }, "No se pudo eliminar el informe.");
+        _ocupado = false; _confirmarBaja = false;
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _actual = null; _link = null;
+        await CargarAsync();
+        await OnActividad.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_js is not null)
+        {
+            try { await _js.DisposeAsync(); } catch (JSDisconnectedException) { }
+        }
+    }
+}

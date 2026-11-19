@@ -18,6 +18,7 @@ public static class IaUsoFunciones
     public const string ArchivosBusqueda = "ARCHIVOS_BUSQUEDA";
     public const string ArchivosAlmacenamiento = "ARCHIVOS_ALMACENAMIENTO";
     public const string Transcripcion = "TRANSCRIPCION";
+    public const string InformeTicket = "INFORME_TICKET";
 
     public static string Nombre(string? funcion) => (funcion ?? string.Empty).Trim().ToUpperInvariant() switch
     {
@@ -34,6 +35,7 @@ public static class IaUsoFunciones
         ArchivosBusqueda => "Búsquedas en archivos",
         ArchivosAlmacenamiento => "Almacenamiento de archivos",
         Transcripcion => "Transcripción de audios",
+        InformeTicket => "Informes de tickets al cliente",
         _ => funcion ?? string.Empty
     };
 }

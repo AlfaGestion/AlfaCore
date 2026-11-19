@@ -395,6 +395,7 @@ public class Program
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
+        builder.Services.AddScoped<ITicketInformesService, TicketInformesService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
         builder.Services.AddSingleton<IBriefService, BriefService>();
         builder.Services.AddScoped<ITareasService, TareasService>();

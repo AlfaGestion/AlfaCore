@@ -13,4 +13,6 @@ public interface IConversacionAnalisisService
     Task<ConversacionExtraccionDto?> ExtraerOportunidadAsync(IReadOnlyList<ConversacionMensajeDto> mensajes, CancellationToken ct = default);
     /// <summary>Reescribe un borrador según una instrucción (tono, traducción). Devuelve solo el texto final.</summary>
     Task<string?> TransformarTextoAsync(string texto, string instruccion, CancellationToken ct = default);
+    /// <summary>Redacta un texto nuevo con un prompt de sistema propio (informes, borradores). Null si no hay IA o falla.</summary>
+    Task<string?> GenerarTextoAsync(string systemPrompt, string contenido, string funcion, int timeoutSegundos = 90, CancellationToken ct = default);
 }

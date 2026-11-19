@@ -53,7 +53,13 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
         return string.IsNullOrWhiteSpace(resultado) ? null : resultado.Trim();
     }
 
-    private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct, string funcion = IaUsoFunciones.Analisis)
+    public async Task<string?> GenerarTextoAsync(string systemPrompt, string contenido, string funcion, int timeoutSegundos = 90, CancellationToken ct = default)
+    {
+        var resultado = await CallOpenAiAsync(systemPrompt, (contenido ?? string.Empty).Trim(), ct, funcion, timeoutSegundos);
+        return string.IsNullOrWhiteSpace(resultado) ? null : resultado.Trim();
+    }
+
+    private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct, string funcion = IaUsoFunciones.Analisis, int timeoutSegundos = 20)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey) || transcript.Length == 0)
@@ -75,7 +81,7 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
         try
         {
             var client = httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(20);
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSegundos, 5, 180));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
             using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");

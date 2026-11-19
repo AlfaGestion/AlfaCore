@@ -1,6 +1,8 @@
 const allowedTags = new Set([
     'A', 'B', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3',
-    'HR', 'I', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SMALL', 'SPAN', 'STRONG', 'SUMMARY', 'UL'
+    'HR', 'I', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SMALL', 'SPAN', 'STRONG', 'SUMMARY', 'UL',
+    // Tablas: los informes al cliente las usan (sin esto el sanitizador borraba la tabla entera con su texto).
+    'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD', 'CAPTION'
 ]);
 
 const allowedClasses = new Set([
@@ -87,7 +89,7 @@ export function setHtml(editor, html) {
         return;
     }
 
-    editor.innerHTML = sanitizeHtml(html || '');
+    editor.innerHTML = sanitizeHtml(plainTextToHtml(html || ''));
     ensureEditableBase(editor);
     wireFilePickers(editor);
     hydrateMediaBlocks(editor);
@@ -710,6 +712,19 @@ function getTextBeforeCaret(root) {
     range.selectNodeContents(root);
     range.setEnd(selection.anchorNode, selection.anchorOffset);
     return range.toString();
+}
+
+// Descripciones viejas o creadas por el asistente se guardaron como texto con saltos de línea:
+// sin esto el navegador las mostraba en un solo párrafo.
+function plainTextToHtml(value) {
+    if (!value || /<[a-z][\s\S]*>/i.test(value) || !/[\r\n]/.test(value)) {
+        return value;
+    }
+
+    const escape = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return value.replace(/\r\n/g, '\n').trim().split(/\n\s*\n/)
+        .map((block) => `<p>${escape(block.trim()).replace(/\n/g, '<br>')}</p>`)
+        .join('');
 }
 
 function sanitizeHtml(html) {

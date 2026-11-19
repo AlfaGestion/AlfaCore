@@ -1,0 +1,174 @@
+.tki {
+    display: grid;
+    gap: 12px;
+}
+
+.tki-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .tki-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.tki-lista {
+    display: grid;
+    gap: 8px;
+}
+
+.tki-lista__acciones,
+.tki-acciones,
+.tki-ia__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tki-item {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--alfa-radius-sm, 6px);
+    background: var(--alfa-bg-surface);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.tki-item:hover {
+    border-color: var(--alfa-accent);
+}
+
+.tki-item.is-activo {
+    border-color: var(--alfa-accent);
+    box-shadow: inset 3px 0 0 var(--alfa-accent);
+}
+
+.tki-item__titulo {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.tki-item__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-muted);
+    font-size: .8rem;
+}
+
+.tki-chip {
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    font-size: .75rem;
+}
+
+.tki-chip.is-publicado {
+    border-color: var(--alfa-accent);
+    color: var(--alfa-accent);
+}
+
+.tki-editor {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.tki-editor .field input {
+    width: 100%;
+}
+
+.tki-ia {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1px dashed var(--alfa-accent);
+    border-radius: var(--alfa-radius-sm, 6px);
+}
+
+.tki-ia textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.tki-ia small {
+    color: var(--color-muted);
+}
+
+::deep .tki-superficie {
+    min-height: 320px;
+}
+
+::deep .tki-superficie table {
+    border-collapse: collapse;
+    margin: 6px 0;
+    max-width: 100%;
+}
+
+::deep .tki-superficie th,
+::deep .tki-superficie td {
+    border: 1px solid var(--color-border);
+    padding: 4px 8px;
+    vertical-align: top;
+}
+
+.tki-link {
+    display: grid;
+    gap: 4px;
+}
+
+.tki-link span {
+    color: var(--color-muted);
+    font-size: .8rem;
+}
+
+.tki-link input {
+    width: 100%;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: .85rem;
+}
+
+.tki-confirmar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.tki-peligro {
+    color: #e5484d;
+}
+
+.tki-aviso {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--alfa-radius-sm, 6px);
+    border: 1px solid var(--color-border);
+}
+
+.tki-aviso.is-ok {
+    border-color: #2f9e6a;
+}
+
+.tki-aviso.is-error {
+    border-color: #e5484d;
+}
+
+.tki-aviso__cerrar {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
