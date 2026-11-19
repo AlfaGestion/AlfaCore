@@ -2979,6 +2979,7 @@ public class Program
         app.MapGet("/{idweb}/{idbase:int}/carga-viajes/descargar-excel", DescargarViajesExcel);
 
         app.MapBriefEndpoints();
+        app.MapSoporteTicketsEndpoints();
 
         app.MapGet("/api/conversaciones", async (
             string? modo,

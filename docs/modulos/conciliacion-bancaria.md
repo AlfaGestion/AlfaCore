@@ -519,7 +519,7 @@ Pestaña Revisar: si la importación trae créditos con el texto de `CONCILIACIO
 Tras subir el detalle se arma, por día de acreditación del banco y medio de pago: Debe banco (neto), Debe cuenta de comisión (comisión neta), Debe IVA crédito fiscal (IVA de la comisión), Haber cuenta del medio de pago (bruto). Solo entran los cobros acreditados cuyo neto coincide al centavo con el banco. **No graba contabilidad**: el grabado (numeración CC, período, conciliación de los créditos contra el renglón del banco, historial del comprobante) es el paso siguiente y reutilizará el circuito del asiento de gastos bancarios.
 
 - Cuenta de cada medio: `CONCILIACION-NAVE-CUENTAS` (JSON en `ValorAux`, clave = nombre normalizado del medio). Se sugiere por nombre exacto contra las cuentas TJ activas (`SugerirCuentaMedio`); lo que no coincide (ej. «Dinero en cuenta», «Visa Prepaga») se elige en la tabla y queda guardado.
-- Cuenta de comisión: `CONCILIACION-NAVE-CUENTA-COMISION`; cuenta del IVA: `CONCILIACION-NAVE-CUENTA-IVA`. Si están vacías se toman «Comisiones y gastos bancarios» e «IVA crédito fiscal» de `CONCILIACION-GASTOS-BANCARIOS`.
+- Las cuentas de comisión e IVA se eligen en el panel (dos selectores sobre la propuesta). Claves: `CONCILIACION-NAVE-CUENTA-COMISION`; cuenta del IVA: `CONCILIACION-NAVE-CUENTA-IVA`. Si están vacías se toman «Comisiones y gastos bancarios» e «IVA crédito fiscal» de `CONCILIACION-GASTOS-BANCARIOS`.
 - Avisa si la cuenta relacionada (`MA_CUENTAS.CuentaPrincipal`) de la tarjeta no es el banco del extracto.
 
 ### Grabado del asiento de liquidación (2026-11-18)

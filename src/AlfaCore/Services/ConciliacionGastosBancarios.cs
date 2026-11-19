@@ -99,6 +99,9 @@ internal static class ConciliacionGastosBancarios
     /// <summary>Campos del Libro de IVA Compras que van en el renglón del banco, igual que el asiento de liquidación de Alfa Gestión.</summary>
     public sealed record LibroIva(decimal NetoGravado,decimal NetoNoGravado,decimal Alicuota,decimal Iva,decimal PercepcionIva,decimal PercepcionIibb,decimal PercepcionGanancias,decimal Total);
 
+    /// <summary>Si el asiento tiene IVA crédito, percepciones o retenciones, va al Libro de IVA Compras por defecto (como en Asientos); si no, es opcional.</summary>
+    public static bool UsaLibroIva(ConciliacionGastosCalculo c)=>c.Importe(IvaCredito)>0||c.Importe(IvaPercepcion)>0||c.Importe(Iibb)>0||c.Importe(Ganancias)>0;
+
     public static LibroIva ArmarLibroIva(ConciliacionGastosCalculo c,ConciliacionGastosConfig config)=>
         new(c.Importe(Gastos),c.Importe(Idc),c.Importe(IvaCredito)>0 ? config.AlicuotaIva : 0m,c.Importe(IvaCredito),
             c.Importe(IvaPercepcion),c.Importe(Iibb),c.Importe(Ganancias),c.Total);
@@ -138,6 +141,29 @@ internal static class ConciliacionGastosBancarios
             if(clave is not null&&!resultado.ContainsKey(clave))resultado[clave]=cuenta;
         }
         return resultado;
+    }
+
+    private static string Compacto(string? t)=>new string(Normalizar(t??"").Where(char.IsLetterOrDigit).ToArray());
+    private static bool Activo(ConciliacionAsientoCuenta c)=>c.Codigo.TrimStart().StartsWith('1')||Compacto(c.Rubro).Contains("ACTIVO");
+
+    /// <summary>
+    /// Propone la cuenta de cada concepto buscando en el plan de cuentas: gastos y el impuesto a los débitos y créditos por nombre;
+    /// IVA crédito fiscal, IVA percepción, IIBB y ganancias solo en cuentas del activo (son saldos a favor). Dentro de cada concepto, la primera por código.
+    /// Si no hay una cuenta adecuada, el concepto queda sin proponer.
+    /// </summary>
+    public static Dictionary<string,string> SugerirCuentasDelPlan(IEnumerable<ConciliacionAsientoCuenta> cuentas)
+    {
+        var lista=cuentas.Select(c=>(Cuenta:c,N:Compacto(c.Descripcion))).OrderBy(x=>x.Cuenta.Codigo,StringComparer.Ordinal).ToList();
+        string? Primera(Func<(ConciliacionAsientoCuenta Cuenta,string N),bool> f)=>lista.Where(f).Select(x=>x.Cuenta.Codigo).FirstOrDefault();
+        var r=new Dictionary<string,string>();
+        void Poner(string clave,string? cuenta){ if(!string.IsNullOrEmpty(cuenta)) r[clave]=cuenta; }
+        Poner(Gastos,Primera(x=>x.N.Contains("GASTOSBANCARIOS")||x.N.Contains("COMISIONESBANCARIAS")));
+        Poner(IvaCredito,ConciliacionBancariaService.SugerirCuentaIvaCredito(lista.Select(x=>x.Cuenta)));
+        Poner(IvaPercepcion,Primera(x=>Activo(x.Cuenta)&&x.N.Contains("IVA")&&(x.N.Contains("RETENCION")||x.N.Contains("PERCEPCION"))&&!x.N.Contains("DEBITO")));
+        Poner(Iibb,Primera(x=>Activo(x.Cuenta)&&(x.N.Contains("INGRESOSBRUTOS")||x.N.Contains("IIBB")||x.N.Contains("SIRCREB"))));
+        Poner(Ganancias,Primera(x=>Activo(x.Cuenta)&&x.N.Contains("GANANCIA")&&(x.N.Contains("RETENCION")||x.N.Contains("PERCEPCION"))));
+        Poner(Idc,Primera(x=>x.N.Contains("DEBITOCREDITO")||x.N.Contains("25413")||x.N.StartsWith("IDC")));
+        return r;
     }
 
     private static bool Palabra(string normalizado,string palabra)=>(" "+normalizado+" ").Contains(" "+palabra+" ",StringComparison.Ordinal);

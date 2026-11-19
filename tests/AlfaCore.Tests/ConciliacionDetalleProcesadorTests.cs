@@ -75,6 +75,28 @@ public sealed class ConciliacionDetalleProcesadorTests
 
 public sealed class ConciliacionLiquidacionTests
 {
+    private static readonly AlfaCore.Models.ConciliacionAsientoCuenta[] Plan=
+    [
+        new("11203","I.V.A. C.F. Por Compra de Bienes-Merc. Local"),new("11205","I.V.A. C.F. Por Prestacion de Servicios"),
+        new("11208","I.V.A. Retención/Percepción"),new("21201","I.V.A. Debito Fiscal Responsable Inscripto"),
+        new("42209","Gastos Bancarios"),new("34","IVA")
+    ];
+
+    [Fact]
+    public void Propone_el_iva_credito_fiscal_del_activo_y_no_retenciones_ni_debito()
+        =>Assert.Equal("11203",ConciliacionBancariaService.SugerirCuentaIvaCredito(Plan));
+
+    [Fact]
+    public void Propone_gastos_bancarios_para_la_comision()
+        =>Assert.Equal("42209",ConciliacionBancariaService.SugerirCuentaComision(Plan));
+
+    [Fact]
+    public void Sin_cuenta_adecuada_no_propone_nada()
+    {
+        Assert.Null(ConciliacionBancariaService.SugerirCuentaIvaCredito([new("21201","I.V.A. Debito Fiscal"),new("34","IVA")]));
+        Assert.Null(ConciliacionBancariaService.SugerirCuentaComision([new("11203","Caja")]));
+    }
+
     private static readonly LiquidacionCuenta[] Cuentas=
     [
         new("111010009","VISA DEBITO",""),new("111010010","VISA CREDITO",""),new("111010012","MASTERCARD CREDITO",""),new("111010008","QR NAVE (en cuenta)","")

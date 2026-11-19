@@ -218,4 +218,33 @@ public sealed class LibroIvaColumnasTests
         Assert.Equal(2850m,r.ColumnasPercepciones[0].Valor(r.Filas[0]));Assert.Equal(270m,r.ColumnasIva[1].Valor(r.Filas[1]));
         Assert.Single(new AlfaCore.Models.LibroIvaResultado().ColumnasIva);Assert.Single(new AlfaCore.Models.LibroIvaResultado().ColumnasPercepciones);
     }
+
+    [Fact]
+    public void Sin_modelo_propone_las_cuentas_buscando_en_el_plan()
+    {
+        AlfaCore.Models.ConciliacionAsientoCuenta[] plan=
+        [
+            new("11203","I.V.A. C.F. Por Compra de Bienes-Merc. Local"),new("11208","I.V.A. Retención/Percepción"),new("11210","Retención de Impuestos a las Ganancias"),
+            new("21201","I.V.A. Debito Fiscal Responsable Inscripto"),new("21205","Percepción de Impuestos S/Ingresos Brutos"),
+            new("42209","Gastos Bancarios"),new("42216","IDC (IMPUESTO DEBITO CREDITO)")
+        ];
+        var r=ConciliacionGastosBancarios.SugerirCuentasDelPlan(plan);
+        Assert.Equal("42209",r[ConciliacionGastosBancarios.Gastos]);
+        Assert.Equal("11203",r[ConciliacionGastosBancarios.IvaCredito]);
+        Assert.Equal("11208",r[ConciliacionGastosBancarios.IvaPercepcion]);
+        Assert.Equal("11210",r[ConciliacionGastosBancarios.Ganancias]);
+        Assert.Equal("42216",r[ConciliacionGastosBancarios.Idc]);
+        // La percepción de IIBB de ventas es del pasivo: no se propone como retención sufrida.
+        Assert.False(r.ContainsKey(ConciliacionGastosBancarios.Iibb));
+    }
+
+    [Fact]
+    public void Libro_de_iva_por_defecto_solo_si_hay_iva_percepciones_o_retenciones()
+    {
+        ConciliacionGastosCalculo Calc(string clave,decimal importe)=>new([new(clave,clave,1,importe)],importe,[],[],[],"");
+        Assert.True(ConciliacionGastosBancarios.UsaLibroIva(Calc(ConciliacionGastosBancarios.IvaCredito,21m)));
+        Assert.True(ConciliacionGastosBancarios.UsaLibroIva(Calc(ConciliacionGastosBancarios.Iibb,5m)));
+        Assert.True(ConciliacionGastosBancarios.UsaLibroIva(Calc(ConciliacionGastosBancarios.Ganancias,5m)));
+        Assert.False(ConciliacionGastosBancarios.UsaLibroIva(Calc(ConciliacionGastosBancarios.Idc,323293.07m)));
+    }
 }

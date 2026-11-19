@@ -9,7 +9,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 public sealed record LiquidacionCatalogo(ConciliacionAsientoCatalogo Catalogo,string Tc);
-public sealed record LiquidacionSolicitud(Guid Operacion,long ImportacionId,long DetalleId,string Unidad,int Talonario,string Detalle);
+public sealed record LiquidacionSolicitud(Guid Operacion,long ImportacionId,long DetalleId,string Unidad,int Talonario,string Detalle,bool IncluirLibroIva=true);
 public sealed record LiquidacionGenerado(DateTime Fecha,string Comprobante,int NumeroAsiento,decimal Bruto);
 public sealed record LiquidacionResultado(IReadOnlyList<LiquidacionGenerado> Generados,int Omitidos,string? Error);
 
@@ -130,7 +130,7 @@ public sealed partial class ConciliacionBancariaService
         for(var i=0;i<lineas.Count;i++)
         {
             args.Add("cuenta",lineas[i].Cuenta);args.Add("importe",lineas[i].Importe);args.Add("secuencia",i+1);args.Add("sentido",lineas[i].Sentido);
-            if(i==0&&totalLibro>0)
+            if(i==0&&totalLibro>0&&s.IncluirLibroIva)
                 // Renglón del banco: lleva el registro del Libro de IVA Compras.
                 await cn.ExecuteAsync(Q($"""
                     INSERT dbo.MV_ASIENTOS({ColumnasComunes},CABCUENTA,CABNOMBRE,CABCUIT,CABCONDIVA,LIVA_TIPO,LIVA_ImpNetoGrav,LIVA_ImpNetoNGrav,LIVA_AlicIVA,LIVA_ImpIVA,

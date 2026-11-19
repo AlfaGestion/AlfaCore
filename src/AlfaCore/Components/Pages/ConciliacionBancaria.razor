@@ -166,6 +166,12 @@
                     {
                         <h4>Asientos de liquidación propuestos (@l.Dias.Count días)</h4>
                         <p>Por cada día de acreditación: <strong>Debe</strong> @l.CuentaBanco (neto), @(l.CuentaComision.Length > 0 ? l.CuentaComision : "cuenta de comisión sin definir") (comisión) y @(l.CuentaIva.Length > 0 ? l.CuentaIva : "cuenta de IVA crédito fiscal sin definir") (IVA de la comisión, que además se registra en el Libro de IVA Compras); <strong>Haber</strong> la cuenta de cada medio de pago por el bruto. Solo se incluyen los cobros que el banco acreditó y coinciden al centavo. Todavía no se graba nada.</p>
+                        <div class="conciliacion-campos">
+                            <AlfaSelect Label="Cuenta de comisión (gasto)" Value="@l.CuentaComision" ValueChanged="v => GuardarCuentasComision(v,l.CuentaIva)"
+                                Options="@OpcionesGasto" Placeholder="Elegir cuenta" Disabled="@_busy" />
+                            <AlfaSelect Label="Cuenta de IVA crédito fiscal" Value="@l.CuentaIva" ValueChanged="v => GuardarCuentasComision(l.CuentaComision,v)"
+                                Options="@OpcionesGasto" Placeholder="Elegir cuenta" Disabled="@_busy" />
+                        </div>
                         @foreach (var e in l.Errores) { <p role="alert">@e</p> }
                         @foreach (var a in l.Avisos) { <p role="status">@a</p> }
                         <div class="conciliacion-resumen">
@@ -180,6 +186,7 @@
                                 <AlfaSelect Label="Unidad de negocio" Value="@_liqUnidad" ValueChanged="CambiarUnidadLiquidacion" Options="@UnidadesLiq" Placeholder="Seleccionar unidad" Disabled="@_busy" />
                                 <AlfaSelect Label="@($"Talonario {cat.Tc}")" Value="@_liqTalonario" ValueChanged="v => _liqTalonario = v ?? string.Empty" Options="@TalonariosLiq" Placeholder="Seleccionar talonario" Disabled="@_busy" />
                                 <AlfaInput Label="Detalle del asiento" Value="@_liqDetalle" ValueChanged="v => _liqDetalle = v ?? string.Empty" MaxLength="150" Disabled="@_busy" />
+                                <AlfaCheckbox Value="@_liqLibroIva" ValueChanged="v => _liqLibroIva = v == true" Disabled="@_busy">Incluir el IVA de la comisión en el Libro de IVA Compras</AlfaCheckbox>
                                 <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || _liqUnidad.Length == 0 || _liqTalonario.Length == 0)" OnClick="GenerarLiquidacion">Generar @l.Dias.Count asientos</AlfaButton>
                             </div>
                             <p>Se genera un asiento @cat.Tc por día y los créditos de NAVE de ese día quedan conciliados contra el renglón del banco. Cada día se graba por separado: si alguno falla, los anteriores quedan hechos.</p>
@@ -843,6 +850,7 @@
     private LiquidacionCatalogo? _liqCatalogo;
     private string _liqUnidad = "", _liqTalonario = "", _liqDetalle = "Liquidación NAVE";
     private Guid _liqOperacion = Guid.NewGuid();
+    private bool _liqLibroIva = true;
     private async Task PrepararLiquidacion(CancellationToken ct)
     {
         _liquidacion = _resumenDetalle is not null && _filtro.HasValue ? await Servicio.PrepararLiquidacionAsync(_resumenDetalle.DetalleId,_filtro,ct) : null;
@@ -872,7 +880,7 @@
     private Task GenerarLiquidacion() => Operar(async ct =>
     {
         if (_resumenDetalle is null || !_filtro.HasValue || !int.TryParse(_liqTalonario,out var talonario)) return;
-        var r = await Servicio.GenerarLiquidacionAsync(new(_liqOperacion,_filtro.Value,_resumenDetalle.DetalleId,_liqUnidad,talonario,_liqDetalle),ct);
+        var r = await Servicio.GenerarLiquidacionAsync(new(_liqOperacion,_filtro.Value,_resumenDetalle.DetalleId,_liqUnidad,talonario,_liqDetalle,_liqLibroIva),ct);
         ct.ThrowIfCancellationRequested();
         var lista = r.Generados.Count == 0 ? "" : $" Primero: {r.Generados[0].Comprobante}; último: {r.Generados[^1].Comprobante}.";
         _feedback = new AppUiMessage
@@ -886,6 +894,12 @@
         await PrepararLiquidacion(ct);
     });
     private IReadOnlyList<AlfaSelectOption> OpcionesTarjeta => _liquidacion?.CuentasTarjeta.Select(c => new AlfaSelectOption(c.Codigo,$"{c.Codigo} — {c.Descripcion}")).ToList() ?? [];
+    private IReadOnlyList<AlfaSelectOption> OpcionesGasto => _liquidacion?.CuentasGasto.Select(c => new AlfaSelectOption(c.Codigo,$"{c.Codigo} — {c.Descripcion}")).ToList() ?? [];
+    private Task GuardarCuentasComision(string? comision,string? iva) => Operar(async ct =>
+    {
+        await Servicio.GuardarCuentasComisionAsync(comision ?? "",iva ?? "",ct);
+        await PrepararLiquidacion(ct);
+    });
     private string CuentaDeMedio(string medio)
         => _liquidacion?.Dias.SelectMany(d => d.Lineas).FirstOrDefault(l => l.Medio == medio)?.Cuenta
            ?? _liquidacion?.CuentasPorMedio.GetValueOrDefault(AlfaCore.Services.ConciliacionGastosBancarios.Normalizar(medio)) ?? "";

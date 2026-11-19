@@ -43,7 +43,7 @@ public sealed partial class ConciliacionBancariaService
             throw new InvalidOperationException("El extracto abarca más de un año. Importá el resumen de un mes para generar el asiento.");
         var tc=await LeerComprobanteGastosAsync(cn,tx,ct);
         var catalogo=await AsientoCatalogoEnConexionAsync(cn,tx,ct,tc);
-        var (config,desdeModelo)=await LeerConfigGastosAsync(cn,tx,catalogo,ct);
+        var (config,desdeModelo,desdePlan)=await LeerConfigGastosAsync(cn,tx,catalogo,ct);
         var banco=await cn.QuerySingleOrDefaultAsync<GastosBanco>(Q("""
             SELECT LTRIM(RTRIM(ISNULL(c.DESCRIPCION,''))) Nombre,LTRIM(RTRIM(ISNULL(a.NUMERO_DOCUMENTO,''))) Cuit,ISNULL(a.IVA,'') CondIva
             FROM dbo.MA_CUENTAS c LEFT JOIN dbo.MA_CUENTASADIC a ON LTRIM(RTRIM(a.CODIGO))=LTRIM(RTRIM(c.CODIGO))
@@ -59,7 +59,7 @@ public sealed partial class ConciliacionBancariaService
         if(calculo.Movimientos.Count>MaxMovimientosGastos)
             calculo=calculo with{Errores=[..calculo.Errores,$"El extracto tiene más de {MaxMovimientosGastos} movimientos de gastos. Importá un período más corto."]};
         var fecha=new DateTime(imp.Hasta.Year,imp.Hasta.Month,DateTime.DaysInMonth(imp.Hasta.Year,imp.Hasta.Month));
-        return new(importacionId,imp.Cuenta,banco.Nombre,banco.Cuit,banco.CondIva,imp.Desde.Date,imp.Hasta.Date,fecha,calculo,config,desdeModelo,catalogo,tc);
+        return new(importacionId,imp.Cuenta,banco.Nombre,banco.Cuit,banco.CondIva,imp.Desde.Date,imp.Hasta.Date,fecha,calculo,config,desdeModelo,catalogo,tc,desdePlan);
     }
 
     /// <summary>Comprobante contable del asiento de gastos bancarios (GB por defecto, clave CONCILIACION-GASTOS-COMPROBANTE). Si no existe en la tabla de comprobantes con letra X, se usa CC.</summary>
@@ -79,13 +79,13 @@ public sealed partial class ConciliacionBancariaService
     }
 
     /// <summary>Configuración propia; la primera vez toma las cuentas del asiento modelo de Alfa Gestión, sin escribirlo ni modificarlo.</summary>
-    private static async Task<(ConciliacionGastosConfig Config,bool DesdeModelo)> LeerConfigGastosAsync(SqlConnection cn,SqlTransaction? tx,
+    private static async Task<(ConciliacionGastosConfig Config,bool DesdeModelo,bool DesdePlan)> LeerConfigGastosAsync(SqlConnection cn,SqlTransaction? tx,
         ConciliacionAsientoCatalogo catalogo,CancellationToken ct)
     {
         CommandDefinition Q(string sql,object? args=null)=>new(sql,args,tx,commandTimeout:120,cancellationToken:ct);
         var json=await cn.ExecuteScalarAsync<string?>(Q("SELECT CONVERT(nvarchar(max),ValorAux) FROM dbo.TA_CONFIGURACION WHERE CLAVE=@clave;",new{clave=ClaveGastos}));
         if(!string.IsNullOrWhiteSpace(json))
-            return (JsonSerializer.Deserialize<ConciliacionGastosConfig>(json) ?? throw new InvalidOperationException("La configuración de gastos bancarios no es válida."),false);
+            return (JsonSerializer.Deserialize<ConciliacionGastosConfig>(json) ?? throw new InvalidOperationException("La configuración de gastos bancarios no es válida."),false,false);
         var nombre=await cn.ExecuteScalarAsync<string?>(Q("SELECT TOP(1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE CLAVE=@clave AND NULLIF(LTRIM(RTRIM(VALOR)),'') IS NOT NULL;",new{clave=ClaveGastosModelo}));
         var filas=(await cn.QueryAsync<ConciliacionGastosBancarios.ModeloFila>(Q("""
             IF OBJECT_ID('dbo.MA_MODELOS','U') IS NULL SELECT CONVERT(nvarchar(15),'') Cuenta,CONVERT(nvarchar(100),'') Descripcion,CONVERT(nvarchar(1),'') DebeHaber,CONVERT(decimal(9,4),0) Alicuota WHERE 1=0
@@ -94,7 +94,11 @@ public sealed partial class ConciliacionBancariaService
                 WHERE UPPER(LTRIM(RTRIM(m.NOMBRE)))=UPPER(@nombre) ORDER BY m.SECUENCIA;
             """,new{nombre=string.IsNullOrWhiteSpace(nombre) ? ModeloGastosInicial : nombre}))).AsList();
         var sugeridas=ConciliacionGastosBancarios.SugerirCuentas(filas).Where(x=>catalogo.Cuentas.Any(c=>c.Codigo==x.Value)).ToDictionary(x=>x.Key,x=>x.Value);
-        return (new ConciliacionGastosConfig{Cuentas=sugeridas},true);
+        // Lo que el modelo no resuelve (o si no hay modelo) se propone buscando en el plan de cuentas; es solo una sugerencia que el usuario revisa.
+        var delPlan=false;
+        foreach(var (clave,cuenta) in ConciliacionGastosBancarios.SugerirCuentasDelPlan(catalogo.Cuentas))
+            if(!sugeridas.ContainsKey(clave)){sugeridas[clave]=cuenta;delPlan=true;}
+        return (new ConciliacionGastosConfig{Cuentas=sugeridas},filas.Count>0,delPlan);
     }
 
     public Task<ConciliacionAsientoResultado> GenerarGastosAsync(ConciliacionGastosSolicitud solicitud,CancellationToken ct=default)
@@ -165,11 +169,14 @@ public sealed partial class ConciliacionBancariaService
         var codigoArca=await LibroIvaService.CodigoArcaDeTablaAsync(cn,tx,prep.Tc,"X",ct);
         args.Add("codDgi",codigoArca is { } ca ? ca.ToString().PadLeft(4) : null);
         args.Add("percIva",libro.PercepcionIva);args.Add("percIibb",libro.PercepcionIibb);args.Add("percGan",libro.PercepcionGanancias);args.Add("totalLibro",libro.Total);
-        await cn.ExecuteAsync(Q($$"""
-            INSERT dbo.MV_ASIENTOS({{ColumnasComunes}},CABCUENTA,CABNOMBRE,CABCUIT,CABCONDIVA,LIVA_TIPO,LIVA_ImpNetoGrav,LIVA_ImpNetoNGrav,LIVA_AlicIVA,LIVA_ImpIVA,
-                LIVA_Ret_Perc,LIVA_Ret_IBtos,LIVA_Ret_Ganancias,LIVA_TOTAL,CodCpteDGI)
-            VALUES({{ValoresComunes}},@cuenta,@cabNombre,@cabCuit,@cabCondIva,'COMPRAS',@neto,@noGravado,@alicuota,@iva,@percIva,@percIibb,@percGan,@totalLibro,@codDgi);
-            """,args));
+        if(s.IncluirLibroIva)
+            await cn.ExecuteAsync(Q($$"""
+                INSERT dbo.MV_ASIENTOS({{ColumnasComunes}},CABCUENTA,CABNOMBRE,CABCUIT,CABCONDIVA,LIVA_TIPO,LIVA_ImpNetoGrav,LIVA_ImpNetoNGrav,LIVA_AlicIVA,LIVA_ImpIVA,
+                    LIVA_Ret_Perc,LIVA_Ret_IBtos,LIVA_Ret_Ganancias,LIVA_TOTAL,CodCpteDGI)
+                VALUES({{ValoresComunes}},@cuenta,@cabNombre,@cabCuit,@cabCondIva,'COMPRAS',@neto,@noGravado,@alicuota,@iva,@percIva,@percIibb,@percGan,@totalLibro,@codDgi);
+                """,args));
+        else
+            await cn.ExecuteAsync(Q($"INSERT dbo.MV_ASIENTOS({ColumnasComunes}) VALUES({ValoresComunes});",args));
         for(var i=0;i<debe.Count;i++)
         {
             args.Add("cuenta",debe[i].Cuenta);args.Add("importe",debe[i].Importe);args.Add("secuencia",i+2);args.Add("sentido","D");

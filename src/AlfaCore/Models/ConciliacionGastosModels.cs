@@ -20,6 +20,6 @@ public sealed record ConciliacionGastosCalculo(IReadOnlyList<ConciliacionGastosC
 }
 public sealed record ConciliacionGastosPreparacion(long ImportacionId,string CuentaBanco,string CuentaBancoNombre,string CuitBanco,string CondIvaBanco,
     DateTime Desde,DateTime Hasta,DateTime FechaSugerida,ConciliacionGastosCalculo Calculo,ConciliacionGastosConfig Config,
-    bool ConfigDesdeModelo,ConciliacionAsientoCatalogo Catalogo,string Tc="CC");
+    bool ConfigDesdeModelo,ConciliacionAsientoCatalogo Catalogo,string Tc="CC",bool ConfigDesdePlan=false);
 public sealed record ConciliacionGastosSolicitud(Guid Operacion,long ImportacionId,string Huella,DateTime Fecha,string Unidad,int Talonario,
-    string Detalle,IReadOnlyDictionary<string,string> Cuentas);
+    string Detalle,IReadOnlyDictionary<string,string> Cuentas,bool IncluirLibroIva=true);
