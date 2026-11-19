@@ -9,7 +9,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 public sealed record LiquidacionCatalogo(ConciliacionAsientoCatalogo Catalogo,string Tc);
-public sealed record LiquidacionSolicitud(Guid Operacion,long ImportacionId,long DetalleId,string Unidad,int Talonario,string Detalle,bool IncluirLibroIva=true);
+public sealed record LiquidacionSolicitud(Guid Operacion,long ImportacionId,long DetalleId,string Unidad,int Talonario,string Detalle,bool IncluirLibroIva=true,bool Unificado=true,DateTime? Fecha=null);
 public sealed record LiquidacionGenerado(DateTime Fecha,string Comprobante,int NumeroAsiento,decimal Bruto);
 public sealed record LiquidacionResultado(IReadOnlyList<LiquidacionGenerado> Generados,int Omitidos,string? Error);
 
@@ -36,13 +36,24 @@ public sealed partial class ConciliacionBancariaService
             var prop=await PrepararLiquidacionEnConexionAsync(cn,s.DetalleId,s.ImportacionId,token);
             if(prop.Errores.Count>0) throw new InvalidOperationException(prop.Errores[0]);
             var generados=new List<LiquidacionGenerado>();var omitidos=0;string? error=null;
-            foreach(var dia in prop.Dias)
+            // Un solo asiento por todo el período (por defecto) o uno por día de acreditación.
+            var documentos=new List<(LiquidacionDia Dia,DateTime Desde,DateTime Hasta)>();
+            if(s.Unificado)
+            {
+                var desde=prop.Dias.Min(d=>d.Fecha);var hasta=prop.Dias.Max(d=>d.Fecha);
+                var lineas=prop.Dias.SelectMany(d=>d.Lineas).GroupBy(l=>(l.Medio,l.Cuenta))
+                    .Select(g=>new LiquidacionLinea(g.Key.Medio,g.Key.Cuenta,g.Sum(x=>x.Operaciones),g.Sum(x=>x.Bruto),g.Sum(x=>x.Comision),g.Sum(x=>x.IvaComision),g.Sum(x=>x.Neto))).ToList();
+                var unico=new LiquidacionDia((s.Fecha??hasta).Date,lineas){Movimientos=prop.Dias.SelectMany(d=>d.Movimientos).Distinct().OrderBy(x=>x).ToList()};
+                documentos.Add((unico,desde,hasta));
+            }
+            else documentos.AddRange(prop.Dias.Select(d=>(d,d.Fecha,d.Fecha)));
+            foreach(var (dia,desdeCreditos,hastaCreditos) in documentos)
             {
                 token.ThrowIfCancellationRequested();
                 try
                 {
                     using var tx=cn.BeginTransaction(IsolationLevel.Serializable);
-                    var g=await GenerarLiquidacionDiaAsync(cn,tx,s,prop,dia,token);
+                    var g=await GenerarLiquidacionDiaAsync(cn,tx,s,prop,dia,desdeCreditos,hastaCreditos,token);
                     if(g is null){omitidos++;tx.Rollback();continue;}
                     tx.Commit();generados.Add(g);
                 }
@@ -58,7 +69,7 @@ public sealed partial class ConciliacionBancariaService
     private static Guid OperacionDia(Guid baseOp,DateTime fecha)
         => new(MD5.HashData(Encoding.UTF8.GetBytes($"{baseOp:N}|{fecha:yyyyMMdd}")));
 
-    private async Task<LiquidacionGenerado?> GenerarLiquidacionDiaAsync(SqlConnection cn,SqlTransaction tx,LiquidacionSolicitud s,LiquidacionPropuesta prop,LiquidacionDia dia,CancellationToken ct)
+    private async Task<LiquidacionGenerado?> GenerarLiquidacionDiaAsync(SqlConnection cn,SqlTransaction tx,LiquidacionSolicitud s,LiquidacionPropuesta prop,LiquidacionDia dia,DateTime desdeCreditos,DateTime hastaCreditos,CancellationToken ct)
     {
         var session=sessions.GetActiveSession()!.Id;
         CommandDefinition Q(string sql,object? args=null)=>new(sql,args,tx,commandTimeout:120,cancellationToken:ct);
@@ -84,18 +95,25 @@ public sealed partial class ConciliacionBancariaService
         // Libro de IVA Compras: neto gravado = comisión, IVA = IVA de la comisión; el total del libro es la factura del procesador.
         var alicuota=AlicuotaLibro(dia.Comision,dia.IvaComision) ?? throw new InvalidOperationException("El IVA de la comisión no corresponde a una alícuota válida.");
         var totalLibro=dia.Comision+dia.IvaComision;
-        foreach(var l in dia.Lineas.Where(l=>l.Bruto!=0)) lineas.Add((l.Cuenta,l.Bruto,"H"));
+        // Un renglón de Haber por cuenta (varios medios pueden compartir cuenta).
+        foreach(var g in dia.Lineas.Where(l=>l.Bruto!=0).GroupBy(l=>l.Cuenta)) lineas.Add((g.Key,g.Sum(l=>l.Bruto),"H"));
         if(lineas.Any(l=>l.Importe<=0)) throw new InvalidOperationException("El día tiene importes negativos o en cero que no se pueden asentar. Revisá el detalle.");
         if(lineas.Where(l=>l.Sentido=="D").Sum(l=>l.Importe)!=lineas.Where(l=>l.Sentido=="H").Sum(l=>l.Importe))
             throw new InvalidOperationException("El asiento no balancea: bruto distinto de neto más comisión e IVA.");
-        if(lineas.Any(l=>l.Cuenta.Length==0||!catalogo.Cuentas.Any(c=>c.Codigo==l.Cuenta)))
+        // Banco y tarjetas no están en la lista de cuentas de gastos del catálogo: se validan contra sus propias listas.
+        var validas=catalogo.Cuentas.Select(c=>c.Codigo).Concat(catalogo.Bancos.Select(b=>b.Codigo)).Concat(prop.CuentasTarjeta.Select(c=>c.Codigo)).ToHashSet();
+        if(lineas.Any(l=>l.Cuenta.Length==0||!validas.Contains(l.Cuenta)))
             throw new InvalidOperationException("Una cuenta no está activa, no es contable o no corresponde a pesos.");
         var total=lineas.Where(l=>l.Sentido=="D").Sum(l=>l.Importe);
 
         // Los créditos del día deben seguir pendientes y sin cambios.
-        var filtro=new ConciliacionCompararFiltro(cuentaBanco,dia.Fecha,dia.Fecha);
-        var args0=new DynamicParameters(ArgumentosComparacion(filtro));args0.Add("ids",dia.Movimientos);
-        var banco=(await cn.QueryAsync<ConciliacionFilaBanco>(Q(CompararBaseSql+"SELECT b.* FROM #Banco b WHERE b.Id IN @ids;",args0))).AsList();
+        var desdeF=desdeCreditos<dia.Fecha ? desdeCreditos : dia.Fecha;var hastaF=hastaCreditos>dia.Fecha ? hastaCreditos : dia.Fecha;
+        if((hastaF-desdeF).TotalDays>366) throw new InvalidOperationException("La fecha del asiento debe estar dentro de los 366 días de los cobros liquidados.");
+        var filtro=new ConciliacionCompararFiltro(cuentaBanco,desdeF,hastaF);
+        var args0=new DynamicParameters(ArgumentosComparacion(filtro));
+        var ids=dia.Movimientos.ToHashSet();
+        // Se filtra en memoria: un asiento por todo el período puede tener miles de créditos (límite de parámetros de IN).
+        var banco=(await cn.QueryAsync<ConciliacionFilaBanco>(Q(CompararBaseSql+"SELECT b.* FROM #Banco b;",args0))).Where(b=>ids.Contains(b.Id)).ToList();
         if(banco.Count!=dia.Movimientos.Count||banco.Any(b=>b.ConciliacionId.HasValue||b.Importe<=0))
             throw new InvalidOperationException("Hay créditos del día ya conciliados o modificados. Actualizá la conciliación.");
         if(banco.Sum(b=>b.Importe)!=dia.Neto) throw new InvalidOperationException("El neto del día no coincide con lo acreditado por el banco.");

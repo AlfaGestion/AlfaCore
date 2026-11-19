@@ -81,7 +81,7 @@ public sealed partial class ConciliacionBancariaService
     private static async Task<IReadOnlyList<LiquidacionCuenta>> CuentasTarjetaAsync(SqlConnection cn,CancellationToken ct)
         => (await cn.QueryAsync<CuentaFila>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(CODIGO)) Codigo,LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion,LTRIM(RTRIM(CuentaPrincipal)) Relacionada
-            FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(ISNULL(MedioDePago,'')))='TJ' AND ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0 ORDER BY CODIGO;
+            FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(ISNULL(MedioDePago,'')))='TJ' AND ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(NULLIF(LTRIM(RTRIM(Moneda)),'0'),'1')='1' ORDER BY CODIGO;
             """,cancellationToken:ct))).Select(c=>new LiquidacionCuenta(c.Codigo,c.Descripcion,c.Relacionada??"")).ToList();
 
     private static async Task<Dictionary<string,string>> LeerMapaMediosAsync(SqlConnection cn,CancellationToken ct)

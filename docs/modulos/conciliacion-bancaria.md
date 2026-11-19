@@ -508,6 +508,8 @@ Validación: 16 pruebas unitarias con los totales reales de octubre y, con `EXTR
 
 > **Solapa Liquidación (2026-11-19):** todo lo de NAVE (subir el Excel, cuentas por medio de pago, cuentas de comisión e IVA, asientos propuestos por día y «Generar») está en la solapa **Liquidación**, separada de «Revisión de movimientos». En Revisión, si el extracto tiene créditos de NAVE, aparece un aviso con el botón «Ir a Liquidación».
 
+> **Un solo asiento (2026-11-19):** por defecto la liquidación genera **un único asiento con el total del período** (fecha editable, por defecto fin de mes del último cobro; Debe banco/comisión/IVA y un Haber por cuenta de tarjeta) con vista previa antes de generar; todos los créditos de NAVE se concilian contra el renglón del banco y la comisión va como un único registro del Libro de IVA Compras. La opción «Un asiento por día de acreditación» sigue disponible. Las cuentas de banco y de tarjeta se validan contra sus propias listas (no contra las de gastos).
+
 Pestaña Revisar: si la importación trae créditos con el texto de `CONCILIACION-NAVE-TEXTO` (por defecto `NAVE`, incluye pagos y devoluciones), se ofrece subir de forma opcional el Excel «Detalle de operaciones» de NAVE. El banco informa solo el neto; el reporte aporta bruto, comisión, IVA de la comisión, medio de pago y fecha de acreditación.
 
 - Lector: `ConciliacionDetalleProcesador` (perfiles por procesador, columnas por nombre normalizado). Rechaza operaciones donde bruto − comisión − IVA ≠ neto. Un mismo código puede aparecer dos veces (pago y devolución).
