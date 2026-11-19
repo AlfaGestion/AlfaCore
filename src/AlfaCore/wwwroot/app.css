@@ -26000,7 +26000,9 @@ html[data-theme="light"] .tickets-table-wrap {
     border-top: 1px solid rgba(134, 150, 160, .18) !important;
 }
 
-.conversations-page--odoo .conversations-composer label {
+/* Oculta los títulos de los campos, no los botones de herramientas (Archivo, Crear sticker),
+   que también son <label> porque abren el selector de archivos. */
+.conversations-page--odoo .conversations-composer label:not(.conversations-tools-panel__tool) {
     display: none !important;
 }
 
