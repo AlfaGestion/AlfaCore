@@ -63,6 +63,9 @@
                             pasa cuando se reusa un número de versión o se sube un script con fecha atrasada. Revisá cada uno y,
                             si corresponde, aplicalo a mano en esta base (los scripts son idempotentes).
                         </p>
+                        <button type="button" class="btn btn--primary" @onclick="AplicarSalteadosAsync" disabled="@_busy">
+                            <i class="bi bi-play-circle"></i> Ejecutar salteados ahora
+                        </button>
                         <button type="button" class="btn btn--secondary" @onclick="IgnorarSalteadosAsync" disabled="@_busy">
                             <i class="bi bi-eye-slash"></i> Ignorar salteados
                         </button>
@@ -402,6 +405,32 @@
         {
             _busy = false;
         }
+    }
+
+    private async Task AplicarSalteadosAsync()
+    {
+        _busy = true;
+        SetMessage($"Ejecutando {_dashboard?.Salteados.Count ?? 0} script(s) salteado(s). Puede tardar unos momentos.", false, isWorking: true);
+        await FlushWorkingMessageAsync();
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => ActualizacionesSvc.AplicarSalteadosAsync(AppUserSession.GetCurrentUserName(Environment.UserName), Environment.MachineName),
+                "No se pudieron aplicar los scripts salteados.");
+            if (!result.Success || result.Value is null)
+            {
+                SetMessage(BuildFeedbackText(result.Feedback ?? AppUiMessage.Error("No se pudo completar", "Reintentá.")), true);
+                return;
+            }
+            SetMessage(result.Value.SinCambios
+                ? "No hay scripts salteados para aplicar."
+                : $"Se aplicaron {result.Value.CantidadAplicada} script(s) salteado(s): {string.Join(", ", result.Value.ScriptsAplicados)}. La versión de la base no cambió.", false);
+        }
+        finally
+        {
+            _busy = false;
+        }
+        await RecargarAsync();
     }
 
     private async Task IgnorarSalteadosAsync()

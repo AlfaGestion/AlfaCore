@@ -8,5 +8,6 @@ public interface IActualizacionesService
     Task<ActualizacionesSettingsDto> GetSettingsAsync(CancellationToken ct = default);
     Task SaveSettingsAsync(ActualizacionesSettingsDto settings, CancellationToken ct = default);
     Task<int> IgnorarSalteadosAsync(string? usuario, string? pc, CancellationToken ct = default);
+    Task<ActualizacionesRunResultDto> AplicarSalteadosAsync(string? usuario, string? pc, CancellationToken ct = default);
     Task<ActualizacionesRunResultDto> ExecutePendingAsync(ActualizacionesRunRequest request, CancellationToken ct = default);
 }
