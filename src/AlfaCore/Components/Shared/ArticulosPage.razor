@@ -976,6 +976,20 @@
                     </AlfaLookup>
                 </div>
                 <div class="smart-search__column">
+                    <h4><i class="bi bi-truck"></i> Proveedor</h4>
+                    <AlfaLookup TItem="ArticuloLookupOptionDto"
+                                Placeholder="Buscar proveedor..."
+                                MinimumCharacters="0"
+                                SearchText="@_proveedorFiltroTexto"
+                                SearchTextChanged="v => _proveedorFiltroTexto = v"
+                                SearchFunc="BuscarProveedoresAsync"
+                                ItemKey="p => p.Codigo"
+                                SelectedItem="@_proveedorFiltroSeleccionado"
+                                SelectedItemChanged="OnProveedorFiltroSeleccionadoAsync">
+                        <ItemTemplate Context="p">@p.Descripcion</ItemTemplate>
+                    </AlfaLookup>
+                </div>
+                <div class="smart-search__column">
                     <h4><i class="bi bi-stack"></i> Agrupar por</h4>
                     <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ArticuloViewGroupKeys.None)" @onclick="() => SetGroupAsync(ArticuloViewGroupKeys.None)">Sin agrupar</button>
                     <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ArticuloViewGroupKeys.Rubro)" @onclick="() => SetGroupAsync(ArticuloViewGroupKeys.Rubro)">Rubro</button>
@@ -1099,6 +1113,17 @@
         await AplicarFiltrosAsync();
     }
 
+    private string _proveedorFiltroTexto = string.Empty;
+    private ArticuloLookupOptionDto? _proveedorFiltroSeleccionado;
+
+    private async Task OnProveedorFiltroSeleccionadoAsync(ArticuloLookupOptionDto? item)
+    {
+        _proveedorFiltroSeleccionado = item;
+        _proveedorFiltroTexto = item?.Descripcion ?? string.Empty;
+        _filters.ProveedorCodigo = item?.Codigo ?? string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
     private async Task LoadLookupsAsync()
     {
         var result = await UiOps.RunAsync(() => ArticulosSvc.GetLookupDataAsync(), "No se pudieron cargar las referencias de artículos.");
@@ -1218,6 +1243,8 @@
         _rubroFiltroSeleccionado = null;
         _marcaFiltroTexto = string.Empty;
         _marcaFiltroSeleccionado = null;
+        _proveedorFiltroTexto = string.Empty;
+        _proveedorFiltroSeleccionado = null;
         await AplicarFiltrosAsync();
     }
 

@@ -99,3 +99,16 @@ una comanda o un llamado. No depende de un servicio aparte.
 - Pasar platos por tiempos (entrada, principal, postre).
 - Reservas: adaptar `COMANDA_RESERVAS` del legacy.
 - Cierre X/Z del salón (hoy se usa el cierre de turno de caja del POS).
+
+## Menu Caja del salon (17-11)
+
+Boton **Caja** en la barra del salon: abre `/ventas/punto-venta/mostrador?idPuntoVenta=X&caja=<accion>&volver=salon`.
+Acciones: `apertura`, `cortex`, `turno` (cierre + apertura del siguiente), `cierre`, `movimientos`, `detalle`,
+`saldos`, `reimprimir`. El Mostrador abre la ventana despues de cargar el turno y, al cerrarla, vuelve al salon
+(`_accionCajaActiva` + `HayVentanaDeCajaAbierta` en OnAfterRender).
+
+Cierre con transferencia (2026-11-17-001): `PuntoVentaTurnoService.GetCierrePreviewAsync` arma los saldos D-H por cuenta
+con MedioDePago CH/DB/EF/TJ de la caja del turno (desde FECHAOPERATIVA) y propone la caja `TPV_CAJADESTINO`.
+`CerrarTurnoAsync` graba en la misma transaccion el asiento como CybTrans.frm del legacy: TC `EQU_CYB_Transferencias`
+(CJA) 0001-X, misma cuenta H en la caja origen y D en la destino, TIPO_REG CJA, CPTE_ORIGEN 'TRANSF:' (lo lee
+VT_TRANSFERENCIASCAJA). En POS_TURNO quedan FONDO_QUEDA (la apertura siguiente lo propone) y TRANSF_IDCAJA/CPTE/IMPORTE.

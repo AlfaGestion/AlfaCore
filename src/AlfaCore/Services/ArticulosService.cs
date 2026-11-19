@@ -95,6 +95,7 @@ public sealed partial class ArticulosService(
                       )
                   AND (@RubroCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @RubroCodigo)
                   AND (@MarcaCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = @MarcaCodigo)
+                  AND (@ProveedorCodigo = '' OR LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = @ProveedorCodigo)
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
                 )
                 SELECT * FROM Pagina {paginacion};
@@ -109,6 +110,7 @@ public sealed partial class ArticulosService(
                       )
                   AND (@RubroCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @RubroCodigo)
                   AND (@MarcaCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = @MarcaCodigo)
+                  AND (@ProveedorCodigo = '' OR LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = @ProveedorCodigo)
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo);
                 """;
 
@@ -117,6 +119,7 @@ public sealed partial class ArticulosService(
                 TextoLike = SearchTextHelper.LikeContains(filters.Texto),
                 RubroCodigo = (filters.RubroCodigo ?? string.Empty).Trim().ToUpperInvariant(),
                 MarcaCodigo = (filters.MarcaCodigo ?? string.Empty).Trim().ToUpperInvariant(),
+                ProveedorCodigo = (filters.ProveedorCodigo ?? string.Empty).Trim(),
                 filters.Activo,
                 Skip = skip,
                 PageSize = pageSize

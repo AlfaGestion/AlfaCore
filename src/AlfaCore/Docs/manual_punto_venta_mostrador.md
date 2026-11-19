@@ -172,7 +172,18 @@ Menú ☰ → **Reimprimir comprobantes** (o **Ctrl+P**). Elegí el rango de fec
 Desde el menú ☰:
 
 - **Corte X:** arqueo parcial, por ejemplo en un cambio de cajero. Muestra el saldo inicial y el **saldo teórico** (saldo inicial más el efectivo cobrado en el turno). Podés contar el efectivo, cargar una observación (por ejemplo *relevo a Juan*) y tocar **Registrar corte X**. Te muestra la diferencia. **No cierra la caja.**
-- **Cerrar caja:** al final del turno. Contá el efectivo (con la grilla de billetes o cargando el total) en **Saldo final declarado**; se muestra la **diferencia** contra el saldo teórico. Tocá **Cerrar caja**. Para volver a vender hay que abrir un turno nuevo.
+- **Cerrar caja:** al final del turno. Contá el efectivo (con la grilla de billetes o cargando el total) en **Saldo final declarado**; se muestra la **diferencia** contra el saldo teórico. Para volver a vender hay que abrir un turno nuevo.
+
+### Transferir a la caja recaudadora al cerrar
+
+En la misma ventana de **Cerrar caja**:
+
+1. **Fondo que queda en la caja:** el efectivo que se deja para el turno siguiente (propone el saldo inicial del turno). La próxima **Abrir caja** lo propone como saldo inicial.
+2. **Transferir a otra caja:** viene marcado y con la caja configurada en *TPV_CAJADESTINO* (por ejemplo, la caja recaudadora). Podés elegir otra.
+3. La tabla muestra el saldo del turno de cada medio de pago (efectivo, tarjetas, cheques, débito) y cuánto se transfiere. El efectivo propuesto es **lo contado menos el fondo que queda**; el resto se pasa completo. Podés corregir cualquier importe o poner 0.
+4. Tocá **Cerrar caja y transferir**. Al terminar te muestra el comprobante de la transferencia (por ejemplo *CJA 0001-00000016X*), el importe y el fondo que quedó.
+
+La transferencia queda grabada igual que la del sistema de escritorio (Caja y Bancos → Transferencias), así que se ve en el cierre de caja y en los informes de la caja destino. Para cerrar sin transferir, desmarcá **Transferir a otra caja**.
 - **Ver saldos por caja:** las cajas abiertas en ese punto de venta, con su usuario, desde cuándo están abiertas y su saldo teórico.
 
 ## Ingresos y egresos de caja

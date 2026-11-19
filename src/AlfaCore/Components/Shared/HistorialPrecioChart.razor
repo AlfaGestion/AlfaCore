@@ -1,0 +1,180 @@
+@* Gráfico de líneas o barras del historial de precios, sin dependencias: el tooltip es CSS (hover y foco), sin idas al servidor.
+   Un solo eje Y. Las barras crecen desde cero: hacia arriba los aumentos, hacia abajo las bajas. *@
+<figure class="hpc" style="--hpc-alto:@(Alto)px">
+    @if (Series.Count > 1 || Modo == HistorialPrecioChartModo.Barras)
+    {
+        <figcaption class="hpc__leyenda">
+            @if (Modo == HistorialPrecioChartModo.Barras)
+            {
+                <span class="hpc__item"><i class="hpc__marca hpc-sube"></i>Aumento</span>
+                <span class="hpc__item"><i class="hpc__marca hpc-baja"></i>Baja</span>
+            }
+            else
+            {
+                @foreach (var s in Series)
+                {
+                    <span class="hpc__item"><i class="hpc__marca @s.Clase"></i>@s.Nombre@(s.Resumen is { Length: > 0 } ? $" · {s.Resumen}" : "")</span>
+                }
+            }
+        </figcaption>
+    }
+    @if (Etiquetas.Count == 0)
+    {
+        <p class="hpc__vacio">Sin datos para graficar.</p>
+    }
+    else
+    {
+        <div class="hpc__area">
+            <div class="hpc__eje">
+                @foreach (var t in Ticks)
+                {
+                    <span style="top:@Pct(Y(t))">@Formato(t)</span>
+                }
+            </div>
+            <div class="hpc__plot">
+                @foreach (var t in Ticks)
+                {
+                    <i class="hpc__grilla @(t == 0 ? "is-cero" : "")" style="top:@Pct(Y(t))"></i>
+                }
+                @if (Modo == HistorialPrecioChartModo.Lineas)
+                {
+                    <svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+                        @foreach (var s in Series)
+                        {
+                            @foreach (var tramo in Tramos(s))
+                            {
+                                <polyline class="hpc__linea @s.Clase" points="@tramo" />
+                            }
+                        }
+                    </svg>
+                }
+                @for (var n = 0; n < Etiquetas.Count; n++)
+                {
+                    var i = n;
+                    var (izq, ancho) = Banda(i);
+                    <div class="hpc__columna @(Xs[i] > 0.6 ? "is-derecha" : "")" style="left:@Pct(izq);width:@Pct(ancho)" tabindex="0" role="img" aria-label="@TextoColumna(i)">
+                        @if (Modo == HistorialPrecioChartModo.Barras && Valor(Series[0], i) is { } v && v != 0)
+                        {
+                            <i class="hpc__barra @(v > 0 ? "hpc-sube is-arriba" : "hpc-baja is-abajo")" style="top:@Pct(Math.Min(Y(v), Y(0)));height:@Pct(Math.Abs(Y(v) - Y(0)))"></i>
+                        }
+                        else if (Modo == HistorialPrecioChartModo.Lineas)
+                        {
+                            <i class="hpc__guia" style="left:@Pct(Relativo(i))"></i>
+                            @foreach (var s in Series)
+                            {
+                                if (Valor(s, i) is { } y)
+                                {
+                                    <i class="hpc__punto @s.Clase" style="left:@Pct(Relativo(i));top:@Pct(Y(y))"></i>
+                                }
+                            }
+                        }
+                        <div class="hpc__tooltip">
+                            <strong>@Etiquetas[i]</strong>
+                            @foreach (var s in Series)
+                            {
+                                <span><i class="hpc__marca @(Modo == HistorialPrecioChartModo.Barras ? (Valor(s, i) >= 0 ? "hpc-sube" : "hpc-baja") : s.Clase)"></i>@s.Nombre <b>@(Valor(s, i) is { } y ? Formato(y) : "—")</b></span>
+                            }
+                            @if (Detalle?.Invoke(i) is { Length: > 0 } d) { <small>@d</small> }
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="hpc__x">
+                @foreach (var i in IndicesX)
+                {
+                    <span style="left:@Pct(Xs[i])">@Etiquetas[i]</span>
+                }
+            </div>
+        </div>
+    }
+</figure>
+
+@code {
+    [Parameter] public HistorialPrecioChartModo Modo { get; set; } = HistorialPrecioChartModo.Lineas;
+    [Parameter] public IReadOnlyList<HistorialPrecioSerie> Series { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Etiquetas { get; set; } = [];
+    /// <summary>Posición de cada punto entre 0 y 1 (eje de tiempo real). Sin valor, se reparten parejos.</summary>
+    [Parameter] public IReadOnlyList<double>? Posiciones { get; set; }
+    [Parameter] public Func<double, string> Formato { get; set; } = v => v.ToString("N1");
+    [Parameter] public Func<int, string?>? Detalle { get; set; }
+    /// <summary>Línea escalonada: el valor sigue vigente hasta el próximo cambio.</summary>
+    [Parameter] public bool Escalonada { get; set; }
+    [Parameter] public bool IncluirCero { get; set; } = true;
+    [Parameter] public int Alto { get; set; } = 220;
+
+    private double _min, _max;
+    private IReadOnlyList<double> Ticks = [];
+    private IReadOnlyList<double> Xs = [];
+    private IReadOnlyList<int> IndicesX = [];
+
+    protected override void OnParametersSet()
+    {
+        var n = Etiquetas.Count;
+        Xs = Posiciones is { } p && p.Count == n ? p : Enumerable.Range(0, n).Select(i => (i + 0.5) / Math.Max(n, 1)).ToList();
+        var valores = Series.SelectMany(s => s.Valores).OfType<double>().ToList();
+        if (IncluirCero) valores.Add(0);
+        if (valores.Count == 0) valores.Add(0);
+        (_min, _max, Ticks) = Escala(valores.Min(), valores.Max());
+        IndicesX = EtiquetasVisibles(Xs);
+    }
+
+    /// <summary>Deja solo las etiquetas del eje X que entran sin pisarse, aunque los puntos estén amontonados en el tiempo.</summary>
+    internal static IReadOnlyList<int> EtiquetasVisibles(IReadOnlyList<double> posiciones, double separacion = 0.17)
+    {
+        var visibles = new List<int>();
+        for (var i = 0; i < posiciones.Count; i++)
+            if (visibles.Count == 0 || posiciones[i] - posiciones[visibles[^1]] >= separacion) visibles.Add(i);
+        return visibles;
+    }
+
+    /// <summary>Escala con pasos redondos (1, 2 o 5 por potencia de 10) que siempre contiene los datos.</summary>
+    internal static (double Min, double Max, IReadOnlyList<double> Ticks) Escala(double min, double max)
+    {
+        if (min == max) { var margen = min == 0 ? 1 : Math.Abs(min) * 0.1; min -= margen; max += margen; }
+        var crudo = (max - min) / 4;
+        var potencia = Math.Pow(10, Math.Floor(Math.Log10(crudo)));
+        var relativo = crudo / potencia;
+        var paso = (relativo <= 1 ? 1 : relativo <= 2 ? 2 : relativo <= 5 ? 5 : 10) * potencia;
+        var desde = Math.Floor(min / paso) * paso;
+        var hasta = Math.Ceiling(max / paso) * paso;
+        var ticks = new List<double>();
+        for (var i = 0; desde + i * paso <= hasta + paso / 1000; i++) ticks.Add(Math.Round(desde + i * paso, 8));
+        return (desde, hasta, ticks);
+    }
+
+    private double Y(double v) => _max == _min ? 0.5 : 1 - (v - _min) / (_max - _min);
+    private static string Pct(double fraccion) => (fraccion * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    private static double? Valor(HistorialPrecioSerie s, int i) => i < s.Valores.Count ? s.Valores[i] : null;
+
+    private (double Izquierda, double Ancho) Banda(int i)
+    {
+        var izq = i == 0 ? 0 : (Xs[i - 1] + Xs[i]) / 2;
+        var der = i == Xs.Count - 1 ? 1 : (Xs[i] + Xs[i + 1]) / 2;
+        return (izq, Math.Max(der - izq, 0.001));
+    }
+
+    private double Relativo(int i) { var (izq, ancho) = Banda(i); return (Xs[i] - izq) / ancho; }
+
+    private IEnumerable<string> Tramos(HistorialPrecioSerie s)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var actual = new List<string>();
+        string P(double x, double v) => $"{(x * 1000).ToString("0.##", inv)},{(Y(v) * 300).ToString("0.##", inv)}";
+        for (var i = 0; i < Etiquetas.Count; i++)
+        {
+            if (Valor(s, i) is not { } v)
+            {
+                if (actual.Count > 0) yield return string.Join(' ', actual);
+                actual.Clear();
+                continue;
+            }
+            if (Escalonada && actual.Count > 0 && Valor(s, i - 1) is { } previo) actual.Add(P(Xs[i], previo));
+            actual.Add(P(Xs[i], v));
+            if (Escalonada && i == Etiquetas.Count - 1) actual.Add(P(1, v));
+        }
+        if (actual.Count > 0) yield return string.Join(' ', actual);
+    }
+
+    private string TextoColumna(int i)
+        => $"{Etiquetas[i]}: " + string.Join(", ", Series.Select(s => $"{s.Nombre} {(Valor(s, i) is { } v ? Formato(v) : "sin dato")}"));
+}

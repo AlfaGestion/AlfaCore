@@ -160,7 +160,8 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("articulos", "Artículos", "/articulos"),
-            ("listas", "Listas de precios", "/articulos/listas-precios")
+            ("listas", "Listas de precios", "/articulos/listas-precios"),
+            ("historial", "Historial de precios", "/articulos/historial-precios")
         ]);
 
     // Tablas de referencia (antes sin menú propio: se llegaba desde Archivos).

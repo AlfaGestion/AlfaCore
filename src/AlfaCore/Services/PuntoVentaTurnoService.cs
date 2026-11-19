@@ -163,7 +163,7 @@ public sealed class PuntoVentaTurnoService(
             }
         }, "No se pudo abrir el turno de caja.", ct);
 
-    public Task CerrarTurnoAsync(PuntoVentaTurnoCierreRequest request, CancellationToken ct = default)
+    public Task<PuntoVentaTurnoCierreResultDto> CerrarTurnoAsync(PuntoVentaTurnoCierreRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "CerrarTurno", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -182,6 +182,18 @@ public sealed class PuntoVentaTurnoService(
             var saldoTeorico = await GetSaldoTeoricoActualInternalAsync(cn, request.IdTurno, token);
             var diferencia = request.SaldoFinalDeclarado - saldoTeorico;
             var usuario = NormalizeUser(request.UsuarioAccion);
+            var resultado = new PuntoVentaTurnoCierreResultDto { Diferencia = diferencia };
+
+            var lineasTransferencia = request.Transferencia
+                .Where(l => !string.IsNullOrWhiteSpace(l.Cuenta) && l.Importe != 0)
+                .ToList();
+            var cajaDestino = (request.IdCajaDestino ?? string.Empty).Trim();
+            if (lineasTransferencia.Count > 0 && cajaDestino.Length == 0)
+                throw new InvalidOperationException("Elegí la caja a la que se transfiere.");
+            if (lineasTransferencia.Count > 0 && string.Equals(cajaDestino, turno.IdCaja.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("La caja destino tiene que ser distinta de la caja del turno.");
+            if (request.FondoQueda is < 0)
+                throw new InvalidOperationException("El fondo que queda en la caja no puede ser negativo.");
 
             await using var tx = await cn.BeginTransactionAsync(token);
             try
@@ -195,6 +207,7 @@ public sealed class PuntoVentaTurnoService(
                         DIFERENCIA = @Diferencia,
                         ESTADO = @Estado,
                         OBSERVACIONES = @Observaciones,
+                        FONDO_QUEDA = @FondoQueda,
                         FECHAHORA_MODIFICACION = GETDATE()
                     WHERE ID = @Id AND ESTADO = @EstadoAbierto;
                     """,
@@ -207,6 +220,7 @@ public sealed class PuntoVentaTurnoService(
                         Diferencia = diferencia,
                         Estado = PuntoVentaTurnoEstadoKeys.Cerrado,
                         request.Observaciones,
+                        request.FondoQueda,
                         EstadoAbierto = PuntoVentaTurnoEstadoKeys.Abierto
                     },
                     transaction: (SqlTransaction)tx, cancellationToken: token));
@@ -216,8 +230,26 @@ public sealed class PuntoVentaTurnoService(
 
                 await InsertBilletesAsync(cn, tx, request.IdTurno, PuntoVentaTurnoMomentoKeys.Cierre, request.Billetes, token);
 
+                if (lineasTransferencia.Count > 0)
+                {
+                    var (comprobante, total, descDestino) = await GrabarTransferenciaAsync(
+                        cn, (SqlTransaction)tx, turno.IdCaja.Trim(), cajaDestino, lineasTransferencia, usuario, token);
+
+                    await cn.ExecuteAsync(new CommandDefinition("""
+                        UPDATE dbo.POS_TURNO
+                        SET TRANSF_IDCAJA = @Destino, TRANSF_CPTE = @Comprobante, TRANSF_IMPORTE = @Total
+                        WHERE ID = @Id;
+                        """,
+                        new { Id = request.IdTurno, Destino = cajaDestino, Comprobante = comprobante, Total = total },
+                        transaction: (SqlTransaction)tx, cancellationToken: token));
+
+                    resultado.Comprobante = comprobante;
+                    resultado.CajaDestino = descDestino;
+                    resultado.ImporteTransferido = total;
+                }
+
                 await tx.CommitAsync(token);
-                return true;
+                return resultado;
             }
             catch
             {
@@ -225,6 +257,202 @@ public sealed class PuntoVentaTurnoService(
                 throw;
             }
         }, "No se pudo cerrar el turno de caja.", ct);
+
+    // ------------------------------------------------------------ transferencia al cerrar
+    // Misma logica que CybTrans.frm (legacy, llamado desde el cierre de comandas con @DESDECOMANDA):
+    // saldos D-H por cuenta de medio de pago (CH/DB/EF/TJ) de la caja en el periodo del turno, caja
+    // destino propuesta = TA_CONFIGURACION.TPV_CAJADESTINO, TC = EQU_CYB_Transferencias (CJA).
+
+    private const string MediosTransferibles = "'CH','DB','EF','TJ'";
+
+    public Task<PuntoVentaTurnoCierrePreviewDto> GetCierrePreviewAsync(int idTurno, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetCierrePreview", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var turno = await LoadTurnoAsync(cn, idTurno, token)
+                ?? throw new InvalidOperationException("No se encontró el turno indicado.");
+            var caja = turno.IdCaja.Trim();
+
+            var preview = new PuntoVentaTurnoCierrePreviewDto
+            {
+                SaldoTeorico = await GetSaldoTeoricoActualInternalAsync(cn, idTurno, token)
+            };
+
+            if (await ObjectExistsAsync(cn, "dbo.V_Ta_Cajas", token))
+            {
+                preview.Cajas = (await cn.QueryAsync<PuntoVentaCajaOpcionDto>(new CommandDefinition("""
+                    SELECT LTRIM(RTRIM(IdCajas)) AS IdCaja, LTRIM(RTRIM(ISNULL(Descripcion, ''))) AS Descripcion
+                    FROM dbo.V_Ta_Cajas
+                    WHERE LTRIM(RTRIM(IdCajas)) <> @Caja
+                    ORDER BY Descripcion;
+                    """, new { Caja = caja }, cancellationToken: token))).ToList();
+            }
+
+            var sugerida = (await ReadConfigAsync(cn, "TPV_CAJADESTINO", token)).Trim();
+            if (preview.Cajas.Any(c => string.Equals(c.IdCaja, sugerida, StringComparison.OrdinalIgnoreCase)))
+                preview.IdCajaDestinoSugerida = sugerida;
+
+            var cuentaCaja = (await ReadConfigAsync(cn, "CUENTA_CAJA", token)).Trim();
+            preview.Saldos = (await cn.QueryAsync<PuntoVentaTurnoSaldoMedioDto>(new CommandDefinition($"""
+                SELECT LTRIM(RTRIM(c.CODIGO)) AS Cuenta,
+                       LTRIM(RTRIM(ISNULL(c.DESCRIPCION, ''))) AS Descripcion,
+                       LTRIM(RTRIM(c.MedioDePago)) AS MedioDePago,
+                       ISNULL(a.MONEDA, '   1') AS Moneda,
+                       CAST(ISNULL(NULLIF(a.COTIZACION, 0), 1) AS decimal(18, 6)) AS Cotizacion,
+                       CAST(SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END) AS decimal(18, 2)) AS Saldo
+                FROM dbo.MV_ASIENTOS a
+                INNER JOIN dbo.MA_CUENTAS c ON c.CODIGO = a.CUENTA
+                WHERE LTRIM(RTRIM(a.IDCAJAS)) = @Caja
+                  AND a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, CAST(GETDATE() AS date))
+                  AND c.MedioDePago IN ({MediosTransferibles})
+                GROUP BY c.CODIGO, c.DESCRIPCION, c.MedioDePago, a.MONEDA, a.COTIZACION
+                HAVING SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END) <> 0
+                ORDER BY CASE WHEN c.MedioDePago = 'EF' THEN 0 ELSE 1 END, c.DESCRIPCION;
+                """,
+                new { Caja = caja, Desde = turno.FechaOperativa.Date }, cancellationToken: token))).ToList();
+
+            foreach (var s in preview.Saldos)
+                s.EsEfectivoLocal = s.MedioDePago == "EF"
+                    && (cuentaCaja.Length == 0 || string.Equals(s.Cuenta, cuentaCaja, StringComparison.OrdinalIgnoreCase))
+                    && s.Moneda.Trim() is "" or "1";
+
+            return preview;
+        }, "No se pudieron calcular los saldos de la caja.", ct);
+
+    public Task<decimal?> GetFondoSugeridoAsync(int idPuntoVenta, string idCaja, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetFondoSugerido", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            return await cn.QuerySingleOrDefaultAsync<decimal?>(new CommandDefinition("""
+                SELECT TOP (1) FONDO_QUEDA
+                FROM dbo.POS_TURNO
+                WHERE IDPUNTOVENTA = @IdPuntoVenta AND LTRIM(RTRIM(ISNULL(IDCAJA, ''))) = @Caja
+                  AND ESTADO = @Cerrado
+                ORDER BY FECHAHORA_CIERRE DESC, ID DESC;
+                """,
+                new { IdPuntoVenta = idPuntoVenta, Caja = (idCaja ?? string.Empty).Trim(), Cerrado = PuntoVentaTurnoEstadoKeys.Cerrado },
+                cancellationToken: token));
+        }, "No se pudo obtener el fondo del turno anterior.", ct);
+
+    private static async Task<(string Comprobante, decimal Total, string DescripcionDestino)> GrabarTransferenciaAsync(
+        SqlConnection cn, SqlTransaction tx, string cajaOrigen, string cajaDestino,
+        IReadOnlyList<PuntoVentaTurnoTransferenciaLineaRequest> lineas, string usuario, CancellationToken ct)
+    {
+        var tc = (await ReadConfigAsync(cn, "EQU_CYB_Transferencias", ct, tx)).Trim();
+        if (tc.Length == 0)
+            tc = "CJA";
+        const string sucursal = "0001";
+        const string letra = "X";
+
+        var unegocioConfig = (await ReadConfigAsync(cn, "UNEGOCIO", ct, tx)).Trim();
+        var cajas = (await cn.QueryAsync<(string IdCaja, string Descripcion, string UNegocio)>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(IdCajas)), LTRIM(RTRIM(ISNULL(Descripcion, ''))), LTRIM(RTRIM(ISNULL(UNIDADNEGOCIO, '')))
+            FROM dbo.V_Ta_Cajas
+            WHERE LTRIM(RTRIM(IdCajas)) IN @Cajas;
+            """, new { Cajas = new[] { cajaOrigen, cajaDestino } }, transaction: tx, cancellationToken: ct)))
+            .ToDictionary(c => c.IdCaja, StringComparer.OrdinalIgnoreCase);
+
+        if (!cajas.TryGetValue(cajaDestino, out var destino))
+            throw new InvalidOperationException($"La caja destino {cajaDestino} no existe.");
+        cajas.TryGetValue(cajaOrigen, out var origen);
+
+        string Fmt(string valor, int largo) => (valor ?? string.Empty).Trim().PadLeft(largo);
+        var unOrigen = Fmt(string.IsNullOrWhiteSpace(origen.UNegocio) ? (unegocioConfig.Length > 0 ? unegocioConfig : "1") : origen.UNegocio, 4);
+        var unDestino = Fmt(string.IsNullOrWhiteSpace(destino.UNegocio) ? (unegocioConfig.Length > 0 ? unegocioConfig : "1") : destino.UNegocio, 4);
+
+        // Numeracion y numero de asiento con el mismo criterio que sp_web_CreaAsientoIngresoEgreso
+        // (secuencia de MV_ASIENTOS para TC/0001/X y TIPO_REG CJA), bloqueando para que dos cierres
+        // simultaneos no tomen el mismo numero.
+        var ultimoNumero = await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition("""
+            SELECT MAX(NUMERO)
+            FROM dbo.MV_ASIENTOS WITH (UPDLOCK, HOLDLOCK)
+            WHERE TC = @Tc AND SUCURSAL = @Sucursal AND LETRA = @Letra;
+            """, new { Tc = tc, Sucursal = sucursal, Letra = letra }, transaction: tx, cancellationToken: ct));
+        var numero = (int.TryParse((ultimoNumero ?? string.Empty).Trim(), out var ultimo) ? ultimo : 0) + 1;
+        var numeroTexto = numero.ToString("00000000", System.Globalization.CultureInfo.InvariantCulture);
+
+        var fecha = DateTime.Today;
+        var periodo = await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition("""
+            SELECT TOP (1) PERIODO FROM dbo.MV_EJERCICIOS WHERE [FECHA DESDE] <= @Fecha AND [FECHA HASTA] >= @Fecha;
+            """, new { Fecha = fecha }, transaction: tx, cancellationToken: ct)) ?? "0";
+
+        var nroAsiento = await cn.QuerySingleAsync<int>(new CommandDefinition("""
+            SELECT ISNULL(MAX([NUMERO ASIENTO]), 0) + 1
+            FROM dbo.MV_ASIENTOS WITH (UPDLOCK, HOLDLOCK)
+            WHERE MES_OPERATIVO = @Mes AND LTRIM(RTRIM(TIPO_REG)) = 'CJA' AND LTRIM(RTRIM(PERIODO)) = @Periodo;
+            """, new { Mes = fecha.Month, Periodo = periodo.Trim() }, transaction: tx, cancellationToken: ct));
+
+        var total = lineas.Sum(l => Math.Abs(l.Importe));
+        var detalle = $"Transferencias ({cajaOrigen}-{cajaDestino}) cierre de caja";
+        var secuencia = 0;
+
+        foreach (var linea in lineas)
+        {
+            var importe = Math.Abs(linea.Importe);
+            // Saldo positivo: sale de la caja origen (H) y entra en la destino (D). Negativo: al reves.
+            var origenHaber = linea.Importe > 0;
+            var moneda = string.IsNullOrWhiteSpace(linea.Moneda) ? "   1" : Fmt(linea.Moneda, 4);
+            var cotizacion = linea.Cotizacion <= 0 ? 1 : linea.Cotizacion;
+
+            foreach (var (caja, un, dh) in new[]
+            {
+                (cajaDestino, unDestino, origenHaber ? "D" : "H"),
+                (cajaOrigen, unOrigen, origenHaber ? "H" : "D")
+            })
+            {
+                secuencia++;
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    INSERT INTO dbo.MV_ASIENTOS
+                        (CUENTA, SECUENCIA, MES_OPERATIVO, [NUMERO ASIENTO], FECHA, DETALLE, TC, SUCURSAL, NUMERO, LETRA,
+                         [DEBE-HABER], IMPORTE, MONEDA, COTIZACION, PERIODO, CABIMPORTE, TIPO_REG, CONTABILIZADO,
+                         FECHAHORA_GRABACION, FechaSubdiario, USUARIO_LOGEADO, IDCAJAS, UNEGOCIO, CPTE_ORIGEN)
+                    VALUES
+                        (@Cuenta, @Secuencia, @Mes, @NroAsiento, @Fecha, @Detalle, @Tc, @Sucursal, @Numero, @Letra,
+                         @Dh, @Importe, @Moneda, @Cotizacion, @Periodo, @Total, 'CJA', 0,
+                         GETDATE(), @Fecha, @Usuario, @Caja, @UNegocio, 'TRANSF:');
+                    """,
+                    new
+                    {
+                        Cuenta = linea.Cuenta.Trim(),
+                        Secuencia = secuencia,
+                        Mes = fecha.Month,
+                        NroAsiento = nroAsiento,
+                        Fecha = fecha,
+                        Detalle = detalle,
+                        Tc = tc,
+                        Sucursal = sucursal,
+                        Numero = numeroTexto,
+                        Letra = letra,
+                        Dh = dh,
+                        Importe = importe,
+                        Moneda = moneda,
+                        Cotizacion = cotizacion,
+                        Periodo = periodo.Trim(),
+                        Total = total,
+                        Usuario = usuario,
+                        Caja = Fmt(caja, 4),
+                        UNegocio = un
+                    },
+                    transaction: tx, cancellationToken: ct));
+            }
+        }
+
+        var descDestino = string.IsNullOrWhiteSpace(destino.Descripcion) ? $"Caja {cajaDestino}" : destino.Descripcion;
+        return ($"{tc} {sucursal}-{numeroTexto}{letra}", total, descDestino);
+    }
+
+    private static async Task<string> ReadConfigAsync(SqlConnection cn, string clave, CancellationToken ct, SqlTransaction? tx = null)
+        => await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(
+               "SELECT TOP (1) LTRIM(RTRIM(ISNULL(VALOR, ''))) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = UPPER(@Clave);",
+               new { Clave = clave }, transaction: tx, cancellationToken: ct)) ?? string.Empty;
+
+    private static async Task<bool> ObjectExistsAsync(SqlConnection cn, string nombre, CancellationToken ct)
+        => await cn.QuerySingleAsync<int>(new CommandDefinition(
+               "SELECT CASE WHEN OBJECT_ID(@Nombre) IS NULL THEN 0 ELSE 1 END;",
+               new { Nombre = nombre }, cancellationToken: ct)) == 1;
 
     public Task<decimal> GetSaldoTeoricoActualAsync(int idTurno, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetSaldoTeoricoActual", async token =>

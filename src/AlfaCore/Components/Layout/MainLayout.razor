@@ -3963,6 +3963,26 @@ else
                 : string.Empty;
             _loginPassword = string.Empty;
             _internalLoginDraftPrimed = true;
+
+            // Con /{idweb}/{idbase} en la URL, la ruta manda: si se elige otra base y la URL sigue
+            // con la anterior, EnsureActiveSessionFromRouteAsync vuelve a activar la base de la ruta
+            // y la elegida "no queda" (caso /ALFANET/113 -> Seleccionar ALFA NET - PRUEBAS). Se
+            // cambia el idbase de la URL (mismo resto de ruta, sin recarga).
+            if (TryGetRouteBaseId(out var routeBaseId) && routeBaseId != selectedSession.BaseId && selectedSession.BaseId > 0)
+            {
+                var relativa = Nav.ToBaseRelativePath(Nav.Uri);
+                var corte = relativa.IndexOfAny(['?', '#']);
+                var ruta = corte >= 0 ? relativa[..corte] : relativa;
+                var segmentos = ruta.Split('/');
+                var idxBase = Array.FindIndex(segmentos, s => s.Length > 0) + 1;
+                if (idxBase > 0 && idxBase < segmentos.Length && segmentos[idxBase] == routeBaseId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                {
+                    segmentos[idxBase] = selectedSession.BaseId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    _drawerRouteBaseId = selectedSession.BaseId;
+                    Nav.NavigateTo(string.Join('/', segmentos));
+                }
+            }
+
             await InvokeAsync(StateHasChanged);
         }
         catch

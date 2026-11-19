@@ -2071,6 +2071,58 @@
         gap: 0.4rem;
     }
 
+    .pos-cierre-transf {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        margin: 0.75rem 0;
+        padding: 0.75rem;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 0.6rem;
+    }
+
+    .pos-cierre-transf__check {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .pos-cierre-transf__check input {
+        width: auto;
+        height: auto;
+        margin: 0;
+    }
+
+    .pos-cierre-transf__tabla {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+
+    .pos-cierre-transf__tabla th,
+    .pos-cierre-transf__tabla td {
+        padding: 0.35rem 0.4rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        text-align: left;
+    }
+
+    .pos-cierre-transf__tabla th:nth-child(n+2),
+    .pos-cierre-transf__tabla td:nth-child(n+2) {
+        text-align: right;
+    }
+
+    .pos-cierre-transf__tabla input {
+        width: 9rem;
+        text-align: right;
+    }
+
+    .pos-cierre-transf__tabla tfoot td {
+        font-weight: 700;
+        border-bottom: 0;
+    }
+
     .pos-pedido-banner__acciones .pos-pedido-banner__salir {
         background: #d1fae5;
         border-color: #d1fae5;
@@ -5433,6 +5485,17 @@
                 </div>
             </section>
         }
+        @if (DesdeSalon)
+        {
+            <section class="pos-loading" style="padding-top:0.75rem;">
+                <div class="pos-charge-modal__feedback pos-success-banner pos-pedido-banner">
+                    <span>Caja del salón</span>
+                    <button type="button" class="btn btn--ghost btn--sm pos-pedido-banner__volver" @onclick="VolverAlSalonDesdeCaja">
+                        <i class="bi bi-arrow-left"></i> Volver al salón
+                    </button>
+                </div>
+            </section>
+        }
         @if (!string.IsNullOrWhiteSpace(_pedidoError))
         {
             <section class="pos-loading" style="padding-top:0.75rem;">
@@ -5975,6 +6038,8 @@
         {
             <div class="pos-arca-overlay" role="status" aria-live="polite">
                 <div class="pos-arca-overlay__panel">
+                    @if (EsComprobanteFiscalSeleccionado())
+                    {
                     <div class="pos-arca-overlay__brand">
                         <span class="pos-arca-overlay__brand-mark">ARCA</span>
                         <span class="pos-arca-overlay__brand-copy">
@@ -5984,6 +6049,7 @@
                         </span>
                         <span class="pos-arca-overlay__environment">@_arcaEnvironmentLabel</span>
                     </div>
+                    }
                     <div class="pos-arca-overlay__body">
                         <span class="pos-arca-overlay__spinner"><i class="bi bi-arrow-repeat"></i></span>
                         <div>
@@ -6978,6 +7044,30 @@
     </div>
 }
 
+@if (_cierreResultado is not null)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CerrarResultadoCierre">
+    <section class="cuentas-modal" role="dialog" aria-label="Caja cerrada" @onclick:stopPropagation>
+        <header class="cuentas-modal__header">
+            <h3>Caja cerrada</h3>
+        </header>
+        <div class="cuentas-modal__body">
+            <p>El turno quedó cerrado. Diferencia de arqueo: <strong>@FmtMoney(_cierreResultado.Diferencia)</strong></p>
+            @if (!string.IsNullOrWhiteSpace(_cierreResultado.Comprobante))
+            {
+                <p>Se transfirieron <strong>@FmtMoney(_cierreResultado.ImporteTransferido)</strong> a <strong>@_cierreResultado.CajaDestino</strong> (comprobante @_cierreResultado.Comprobante).</p>
+            }
+            <p>Fondo que queda en la caja: <strong>@FmtMoney(_cierreFondoQueda)</strong></p>
+        </div>
+        <footer class="cuentas-modal__actions">
+            <button type="button" class="btn btn--primary" @onclick="CerrarResultadoCierre">
+                @(_accionCajaActiva == "turno" ? "Abrir el turno siguiente" : "Listo")
+            </button>
+        </footer>
+    </section>
+    </div>
+}
+
 @if (_showCierreCajaModal && _turnoActual is not null)
 {
     <div class="cuentas-modal-backdrop" @onclick="CerrarModalCierreCaja">
@@ -7018,13 +7108,77 @@
             <p>Diferencia (declarado − teórico): <strong>@FmtMoney(_cierreSaldoFinalDeclarado - _cierreSaldoTeoricoPreview)</strong></p>
 
             <div class="field">
+                <label>Fondo que queda en la caja</label>
+                <input type="number" step="0.01" min="0" @bind="_cierreFondoQueda" />
+                <span class="pos-field-hint">Efectivo que se deja para el turno siguiente. La próxima apertura lo propone como saldo inicial.</span>
+            </div>
+
+            <section class="pos-cierre-transf">
+                <label class="pos-cierre-transf__check">
+                    <input type="checkbox" checked="@_cierreTransferir" @onchange="e => _cierreTransferir = e.Value is true" disabled="@(_cierrePreview is null || _cierrePreview.Cajas.Count == 0)" />
+                    Transferir a otra caja
+                </label>
+                @if (!string.IsNullOrWhiteSpace(_cierrePreviewError))
+                {
+                    <p class="pos-field-hint">@_cierrePreviewError</p>
+                }
+                else if (_cierrePreview is not null && _cierrePreview.Cajas.Count == 0)
+                {
+                    <p class="pos-field-hint">No hay otras cajas cargadas para transferir.</p>
+                }
+                else if (_cierreTransferir && _cierrePreview is not null)
+                {
+                    <div class="field">
+                        <label>Caja destino</label>
+                        <select @bind="_cierreCajaDestino">
+                            <option value="">Elegí la caja</option>
+                            @foreach (var caja in _cierrePreview.Cajas)
+                            {
+                                <option value="@caja.IdCaja">@caja.IdCaja · @caja.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    @if (_cierrePreview.Saldos.Count == 0)
+                    {
+                        <p class="pos-field-hint">No hay saldos de medios de pago en esta caja para transferir.</p>
+                    }
+                    else
+                    {
+                        <table class="pos-cierre-transf__tabla">
+                            <thead>
+                                <tr><th>Medio de pago</th><th>Saldo del turno</th><th>A transferir</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var saldo in _cierrePreview.Saldos)
+                                {
+                                    var s = saldo;
+                                    <tr>
+                                        <td>@s.Descripcion@(s.Moneda.Trim() is "" or "1" ? "" : $" (moneda {s.Moneda.Trim()})")</td>
+                                        <td>@FmtMoney(s.Saldo)</td>
+                                        <td>
+                                            <input type="number" step="0.01" value="@GetImporteTransferir(s).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)"
+                                                   @onchange="e => SetImporteTransferir(s, e.Value)" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr><td colspan="2">Total a transferir</td><td>@FmtMoney(TotalATransferir())</td></tr>
+                            </tfoot>
+                        </table>
+                        <p class="pos-field-hint">El efectivo propuesto es lo contado menos el fondo que queda. Tarjetas, cheques y transferencias se pasan completos. Podés corregir cualquier importe.</p>
+                    }
+                }
+            </section>
+
+            <div class="field">
                 <label>Observaciones</label>
                 <input @bind="_cierreObservaciones" placeholder="Opcional" />
             </div>
         </div>
         <footer class="cuentas-modal__actions">
             <button type="button" class="btn btn--primary" @onclick="ConfirmarCierreCajaAsync" disabled="@_cierreSaving">
-                @(_cierreSaving ? "Cerrando..." : "Cerrar caja")
+                @(_cierreSaving ? "Cerrando..." : (_cierreTransferir && TotalATransferir() != 0 ? "Cerrar caja y transferir" : "Cerrar caja"))
             </button>
             <button type="button" class="btn btn--ghost" @onclick="CerrarModalCierreCaja">Cancelar</button>
         </footer>
@@ -7312,6 +7466,80 @@
 
     private bool EsCierrePedido => string.Equals(AccionPedidoQuery, "cerrar", StringComparison.OrdinalIgnoreCase);
 
+    // Menú "Caja" del salón: abre el Mostrador con la ventana pedida (caja=...) y volver=salon.
+    // Al cerrar esa ventana se vuelve solo al salón.
+    [SupplyParameterFromQuery(Name = "caja")]
+    public string? AccionCajaQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "volver")]
+    public string? VolverQuery { get; set; }
+
+    private bool DesdeSalon => _pedidoContexto is null
+        && string.Equals(VolverQuery, "salon", StringComparison.OrdinalIgnoreCase)
+        && (IdPuntoVentaQuery ?? 0) > 0;
+    private string RutaSalonDesdeCaja => $"/ventas/punto-venta/salon?idPuntoVenta={IdPuntoVentaQuery}";
+    private string? _accionCajaActiva;
+    private bool _volviendoAlSalon;
+
+    private bool HayVentanaDeCajaAbierta => _showCashDetailModal || _showCashInOutModal || _showCorteXModal
+        || _showCierreCajaModal || _cierreResultado is not null || _showAperturaModal || _showSaldosPorCajaModal || _showReprintModal
+        || _showReceiptModal || _showPublicQrModal;
+
+    private async Task AbrirAccionCajaAsync(string accion)
+    {
+        accion = accion.Trim().ToLowerInvariant();
+        switch (accion)
+        {
+            case "detalle":
+                await OpenCashDetailModalAsync();
+                break;
+            case "movimientos":
+                await OpenCashInOutModalAsync();
+                break;
+            case "saldos":
+                await AbrirModalSaldosPorCajaAsync();
+                break;
+            case "reimprimir":
+                await OpenReprintModalAsync();
+                break;
+            case "apertura":
+                if (_turnoActual is not null)
+                    return;
+                AbrirModalApertura();
+                break;
+            case "cortex":
+            case "cierre":
+            case "turno":
+                // Sin turno abierto no hay nada que cortar ni cerrar: queda el aviso "Abrir caja".
+                if (_turnoActual is null)
+                    return;
+                if (accion == "cortex")
+                    await AbrirModalCorteXAsync();
+                else
+                    await AbrirModalCierreCajaAsync();
+                break;
+            default:
+                return;
+        }
+
+        _accionCajaActiva = accion;
+    }
+
+    private void VolverAlSalonDesdeCaja()
+    {
+        _volviendoAlSalon = true;
+        Nav.NavigateTo(RouteCtx.BuildRoute(RutaSalonDesdeCaja));
+    }
+
+    private void VolverAlOrigenDelPedido()
+    {
+        if (_pedidoContexto is null)
+            return;
+        Nav.NavigateTo(RouteCtx.BuildRoute(EsPedidoSalon
+            ? RutaSalon
+            : $"/ventas/delivery?idPuntoVenta={_pedidoContexto.IdPuntoVenta}"));
+    }
+
     // Mesa del modo Salón: fuera del cierre, el carrito arranca vacío y lo cargado se agrega
     // como una ronda nueva (PuntoVentaSalonService.AgregarItemsAsync), sin tocar lo ya enviado a cocina.
     private bool EsPedidoSalon => string.Equals(_pedidoContexto?.Modalidad, PuntoVentaPedidoModalidadKeys.Salon, StringComparison.OrdinalIgnoreCase);
@@ -7351,6 +7579,50 @@
 
     private bool _showCierreCajaModal;
     private decimal _cierreSaldoFinalDeclarado;
+    private decimal _cierreFondoQueda;
+    private bool _cierreTransferir;
+    private string _cierreCajaDestino = string.Empty;
+    private PuntoVentaTurnoCierrePreviewDto? _cierrePreview;
+    private string? _cierrePreviewError;
+    private readonly Dictionary<string, decimal> _cierreImportes = new(StringComparer.OrdinalIgnoreCase);
+    private PuntoVentaTurnoCierreResultDto? _cierreResultado;
+    private decimal? _fondoSugerido;
+
+    private static string ClaveSaldo(PuntoVentaTurnoSaldoMedioDto s) => $"{s.Cuenta}|{s.Moneda.Trim()}|{s.Cotizacion}";
+
+    // Efectivo propuesto: lo contado (o, sin contar, saldo inicial + efectivo del turno) menos el fondo que queda.
+    private decimal EfectivoPropuesto(PuntoVentaTurnoSaldoMedioDto s)
+    {
+        var disponible = _cierreSaldoFinalDeclarado > 0
+            ? _cierreSaldoFinalDeclarado
+            : (_turnoActual?.SaldoInicial ?? 0) + s.Saldo;
+        return Math.Max(0, Math.Round(disponible - _cierreFondoQueda, 2));
+    }
+
+    private decimal GetImporteTransferir(PuntoVentaTurnoSaldoMedioDto s)
+        => _cierreImportes.TryGetValue(ClaveSaldo(s), out var importe)
+            ? importe
+            : s.EsEfectivoLocal ? EfectivoPropuesto(s) : s.Saldo;
+
+    private void SetImporteTransferir(PuntoVentaTurnoSaldoMedioDto s, object? valor)
+    {
+        var texto = (valor?.ToString() ?? string.Empty).Trim().Replace(',', '.');
+        _cierreImportes[ClaveSaldo(s)] = decimal.TryParse(texto, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var importe)
+            ? importe
+            : 0;
+    }
+
+    private decimal TotalATransferir()
+        => _cierreTransferir && _cierrePreview is not null
+            ? _cierrePreview.Saldos.Sum(GetImporteTransferir)
+            : 0;
+
+    private void CerrarResultadoCierre()
+    {
+        _cierreResultado = null;
+        if (_accionCajaActiva == "turno")
+            AbrirModalApertura();
+    }
     private string _cierreObservaciones = string.Empty;
     private Dictionary<int, int> _cierreCantidades = [];
     private string? _cierreError;
@@ -7495,9 +7767,6 @@
                         ? null
                         : puntoVentaPedido!.Sucursal.Trim();
                     _pedidoSucursalOverride = string.IsNullOrWhiteSpace(puntoVentaPedido?.Sucursal) ? null : puntoVentaPedido!.Sucursal;
-
-                    if (EsCierrePedido)
-                        await OpenChargeModalAsync();
                 }
             }
 
@@ -7511,6 +7780,25 @@
             {
                 _turnoActual = await TurnoSvc.GetTurnoAbiertoAsync(_idPuntoVentaActual, _idCajaActual);
                 _denominaciones = await TurnoSvc.GetDenominacionesAsync();
+                if (_turnoActual is null)
+                {
+                    try { _fondoSugerido = await TurnoSvc.GetFondoSugeridoAsync(_idPuntoVentaActual, _idCajaActual); }
+                    catch { _fondoSugerido = null; }
+                }
+            }
+
+            // El cobro de una mesa/pedido y las acciones de caja pedidas desde el salón se abren
+            // recién acá: necesitan el turno de caja ya cargado.
+            if (_pedidoContexto is not null && EsCierrePedido)
+            {
+                if (_idPuntoVentaActual > 0 && _turnoActual is null)
+                    AbrirModalApertura();
+                else
+                    await OpenChargeModalAsync();
+            }
+            else if (_pedidoContexto is null && DesdeSalon && !string.IsNullOrWhiteSpace(AccionCajaQuery))
+            {
+                await AbrirAccionCajaAsync(AccionCajaQuery);
             }
         }
         catch (Exception ex)
@@ -7631,7 +7919,7 @@
 
     private void AbrirModalApertura()
     {
-        _aperturaSaldoInicial = 0;
+        _aperturaSaldoInicial = Math.Round(_fondoSugerido ?? 0, 2);
         _aperturaObservaciones = string.Empty;
         _aperturaCantidades = _denominaciones.ToDictionary(d => d.Id, _ => 0);
         _aperturaError = null;
@@ -7675,6 +7963,8 @@
             _turnoActual = await TurnoSvc.GetTurnoByIdAsync(idTurno);
             _showAperturaModal = false;
             _chargeError = null;
+            if (_pedidoContexto is not null && EsCierrePedido && _cartItems.Any())
+                await OpenChargeModalAsync();
         }
         catch (AlfaCore.Services.AppValidationException vex)
         {
@@ -7701,6 +7991,20 @@
         _cierreCantidades = _denominaciones.ToDictionary(d => d.Id, _ => 0);
         _cierreError = null;
         _cierreSaldoTeoricoPreview = await TurnoSvc.GetSaldoTeoricoActualAsync(_turnoActual.Id);
+        _cierreFondoQueda = Math.Round(_turnoActual.SaldoInicial, 2);
+        _cierreImportes.Clear();
+        _cierrePreview = null;
+        _cierrePreviewError = null;
+        try
+        {
+            _cierrePreview = await TurnoSvc.GetCierrePreviewAsync(_turnoActual.Id);
+        }
+        catch (Exception ex)
+        {
+            _cierrePreviewError = $"No se pudieron calcular los saldos para transferir: {ex.Message}";
+        }
+        _cierreCajaDestino = _cierrePreview?.IdCajaDestinoSugerida ?? string.Empty;
+        _cierreTransferir = _cierreCajaDestino.Length > 0;
         _showCierreCajaModal = true;
     }
 
@@ -7735,10 +8039,38 @@
                 Billetes = _cierreCantidades
                     .Where(kv => kv.Value > 0)
                     .Select(kv => new PuntoVentaTurnoBilleteDetalleRequest { IdDenominacion = kv.Key, Cantidad = kv.Value })
-                    .ToList()
+                    .ToList(),
+                FondoQueda = _cierreFondoQueda
             };
 
-            await TurnoSvc.CerrarTurnoAsync(request);
+            if (_cierreSaldoFinalDeclarado <= 0 && _cierreSaldoTeoricoPreview > 0)
+            {
+                _cierreError = "Contá el efectivo de la caja (o escribí el saldo final declarado) antes de cerrar.";
+                return;
+            }
+
+            if (_cierreTransferir && _cierrePreview is not null && TotalATransferir() != 0)
+            {
+                if (string.IsNullOrWhiteSpace(_cierreCajaDestino))
+                {
+                    _cierreError = "Elegí la caja a la que se transfiere, o desmarcá \"Transferir a otra caja\".";
+                    return;
+                }
+                request.IdCajaDestino = _cierreCajaDestino;
+                request.Transferencia = _cierrePreview.Saldos
+                    .Select(s => new PuntoVentaTurnoTransferenciaLineaRequest
+                    {
+                        Cuenta = s.Cuenta,
+                        Moneda = s.Moneda,
+                        Cotizacion = s.Cotizacion,
+                        Importe = GetImporteTransferir(s)
+                    })
+                    .Where(l => l.Importe != 0)
+                    .ToList();
+            }
+
+            _cierreResultado = await TurnoSvc.CerrarTurnoAsync(request);
+            _fondoSugerido = _cierreFondoQueda;
             _showCierreCajaModal = false;
             _turnoActual = null;
         }
@@ -7870,6 +8202,12 @@
             await PersistPendingDraftAsync();
         }
 
+        if (_accionCajaActiva is not null && !_volviendoAlSalon && !HayVentanaDeCajaAbierta)
+        {
+            VolverAlSalonDesdeCaja();
+            return;
+        }
+
         if (_printReceiptAfterRender && _showReceiptModal && _lastSaleResult is not null)
         {
             _printReceiptAfterRender = false;
@@ -7879,6 +8217,11 @@
             if (closeAfterPrint && string.IsNullOrWhiteSpace(_receiptPreviewError))
             {
                 CloseReceiptAfterAutomaticPrint();
+                if (_pedidoContexto is not null)
+                {
+                    VolverAlOrigenDelPedido();
+                    return;
+                }
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -9726,7 +10069,7 @@
             _arcaEnvironmentLabel = "SERVICIO WEB";
             _chargeProgress = EsComprobanteFiscalSeleccionado()
                 ? "Conectando con el servicio web de ARCA..."
-                : "Guardando la factura...";
+                : "Guardando el comprobante...";
             await InvokeAsync(StateHasChanged);
             var soldItems = _cartItems
                 .Select(x => new PuntoVentaCartItemDto
@@ -10066,10 +10409,7 @@
 
         // Si el comprobante se generó cerrando un pedido de Delivery/Take Away,
         // no tiene sentido quedarse en Mostrador: se vuelve al tablero de pedidos.
-        if (_pedidoContexto is not null)
-            Nav.NavigateTo(RouteCtx.BuildRoute(EsPedidoSalon
-                ? RutaSalon
-                : $"/ventas/delivery?idPuntoVenta={_pedidoContexto.IdPuntoVenta}"));
+        VolverAlOrigenDelPedido();
     }
 
     private void ContinueWithNewReceipt()
