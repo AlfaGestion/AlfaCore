@@ -1022,6 +1022,7 @@ window.conversacionesUi = {
         const surface = element.querySelector('.attachment-preview-drag-surface');
         const frame = element.querySelector('.attachment-preview-media-frame');
         const media = frame?.querySelector('img, video');
+        this.fitAttachmentPreviewFrame(element, frame, media);
         if (!surface || !frame) {
             this._previewPanWatchers.delete(element);
             return false;
@@ -1040,25 +1041,6 @@ window.conversacionesUi = {
             return Number.isFinite(parsed) ? parsed : 0;
         };
 
-        const readZoom = () => {
-            if (!media) return 1;
-            const value = window.getComputedStyle(media).getPropertyValue('--preview-zoom').trim();
-            const parsed = Number.parseFloat(value);
-            return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-        };
-
-        const stabilizeFrameSize = () => {
-            if (!media) return;
-            const zoom = readZoom();
-            const rect = media.getBoundingClientRect();
-            const width = rect.width / zoom;
-            const height = rect.height / zoom;
-            if (width > 0 && height > 0) {
-                frame.style.setProperty('--preview-frame-width', `${width}px`);
-                frame.style.setProperty('--preview-frame-height', `${height}px`);
-            }
-        };
-
         const applyPan = () => {
             frame.style.setProperty('--preview-pan-x', `${panX}px`);
             frame.style.setProperty('--preview-pan-y', `${panY}px`);
@@ -1069,12 +1051,6 @@ window.conversacionesUi = {
             panY = 0;
             applyPan();
         };
-
-        stabilizeFrameSize();
-        if (media instanceof HTMLImageElement && !media.complete)
-            media.addEventListener('load', stabilizeFrameSize, { once: true });
-        if (media instanceof HTMLVideoElement && media.readyState < 1)
-            media.addEventListener('loadedmetadata', stabilizeFrameSize, { once: true });
 
         const startDrag = event => {
             if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -1124,6 +1100,36 @@ window.conversacionesUi = {
         this._previewPanWatchers.set(element, { events: events });
         resetPan();
         return true;
+    },
+
+    // Tamaño del recuadro del visor: se calcula con el tamaño original de la imagen y el
+    // espacio disponible (con los lados cruzados si está rotada 90/270). No se mide la
+    // imagen en pantalla porque ese tamaño incluye el zoom, la rotación y la animación en
+    // curso, y cada medición achicaba el recuadro un poco más.
+    fitAttachmentPreviewFrame: function (canvas, frame, media) {
+        if (!canvas || !frame || !media) return;
+
+        const fit = () => {
+            const naturalWidth = media.naturalWidth || media.videoWidth || 0;
+            const naturalHeight = media.naturalHeight || media.videoHeight || 0;
+            const boxWidth = canvas.clientWidth;
+            const boxHeight = canvas.clientHeight;
+            if (!naturalWidth || !naturalHeight || !boxWidth || !boxHeight) return;
+
+            const rotation = Number.parseFloat(window.getComputedStyle(media).getPropertyValue('--preview-rotation')) || 0;
+            const sideways = Math.abs(Math.round(rotation)) % 180 === 90;
+            const scale = sideways
+                ? Math.min(1, boxWidth / naturalHeight, boxHeight / naturalWidth)
+                : Math.min(1, boxWidth / naturalWidth, boxHeight / naturalHeight);
+            frame.style.setProperty('--preview-frame-width', `${naturalWidth * scale}px`);
+            frame.style.setProperty('--preview-frame-height', `${naturalHeight * scale}px`);
+        };
+
+        fit();
+        if (media instanceof HTMLImageElement && !media.complete)
+            media.addEventListener('load', fit, { once: true });
+        if (media instanceof HTMLVideoElement && media.readyState < 1)
+            media.addEventListener('loadedmetadata', fit, { once: true });
     },
 
     bindAttachmentPreviewKeyboard: function (dotNetRef) {
