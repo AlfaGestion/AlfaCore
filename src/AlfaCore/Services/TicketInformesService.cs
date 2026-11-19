@@ -50,7 +50,8 @@ public sealed class TicketInformesService(
     IConversacionAnalisisService ia,
     IDocumentPdfService? pdfService = null,
     CorreoSalienteService? correo = null,
-    IConversacionesService? conversaciones = null) : ITicketInformesService
+    IConversacionesService? conversaciones = null,
+    IInformeTrabajoDocumentService? documento = null) : ITicketInformesService
 {
     private const int Timeout = 60;
 
@@ -232,8 +233,15 @@ public sealed class TicketInformesService(
 
     public async Task<byte[]> PdfAsync(int idInforme, bool soloPublicado = false, CancellationToken ct = default)
     {
-        if (pdfService is null) throw new InvalidOperationException("La generación de PDF no está disponible en este servidor.");
         var doc = await DocumentoAsync(idInforme, soloPublicado, ct) ?? throw new InvalidOperationException("El informe no existe o no está publicado.");
+        return await PdfDeAsync(doc, ct);
+    }
+
+    /// <summary>PDF con la plantilla "Informe de trabajo" del Diseñador de comprobantes; sin ese servicio, el formato fijo.</summary>
+    private async Task<byte[]> PdfDeAsync(TicketInformePublicoDto doc, CancellationToken ct)
+    {
+        if (documento is not null) return await documento.GeneratePdfAsync(doc.IdInforme, null, ct: ct);
+        if (pdfService is null) throw new InvalidOperationException("La generación de PDF no está disponible en este servidor.");
         return await pdfService.GenerateAsync(InformeDocumento.Html(doc), new DocumentPdfFooterOptions(true, true, "Alfa Gestión · Soporte"), ct);
     }
 
@@ -291,8 +299,8 @@ public sealed class TicketInformesService(
         var link = await ObtenerLinkAsync(request.IdInforme, destino, ct) ?? throw new InvalidOperationException("Publicá el informe antes de enviarlo.");
         var doc = await DocumentoAsync(request.IdInforme, soloPublicado: true, ct) ?? throw new InvalidOperationException("El informe no está publicado.");
         var adjuntos = new List<CorreoSalienteService.Adjunto>();
-        if (request.AdjuntarPdf && pdfService is not null)
-            adjuntos.Add(new CorreoSalienteService.Adjunto(NombreArchivo(doc), await pdfService.GenerateAsync(InformeDocumento.Html(doc), new DocumentPdfFooterOptions(true, true, "Alfa Gestión · Soporte"), ct)));
+        if (request.AdjuntarPdf && (documento is not null || pdfService is not null))
+            adjuntos.Add(new CorreoSalienteService.Adjunto(NombreArchivo(doc), await PdfDeAsync(doc, ct)));
         var asunto = string.IsNullOrWhiteSpace(request.Asunto) ? $"Informe del ticket #{doc.NumeroTicket}: {doc.Titulo}" : request.Asunto.Trim();
         var usuario = Usuario(request.Usuario);
 

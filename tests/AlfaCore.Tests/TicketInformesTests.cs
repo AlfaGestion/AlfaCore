@@ -131,6 +131,35 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void InformeDeTrabajoEsUnTipoDeComprobanteConPlantillaPropia()
+    {
+        Assert.Contains(TiposDocumentoCore.InformeTrabajo, TiposDocumentoCore.Todos);
+        Assert.Equal("Informe de trabajo", TiposDocumentoCore.NombrePredeterminado(TiposDocumentoCore.InformeTrabajo));
+        Assert.False(TiposDocumentoCore.EsFactura(TiposDocumentoCore.InformeTrabajo));
+        var def = DocumentTemplateDefinition.CrearEstandar(TiposDocumentoCore.InformeTrabajo);
+        Assert.Contains(def.Blocks, b => b.Type == TiposBloqueDocumento.Propuesta && b.Visible);
+        Assert.DoesNotContain(def.Blocks, b => b.Type is TiposBloqueDocumento.Items or TiposBloqueDocumento.Totales);
+        var json = System.Text.Json.JsonSerializer.Serialize(def, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        var plantillas = new DocumentTemplateService(null!, null!, null!, NullLogger<DocumentTemplateService>.Instance, null!);
+        plantillas.DeserializeAndValidate(json, TiposDocumentoCore.InformeTrabajo);
+    }
+
+    [Fact]
+    public void InformeDeTrabajoSeDibujaConLaHojaDeLaPlantilla()
+    {
+        var html = InformeTrabajoDocumentService.Render(new DocumentRenderer(), DocumentTemplateDefinition.CrearInformeTrabajoEstandar(),
+            InformeTrabajoDocumentService.Ejemplo(), ".mi-css{color:red}", null, "Informe de trabajo");
+        Assert.Contains("INFORME DE TRABAJO #123", html);
+        Assert.Contains("informe-titulo", html);
+        Assert.Contains("Revisión del sistema de facturación", html);
+        Assert.Contains("ticket-editor-banner--success", html);
+        Assert.Contains("<table>", html);
+        Assert.Contains("Cliente de ejemplo S.A.", html);
+        Assert.DoesNotContain("class=\"items\"", html);
+        Assert.True(html.IndexOf(".proposal table", StringComparison.Ordinal) < html.IndexOf(".mi-css", StringComparison.Ordinal), "El CSS de la plantilla va después del de contenido para poder pisarlo.");
+    }
+
+    [Fact]
     public void ElTipoDeLinkInformeEntraEnLaRestriccionCentral()
     {
         Assert.Contains(PublicLinkTipos.Informe, PublicLinkTipos.All);
@@ -153,7 +182,11 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
         var links = new LinksEnMemoria();
         using var proveedor = new ServiceCollection().BuildServiceProvider();
         await using var pdf = new DocumentPdfService(proveedor.GetRequiredService<IServiceScopeFactory>(), NullLogger<DocumentPdfService>.Instance);
-        var svc = new TicketInformesService(new ConfigurationBuilder().Build(), Sesion(cadena), links, Ia(null), pdf);
+        var sesion = Sesion(cadena);
+        var documento = new InformeTrabajoDocumentService(new ConfigurationBuilder().Build(),
+            new DocumentTemplateService(new ConfigurationBuilder().Build(), Proxy<IAppEventService>(), Proxy<IAppUserSessionService>(), NullLogger<DocumentTemplateService>.Instance, sesion),
+            new DocumentRenderer(), pdf, Proxy<IUsuariosService>(m => m.Name == nameof(IUsuariosService.GetSignatureAsync) ? Task.FromResult<UsuarioFirmaDto?>(null) : null), Proxy<IAppEventService>(), sesion);
+        var svc = new TicketInformesService(new ConfigurationBuilder().Build(), sesion, links, Ia(null), pdf, documento: documento);
         var destino = new TicketInformeDestino("PRUEBA", 4283, "https://alfa.test/");
         var plantilla = await svc.PlantillaAsync(idTicket);
         Assert.Contains("<h2>Qué pasó</h2>", plantilla);
@@ -181,6 +214,10 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
             Assert.False(envio.WhatsAppDisponible);
             var bytes = await svc.PdfAsync(id, soloPublicado: true);
             Assert.True(bytes.Length > 1000 && bytes[0] == (byte)'%' && bytes[1] == (byte)'P');
+            var hoja = await documento.RenderAsync(id, null);
+            Assert.Contains("Prueba automática", hoja.Html);
+            Assert.Contains("INFORME DE TRABAJO #", hoja.Html);
+            Assert.Contains(await documento.RecientesAsync(), r => r.IdInforme == id);
             await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.ResponderPublicoAsync(id, "OTRO", null, null));
             await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.ResponderPublicoAsync(id, TicketInformeRespuestaTipos.Consulta, "Ana", "  "));
             await svc.ResponderPublicoAsync(id, TicketInformeRespuestaTipos.Conforme, "Ana", null);
@@ -206,6 +243,14 @@ public sealed class TicketInformesTests(ITestOutputHelper output)
                 DELETE FROM dbo.TICK_ACTIVIDAD WHERE IdTicket = @IdTicket AND TipoActividad = 'INFORME' AND Usuario IN ('TEST', 'Cliente (informe)');
                 """, new { Id = id, IdTicket = idTicket });
         }
+    }
+
+    private static T Proxy<T>(Func<MethodInfo, object?>? respuesta = null) where T : class
+    {
+        var s = DispatchProxy.Create<T, CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)s).Handler = (m, _) => respuesta?.Invoke(m)
+            ?? (m.ReturnType == typeof(Task) ? Task.CompletedTask : m.ReturnType == typeof(Task<string>) ? Task.FromResult("TEST") : null);
+        return s;
     }
 
     private static ISessionService Sesion(string cadena)

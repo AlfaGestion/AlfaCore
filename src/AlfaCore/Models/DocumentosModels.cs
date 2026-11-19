@@ -18,6 +18,8 @@ public static class TiposDocumentoCore
     /// <summary>Orden de pago a proveedores (OPG) y su variante proforma (PGFP): documentos de Compras con diseño propio.</summary>
     public const string OrdenPago = "ORDEN_PAGO";
     public const string PagoProforma = "PAGO_PROFORMA";
+    /// <summary>Informe de trabajo al cliente de un ticket de soporte (TICK_INFORMES): texto del editor con la hoja membretada de la plantilla.</summary>
+    public const string InformeTrabajo = "INFORME_TRABAJO";
     public const string NotaDebitoA = "NOTA_DEBITO_A";
     public const string NotaDebitoB = "NOTA_DEBITO_B";
     public const string NotaDebitoC = "NOTA_DEBITO_C";
@@ -54,7 +56,7 @@ public static class TiposDocumentoCore
 
     public static readonly IReadOnlySet<string> Todos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Cotizacion, NotaPedido, RemitoR, RemitoX, CobranzaA, CobranzaB, CobranzaC, CobranzaX, CobranzaProforma, CobranzaContado, OrdenPago, PagoProforma,
+        Cotizacion, NotaPedido, RemitoR, RemitoX, CobranzaA, CobranzaB, CobranzaC, CobranzaX, CobranzaProforma, CobranzaContado, OrdenPago, PagoProforma, InformeTrabajo,
         NotaDebitoA, NotaDebitoB, NotaDebitoC, NotaCreditoA, NotaCreditoB, NotaCreditoC,
         FacturaA, FacturaB, FacturaC,
         CreditoA, CreditoB, CreditoC, DebitoA, DebitoB, DebitoC
@@ -76,6 +78,9 @@ public static class TiposDocumentoCore
     public static bool EsOrdenPago(string tipoDocumento)
         => string.Equals(tipoDocumento, OrdenPago, StringComparison.OrdinalIgnoreCase) || string.Equals(tipoDocumento, PagoProforma, StringComparison.OrdinalIgnoreCase);
 
+    public static bool EsInformeTrabajo(string tipoDocumento)
+        => string.Equals(tipoDocumento, InformeTrabajo, StringComparison.OrdinalIgnoreCase);
+
     public static bool EsNotaPedido(string tipoDocumento)
         => string.Equals(tipoDocumento, NotaPedido, StringComparison.OrdinalIgnoreCase);
 
@@ -96,6 +101,7 @@ public static class TiposDocumentoCore
             CobranzaContado => "Cobranza contado",
             OrdenPago => "Orden de pago",
             PagoProforma => "Pago proforma",
+            InformeTrabajo => "Informe de trabajo",
             NotaDebitoA => "Nota de débito A",
             NotaDebitoB => "Nota de débito B",
             NotaDebitoC => "Nota de débito C",
@@ -278,6 +284,35 @@ public sealed class DocumentTemplateDefinition
             new() { Id = "footer", Type = TiposBloqueDocumento.Pie, Visible = false }
         ]
     };
+
+    /// <summary>
+    /// Plantilla base del informe de trabajo: encabezado con logo y empresa, número de ticket y fecha, cliente,
+    /// el contenido del informe (bloque Propuesta) y pie con número de página. Sin detalle ni totales.
+    /// </summary>
+    public static DocumentTemplateDefinition CrearInformeTrabajoEstandar() => new()
+    {
+        Paper = new DocumentPaperDefinition(),
+        MostrarRenglonesDetalle = false,
+        Blocks =
+        [
+            new() { Id = "header-logo", Type = TiposBloqueDocumento.Logo, Visible = true, Align = "left", Width = 100, CombineWithCompany = true },
+            new() { Id = "company", Type = TiposBloqueDocumento.Empresa, Visible = true },
+            new() { Id = "document", Type = TiposBloqueDocumento.Comprobante, Visible = true, VisibleFields = ["Numero", "Fecha"] },
+            new() { Id = "customer", Type = TiposBloqueDocumento.Cliente, Visible = true, VisibleFields = ["RazonSocial", "Telefono", "Email"] },
+            new() { Id = "proposal", Type = TiposBloqueDocumento.Propuesta, Visible = true },
+            new() { Id = "signature", Type = TiposBloqueDocumento.Firma, Visible = false },
+            new() { Id = "footer", Type = TiposBloqueDocumento.Pie, Visible = true, VisibleFields = ["NumeroPagina", "NombreEmpresa"] }
+        ]
+    };
+
+    /// <summary>Plantilla estándar según el tipo de documento.</summary>
+    public static DocumentTemplateDefinition CrearEstandar(string tipoDocumento)
+    {
+        if (TiposDocumentoCore.EsOrdenPago(tipoDocumento)) return CrearOrdenPagoEstandar();
+        if (TiposDocumentoCore.EsInformeTrabajo(tipoDocumento)) return CrearInformeTrabajoEstandar();
+        if (TiposDocumentoCore.EsDocumentoConLetra(tipoDocumento) && TiposDocumentoCore.LetraDe(tipoDocumento) is { } letra) return CrearFacturaEstandar(letra);
+        return TiposDocumentoCore.EsNotaPedido(tipoDocumento) ? CrearNotaPedidoEstandar() : CrearCotizacionEstandar();
+    }
 
     public static DocumentTemplateDefinition CrearNotaPedidoEstandar()
         => CrearCotizacionEstandar();

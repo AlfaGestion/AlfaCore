@@ -9,6 +9,7 @@
 @inject ICotizacionDocumentService CotizDocumentSvc
 @inject IFacturaDocumentService FacturaDocumentSvc
 @inject IOrdenPagoDocumentService OrdenPagoDocumentSvc
+@inject IInformeTrabajoDocumentService InformeDocumentSvc
 @inject IAppUserSessionService AppUserSession
 @inject IJSRuntime JS
 @inject IPageHeaderService PageHeader
@@ -50,6 +51,7 @@
                 <option value="@TiposDocumentoCore.CobranzaContado">Cobranza contado (CBCT)</option>
                 <option value="@TiposDocumentoCore.OrdenPago">Orden de pago (OPG)</option>
                 <option value="@TiposDocumentoCore.PagoProforma">Pago proforma (PGFP)</option>
+                <option value="@TiposDocumentoCore.InformeTrabajo">Informe de trabajo (tickets)</option>
                 @foreach (var tipo in TiposDocumentoCore.Fiscales)
                 {
                     <option value="@tipo.Tipo">@TiposDocumentoCore.NombreDe(tipo.Tipo)</option>
@@ -172,7 +174,7 @@
                 }
                 @if (ComprobanteBlock is not null)
                 {
-                    @RenderFieldBlockSettings("Condiciones", ComprobanteBlock, TiposBloqueDocumento.Comprobante)
+                    @RenderFieldBlockSettings(EsInformeTrabajo ? "Datos del informe (número de ticket y fecha)" : "Condiciones", ComprobanteBlock, TiposBloqueDocumento.Comprobante)
                 }
                 @if (ClienteBlock is not null)
                 {
@@ -230,9 +232,9 @@
                 @if (PropuestaBlock is not null)
                 {
                     <section class="document-designer__settings-group">
-                        <div class="document-designer__settings-heading">Propuesta</div>
-                        <label class="document-designer__toggle"><input type="checkbox" @bind="PropuestaBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar el texto de la propuesta (con imágenes)</span></label>
-                        <p class="document-designer__hint">Se completa desde la solapa "Propuesta" de cada cotización, nunca desde las Observaciones internas.</p>
+                        <div class="document-designer__settings-heading">@(EsInformeTrabajo ? "Contenido del informe" : "Propuesta")</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="PropuestaBlock.Visible" disabled="@IsTemplateReadOnly" /><span>@(EsInformeTrabajo ? "Mostrar el texto del informe" : "Mostrar el texto de la propuesta (con imágenes)")</span></label>
+                        <p class="document-designer__hint">@(EsInformeTrabajo ? "Se escribe en la solapa Informes de cada ticket (a mano, con la plantilla o con IA). Acá se define la hoja que lo rodea." : "Se completa desde la solapa \"Propuesta\" de cada cotización, nunca desde las Observaciones internas.")</p>
                     </section>
                 }
                 @if (FirmaBlock is not null)
@@ -240,7 +242,7 @@
                     <section class="document-designer__settings-group">
                         <div class="document-designer__settings-heading">Firma</div>
                         <label class="document-designer__toggle"><input type="checkbox" @bind="FirmaBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar firma</span></label>
-                        <p class="document-designer__hint">Usa la firma cargada por quien creó la cotización (Usuarios → Firma digital).</p>
+                        <p class="document-designer__hint">@(EsInformeTrabajo ? "Usa la firma de quien escribió o modificó el informe por última vez (Usuarios → Firma digital)." : "Usa la firma cargada por quien creó la cotización (Usuarios → Firma digital).")</p>
                     </section>
                 }
                 @if (CaeBlock is not null)
@@ -300,6 +302,21 @@
                     @if (_previewHtml is null) { <p class="muted">Elegí un comprobante real para previsualizar el formato (CAE, QR y desglose de IVA incluidos).</p> }
                     else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa del comprobante"></iframe> }
                 }
+                else if (EsInformeTrabajo)
+                {
+                    <div class="document-designer__preview-toolbar">
+                        <label>Informe para probar
+                            <select value="@_previewInformeId" @onchange="PreviewInformeChangedAsync">
+                                <option value="0">Datos de ejemplo</option>
+                                @foreach (var informe in _informesRecientes) { <option value="@informe.IdInforme">@informe.Etiqueta</option> }
+                            </select>
+                        </label>
+                        <button class="btn btn--ghost" @onclick="PreviewInformeAsync" disabled="@_busy"><i class="bi bi-eye"></i> Actualizar vista previa</button>
+                        <button class="btn btn--primary" @onclick="PdfInformeAsync" disabled="@_busy"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+                    </div>
+                    @if (_previewHtml is null) { <p class="muted">Elegí un informe de un ticket (o los datos de ejemplo) y tocá Actualizar vista previa.</p> }
+                    else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa del informe de trabajo"></iframe> }
+                }
                 else
                 {
                     <div class="document-designer__preview-toolbar">
@@ -346,6 +363,8 @@
     private IReadOnlyList<CotizacionListItemDto> _cotizaciones = [];
     private IReadOnlyList<FacturaResumenDto> _facturasRecientes = [];
     private IReadOnlyList<NotaPedidoResumenDto> _notasPedido = [];
+    private IReadOnlyList<InformeTrabajoResumenDto> _informesRecientes = [];
+    private int _previewInformeId;
     private DocumentTemplateDto? _selected;
     private DocumentTemplateSaveRequest _draft = new();
     private string _uNegocio = string.Empty;
@@ -382,6 +401,7 @@
 
     private bool EsFactura => TiposDocumentoCore.EsFactura(_tipoDocumento);
     private bool EsOrdenPago => TiposDocumentoCore.EsOrdenPago(_tipoDocumento);
+    private bool EsInformeTrabajo => TiposDocumentoCore.EsInformeTrabajo(_tipoDocumento);
     private DocumentBlockDefinition? MediosPagoBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.MediosPago, StringComparison.OrdinalIgnoreCase));
     private bool EsNotaPedido => TiposDocumentoCore.EsNotaPedido(_tipoDocumento);
 
@@ -476,11 +496,18 @@
         _previewFacturaKey = string.Empty;
         _facturasRecientes = [];
         _notasPedido = [];
+        _informesRecientes = [];
+        _previewInformeId = 0;
         await LoadTemplatesAsync();
         if (TiposDocumentoCore.LetraDe(_tipoDocumento) is { } letra)
             _facturasRecientes = EsOrdenPago ? await OrdenPagoDocumentSvc.SearchRecientesAsync(_tipoDocumento) : await FacturaDocumentSvc.SearchRecientesAsync(_tipoDocumento);
         else if (EsNotaPedido)
             _notasPedido = await CotizDocumentSvc.SearchNotasPedidoRecientesAsync();
+        else if (EsInformeTrabajo)
+        {
+            try { _informesRecientes = await InformeDocumentSvc.RecientesAsync(); }
+            catch (Exception) { _informesRecientes = []; }
+        }
     }
 
     private async Task TemplateChangedAsync(ChangeEventArgs args)
@@ -519,7 +546,7 @@
             UNegocio = NullIfEmpty(_uNegocio),
             TipoDocumento = _tipoDocumento,
             Nombre = TiposDocumentoCore.NombrePredeterminado(_tipoDocumento),
-            Definition = EsOrdenPago ? DocumentTemplateDefinition.CrearOrdenPagoEstandar() : letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : EsNotaPedido ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
+            Definition = EsInformeTrabajo ? DocumentTemplateDefinition.CrearInformeTrabajoEstandar() : EsOrdenPago ? DocumentTemplateDefinition.CrearOrdenPagoEstandar() : letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : EsNotaPedido ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
             Usuario = AppUserSession.GetCurrentUserName("Sistema")
         };
         _previewHtml = null;
@@ -713,6 +740,26 @@
             await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"cotizacion-beta-{_previewVersionId}.pdf");
         });
     }
+
+    private Task PreviewInformeChangedAsync(ChangeEventArgs args)
+    {
+        _previewInformeId = int.TryParse(args.Value?.ToString(), out var id) ? id : 0;
+        _previewHtml = null;
+        return Task.CompletedTask;
+    }
+
+    private Task PreviewInformeAsync() => BusyAsync(async () =>
+    {
+        var result = await InformeDocumentSvc.RenderAsync(_previewInformeId, NullIfEmpty(_uNegocio), BuildPreviewTemplate());
+        _previewHtml = result.Html;
+        _message = _previewInformeId > 0 ? "Vista previa generada con el informe elegido y los cambios actuales." : "Vista previa generada con datos de ejemplo y los cambios actuales.";
+    });
+
+    private Task PdfInformeAsync() => BusyAsync(async () =>
+    {
+        var pdf = await InformeDocumentSvc.GeneratePdfAsync(_previewInformeId, NullIfEmpty(_uNegocio), BuildPreviewTemplate());
+        await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"informe-de-trabajo-{(_previewInformeId > 0 ? _previewInformeId.ToString() : "ejemplo")}.pdf");
+    });
 
     private static string FacturaKey(FacturaResumenDto factura) => $"{factura.Tc}|{factura.IdComprobante}";
 
