@@ -123,7 +123,7 @@ public sealed class DocumentTemplateService(
                 Nombre = $"{TiposDocumentoCore.NombrePredeterminado(tipo)} estándar (fallback)",
                 EsSistema = true, EsPredeterminado = true, Activo = true,
                 TemplateJson = JsonSerializer.Serialize(
-                    TiposDocumentoCore.EsOrdenPago(tipo) ? DocumentTemplateDefinition.CrearOrdenPagoEstandar() : esConLetra ? DocumentTemplateDefinition.CrearFacturaEstandar(letra!) : TiposDocumentoCore.EsNotaPedido(tipo) ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
+                    TiposDocumentoCore.EsInformeTrabajo(tipo) ? DocumentTemplateDefinition.CrearInformeTrabajoEstandar() : TiposDocumentoCore.EsOrdenPago(tipo) ? DocumentTemplateDefinition.CrearOrdenPagoEstandar() : esConLetra ? DocumentTemplateDefinition.CrearFacturaEstandar(letra!) : TiposDocumentoCore.EsNotaPedido(tipo) ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
                     JsonOptions)
             };
         }, "No se pudo resolver la plantilla de documento.", ct);

@@ -8,9 +8,11 @@ public sealed class LegacyPythonApiOptions
 {
     public const string SectionName = "Api:PythonLegacy";
 
-    public bool Enabled { get; set; }
+    // La API legacy sigue siendo necesaria para compatibilidad móvil durante la transición.
+    // Una instalación puede desactivarla explícitamente con Api__PythonLegacy__Enabled=false.
+    public bool Enabled { get; set; } = true;
 
-    public string BaseUrl { get; set; } = string.Empty;
+    public string BaseUrl { get; set; } = "https://alfanetac.ddns.net/";
 
     public int TimeoutSeconds { get; set; } = 120;
 

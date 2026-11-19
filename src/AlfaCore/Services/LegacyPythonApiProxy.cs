@@ -35,7 +35,7 @@ public sealed class LegacyPythonApiProxy(
         if (!settings.Enabled)
         {
             await WriteErrorAsync(context, StatusCodes.Status404NotFound,
-                "La ruta de la API todavía no está habilitada en esta instalación.");
+                "La ruta de la API está deshabilitada en esta instalación.");
             return;
         }
 
