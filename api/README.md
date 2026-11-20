@@ -20,15 +20,14 @@ AlfaCore puede exponer las mismas rutas y derivarlas al servicio Python mediante
 
 ```text
 Api__PythonLegacy__Enabled=true
-Api__PythonLegacy__BaseUrl=http://127.0.0.1/
+Api__PythonLegacy__BaseUrl=https://alfacentral.ddns.net/
 Api__PythonLegacy__TimeoutSeconds=120
 ```
 
 Mientras `Enabled` sea `false`, esas rutas no se habilitan. La URL debe configurarse en el
 servidor o mediante variables de entorno; no se deben guardar credenciales en este repositorio.
-Como `wsAlfa` y AlfaCore están instalados en el mismo servidor, se recomienda loopback
-(`http://127.0.0.1/`) para no depender de DDNS ni de otra PC. Si IIS usa un binding local
-con puerto o hostname específico, ajustar esta variable de entorno en el servidor.
+En el entorno actual, `wsAlfa` se publica mediante `https://alfacentral.ddns.net/`.
+Si el binding o la infraestructura cambia, ajustar esta variable de entorno en el servidor.
 
 ## Exclusiones intencionales
 

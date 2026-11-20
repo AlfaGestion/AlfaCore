@@ -12,9 +12,7 @@ public sealed class LegacyPythonApiOptions
     // Una instalación puede desactivarla explícitamente con Api__PythonLegacy__Enabled=false.
     public bool Enabled { get; set; } = true;
 
-    // wsAlfa y AlfaCore se ejecutan en el mismo servidor; no dependemos de DDNS ni
-    // de una segunda PC para las llamadas internas.
-    public string BaseUrl { get; set; } = "http://127.0.0.1/";
+    public string BaseUrl { get; set; } = "https://alfacentral.ddns.net/";
 
     public int TimeoutSeconds { get; set; } = 120;
 

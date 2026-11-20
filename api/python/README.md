@@ -4,8 +4,7 @@ Copia controlada del servicio Python que actualmente se ejecuta en:
 
 `\\10.8.0.6\c\inetpub\wwwroot\wsAlfa`
 
-Cuando `wsAlfa` y AlfaCore están en el mismo servidor, el servicio debe consumirse mediante
-loopback (`http://127.0.0.1/`). La DDNS pública no debe ser un requisito de comunicación.
+En el entorno actual, AlfaCore consume `wsAlfa` mediante `https://alfacentral.ddns.net/`.
 
 ## Versiones
 
