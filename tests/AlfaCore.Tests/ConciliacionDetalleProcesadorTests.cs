@@ -146,3 +146,36 @@ public sealed class ConciliacionTarjetasExcelTests
         Assert.Equal(9903.2m,l.Neto);
     }
 }
+
+public sealed class AsientoLibroIvaDeduccionTests
+{
+    [Fact]
+    public void Deduce_iva_neto_y_alicuota_del_asiento_de_liquidacion()
+    {
+        var l=AsientosService.DeducirLibroIva(
+        [
+            ("111020001","BANCO GALICIA","D",27467893.85m,"DB"),
+            ("42209","Gastos Bancarios","D",440005.91m,""),
+            ("11203","I.V.A. C.F. Por Compra de Bienes-Merc. Local","D",92401.25m,""),
+            ("111010009","VISA DEBITO","H",28000301.01m,"TJ")
+        ]);
+        Assert.Equal("COMPRAS",l.Libro);
+        Assert.False(l.Resta);
+        Assert.Equal(440005.91m,l.NetoGravado);
+        Assert.Equal(21m,l.Alicuota);
+        Assert.Equal(92401.25m,l.Iva);
+    }
+
+    [Fact]
+    public void Separa_percepciones_y_retenciones_por_tipo()
+    {
+        var l=AsientosService.DeducirLibroIva(
+        [
+            ("1","Gastos","D",1000m,""),("2","I.V.A. Credito Fiscal","D",210m,""),
+            ("3","Percepcion IVA","D",30m,""),("4","Percepcion IIBB","D",20m,""),("5","Retencion Ganancias","D",10m,""),
+            ("6","Banco","H",1270m,"DB")
+        ]);
+        Assert.Equal(30m,l.RetencionIva);Assert.Equal(20m,l.RetencionIibb);Assert.Equal(10m,l.RetencionGanancias);
+        Assert.Equal(210m,l.Iva);Assert.Equal(1000m,l.NetoGravado);
+    }
+}

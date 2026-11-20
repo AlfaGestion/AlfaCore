@@ -880,19 +880,60 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         return d;
     }
 
-    /// <summary>Datos de partida para el diálogo: el importe del asiento y quien emitió el último comprobante del libro con la misma cuenta.</summary>
+    /// <summary>
+    /// Deduce lo que va al libro de compras a partir de los renglones del asiento: el IVA crédito, las retenciones/percepciones (IVA, IIBB, Ganancias)
+    /// y el neto gravado (el renglón del Debe cuya alícuota con el IVA da 21, 10,5, 27, 5 o 2,5 %). Sin datos para deducir, deja los importes en cero.
+    /// </summary>
+    internal static AsientoLibroIva DeducirLibroIva(IReadOnlyList<(string Cuenta, string Nombre, string Dh, decimal Importe, string Medio)> r)
+    {
+        static string C(string t) => new string(t.ToUpperInvariant().Normalize(System.Text.NormalizationForm.FormD)
+            .Where(ch => char.IsLetterOrDigit(ch)).ToArray());
+        var l = new AsientoLibroIva { Libro = "COMPRAS", Resta = false, ImporteAsiento = r.Where(x => x.Dh == "D").Sum(x => x.Importe) };
+        var otros = new List<(string Cuenta, string Nombre, string Dh, decimal Importe, string Medio)>();
+        foreach (var x in r.Where(x => x.Dh == "D"))
+        {
+            var n = C(x.Nombre);
+            var ret = n.Contains("RETENC") || n.Contains("PERCEP");
+            if (n.Contains("GANANCIAS") && ret) l.RetencionGanancias += x.Importe;
+            else if ((n.Contains("IIBB") || n.Contains("INGRESOSBRUTOS")) && ret) l.RetencionIibb += x.Importe;
+            else if (n.Contains("IVA") && ret) l.RetencionIva += x.Importe;
+            else if (n.Contains("IVA") && !n.Contains("DEBITO") && !n.Contains("DEBFISC") && !n.Contains("AFAVOR") && x.Medio.Length == 0) l.Iva += x.Importe;
+            else otros.Add(x);
+        }
+        if (l.Iva > 0)
+        {
+            // Neto: un renglón del Debe (no de banco ni de tarjeta) cuya alícuota con el IVA sea válida; si no, la suma de los renglones que no son de medios de pago.
+            var gasto = otros.Where(x => x.Medio.Length == 0 || x.Medio is "RI" or "RB" or "RG" or "RO").ToList();
+            var uno = gasto.FirstOrDefault(x => ConciliacionBancariaService.AlicuotaLibro(x.Importe, l.Iva) is not null);
+            var neto = uno.Cuenta is null ? gasto.Sum(x => x.Importe) : uno.Importe;
+            if (ConciliacionBancariaService.AlicuotaLibro(neto, l.Iva) is { } al) { l.NetoGravado = neto; l.Alicuota = al; }
+        }
+        return l;
+    }
+
+    /// <summary>Datos de partida para el diálogo: se deduce del asiento (IVA, retenciones, neto, alícuota) y el emisor es el titular de la cuenta bancaria o el último del libro con la misma cuenta.</summary>
     public Task<AsientoLibroIva> SugerirLibroIvaAsync(AsientoClave clave, CancellationToken ct = default) => EjecutarAsync("SugerirLibroIva", MenusConsulta, async cn =>
     {
         var r = await RenglonesAsync(cn, null, clave, false, ct);
         if (!PuedeIncluirEnLibroIva(r, clave.TipoReg)) throw new ReglaException("Este asiento no se puede incluir en el libro de IVA desde acá.");
-        var l = new AsientoLibroIva { ImporteAsiento = r.Where(x => x.Dh == "D").Sum(x => x.Importe), Huella = Huella(r.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha))) };
+        var l = DeducirLibroIva(r.Select(x => (x.Cuenta, x.CuentaNombre, x.Dh, x.Importe, x.MedioDePago)).ToList());
+        l.Huella = Huella(r.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha)));
         var cuentas = r.Select(x => x.Cuenta).Distinct().ToList();
+        // Emisor: titular de la cuenta bancaria del asiento (quien factura la comisión); si no hay, el último comprobante del libro con las mismas cuentas.
+        var banco = await cn.QueryFirstOrDefaultAsync<(string Nombre, string Cuit)>(new CommandDefinition("""
+            SELECT TOP (1) LTRIM(RTRIM(ISNULL(c.DESCRIPCION,''))), LTRIM(RTRIM(ISNULL(a.NUMERO_DOCUMENTO,'')))
+            FROM dbo.MA_CUENTAS c LEFT JOIN dbo.MA_CUENTASADIC a ON LTRIM(RTRIM(a.CODIGO)) = LTRIM(RTRIM(c.CODIGO))
+            WHERE LTRIM(RTRIM(c.CODIGO)) IN @Cuentas AND LTRIM(RTRIM(ISNULL(c.MedioDePago,''))) = 'DB'
+            ORDER BY CASE WHEN LTRIM(RTRIM(ISNULL(a.NUMERO_DOCUMENTO,''))) <> '' THEN 0 ELSE 1 END;
+            """, new { Cuentas = cuentas }, cancellationToken: ct));
         var previo = await cn.QueryFirstOrDefaultAsync<(string Nombre, string Cuit)>(new CommandDefinition("""
             SELECT TOP (1) LTRIM(RTRIM(CABNOMBRE)), LTRIM(RTRIM(CABCUIT)) FROM dbo.MV_ASIENTOS
             WHERE LIVA_TIPO = N'COMPRAS' AND LTRIM(RTRIM(ISNULL(CABCUIT,''))) <> '' AND LTRIM(RTRIM(ISNULL(CABNOMBRE,''))) <> '' AND LTRIM(RTRIM(CABCUENTA)) IN @Cuentas
             ORDER BY FECHA DESC;
             """, new { Cuentas = cuentas }, cancellationToken: ct));
-        if (previo.Cuit is { Length: > 0 }) (l.Nombre, l.Cuit) = (previo.Nombre, previo.Cuit);
+        if (banco.Cuit is { Length: > 0 } && LibroIvaArcaValidator.CuitValido(banco.Cuit)) (l.Nombre, l.Cuit) = (banco.Nombre.Length > 50 ? banco.Nombre[..50] : banco.Nombre, CuitConGuiones(banco.Cuit));
+        else if (previo.Cuit is { Length: > 0 }) (l.Nombre, l.Cuit) = (previo.Nombre, previo.Cuit);
+        else if (banco.Nombre is { Length: > 0 }) l.Nombre = banco.Nombre.Length > 50 ? banco.Nombre[..50] : banco.Nombre;
         return l;
     }, ct);
 
