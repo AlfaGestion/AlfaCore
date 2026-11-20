@@ -117,11 +117,19 @@
     {
         <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" AccionesChanged="PublicarAccionesConciliacion" OnGenerarAsiento="AbrirAsiento" OnAsientoIa="AbrirAsientoIa" />
     }
-    else
+    else if (_tab=="liquidacion")
     {
-        @if (_creditosProcesador > 0)
+        @if (_creditosProcesador == 0)
+        {
+            <section class="panel-card">
+                <AlfaEmptyState Title="Sin créditos de procesadores de cobro" Message="Esta solapa liquida los cobros de NAVE (tarjetas y QR) que el banco acredita por el neto. El extracto seleccionado no tiene créditos de NAVE. Elegí una importación en «Importación» o importá el extracto de Banco Galicia." />
+            </section>
+        }
+        else
         {
             <section class="panel-card conciliacion-importar" aria-busy="@_busy">
+                <h3 class="panel-card__title">Liquidación de NAVE</h3>
+                <p class="conciliacion-pasos"><strong>Cómo se usa:</strong> 1) subí el Excel «Detalle de operaciones» de NAVE · 2) revisá la cuenta de cada medio de pago y las de comisión e IVA · 3) revisá los asientos propuestos por día y generá. La comisión y su IVA salen de este Excel porque el banco acredita solo el neto.</p>
                 <h3 class="panel-card__title">Detalle de operaciones del procesador (opcional)</h3>
                 <p>Detectamos <strong>@_creditosProcesador</strong> créditos de NAVE en @(_filtro.HasValue ? $"la importación #{_filtro}" : "las importaciones"). El banco informa solo el neto: subí el reporte «Detalle de operaciones» de NAVE (Excel) para conocer el bruto, la comisión, el IVA y la tarjeta de cada cobro.</p>
                 <label class="conciliacion-archivo">
@@ -185,12 +193,37 @@
                             <div class="conciliacion-campos">
                                 <AlfaSelect Label="Unidad de negocio" Value="@_liqUnidad" ValueChanged="CambiarUnidadLiquidacion" Options="@UnidadesLiq" Placeholder="Seleccionar unidad" Disabled="@_busy" />
                                 <AlfaSelect Label="@($"Talonario {cat.Tc}")" Value="@_liqTalonario" ValueChanged="v => _liqTalonario = v ?? string.Empty" Options="@TalonariosLiq" Placeholder="Seleccionar talonario" Disabled="@_busy" />
+                                <AlfaSelect Label="Cómo generarlo" Value="@_liqModo" ValueChanged="CambiarModoLiq" Options="@ModosLiq" Disabled="@_busy" />
+                                @if (_liqModo == "unico")
+                                {
+                                    <AlfaInput Label="Fecha del asiento" Type="date" Value="@_liqFecha" ValueChanged="v => _liqFecha = v ?? string.Empty" Disabled="@_busy" />
+                                }
                                 <AlfaInput Label="Detalle del asiento" Value="@_liqDetalle" ValueChanged="v => _liqDetalle = v ?? string.Empty" MaxLength="150" Disabled="@_busy" />
                                 <AlfaCheckbox Value="@_liqLibroIva" ValueChanged="v => _liqLibroIva = v == true" Disabled="@_busy">Incluir el IVA de la comisión en el Libro de IVA Compras</AlfaCheckbox>
-                                <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || _liqUnidad.Length == 0 || _liqTalonario.Length == 0)" OnClick="GenerarLiquidacion">Generar @l.Dias.Count asientos</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || _liqUnidad.Length == 0 || _liqTalonario.Length == 0)" OnClick="GenerarLiquidacion">@(_liqModo == "unico" ? "Generar 1 asiento" : $"Generar {l.Dias.Count} asientos")</AlfaButton>
                             </div>
-                            <p>Se genera un asiento @cat.Tc por día y los créditos de NAVE de ese día quedan conciliados contra el renglón del banco. Cada día se graba por separado: si alguno falla, los anteriores quedan hechos.</p>
+                            <p>@(_liqModo == "unico"
+                                ? $"Se genera un único asiento {cat.Tc} con el total del período y todos los créditos de NAVE quedan conciliados contra el renglón del banco. Podés cambiar la fecha, las cuentas y el detalle antes de generar."
+                                : $"Se genera un asiento {cat.Tc} por día y los créditos de NAVE de ese día quedan conciliados contra el renglón del banco. Cada día se graba por separado: si alguno falla, los anteriores quedan hechos.")</p>
                         }
+                        @if (_liqModo == "unico")
+                        {
+                            <h4>Vista previa del asiento</h4>
+                            <div class="conciliacion-scroll">
+                                <table class="conciliacion-tabla">
+                                    <thead><tr><th>Cuenta</th><th>Descripción</th><th>Debe</th><th>Haber</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var f in VistaPreviaLiquidacion(l))
+                                        {
+                                            <tr><td>@f.Cuenta</td><td>@f.Nombre</td><td class="conciliacion-numero">@(f.Debe == 0 ? "" : Dinero(f.Debe))</td><td class="conciliacion-numero">@(f.Haber == 0 ? "" : Dinero(f.Haber))</td></tr>
+                                        }
+                                        <tr><td colspan="2"><strong>Totales</strong></td><td class="conciliacion-numero"><strong>@Dinero(l.Neto + l.Comision + l.IvaComision)</strong></td><td class="conciliacion-numero"><strong>@Dinero(l.Bruto)</strong></td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p>@(_liqLibroIva ? $"Libro de IVA Compras: neto gravado {Dinero(l.Comision)} · IVA {Dinero(l.IvaComision)} · total {Dinero(l.Comision + l.IvaComision)}." : "Sin registro en el Libro de IVA Compras.")</p>
+                        }
+                        <h4>Detalle por día</h4>
                         <div class="conciliacion-scroll">
                             <table class="conciliacion-tabla">
                                 <thead><tr><th>Día</th><th>Medios</th><th>Operaciones</th><th>Bruto (haber)</th><th>Comisión + IVA (debe)</th><th>Neto (debe banco)</th></tr></thead>
@@ -205,6 +238,16 @@
                         </div>
                     }
                 }
+            </section>
+        }
+    }
+    else
+    {
+        @if (_creditosProcesador > 0)
+        {
+            <section class="panel-card">
+                <p>Esta importación tiene <strong>@_creditosProcesador</strong> créditos de NAVE. La comisión, el IVA y el asiento de liquidación están en la solapa <strong>Liquidación</strong>.</p>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="IrALiquidacion">Ir a Liquidación</AlfaButton>
             </section>
         }
         <section class="panel-card">
@@ -655,7 +698,7 @@
     private Task PublicarAccionesConciliacion(IReadOnlyList<PageHeaderAction> acciones) { if(_disposed)return Task.CompletedTask;_accionesConciliacion=acciones;PublicarHeader();return Task.CompletedTask; }
     private Task PublicarBusquedaConciliacion(RenderFragment contenido) { if(_disposed)return Task.CompletedTask;_busquedaConciliacion=contenido;PublicarHeader();return Task.CompletedTask; }
     private ConciliacionComparacionPanel? _comparacion;
-    private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("conciliar","Conciliar cuenta")];
+    private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("liquidacion", "Liquidación"), new("conciliar","Conciliar cuenta")];
     private static readonly IReadOnlyList<AlfaSelectOption> Bancos = Enum.GetValues<BankSource>().Select(b => new AlfaSelectOption(b.ToString(), b switch {BankSource.MercadoPago=>"Mercado Pago",BankSource.Nacion=>"Nación",_=>b.ToString()})).ToList();
     private IReadOnlyList<AlfaSelectOption> OpcionesCuentas => _cuentas.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} — {c.Descripcion}")).ToList();
     private static readonly IReadOnlyList<AlfaSelectOption> Clasificaciones = Enum.GetValues<MovementCategory>()
@@ -851,9 +894,30 @@
     private string _liqUnidad = "", _liqTalonario = "", _liqDetalle = "Liquidación NAVE";
     private Guid _liqOperacion = Guid.NewGuid();
     private bool _liqLibroIva = true;
+    private string _liqModo = "unico", _liqFecha = "";
+    private void CambiarModoLiq(string? modo) => _liqModo = modo == "dia" ? "dia" : "unico";
+    private static readonly IReadOnlyList<AlfaSelectOption> ModosLiq = [new("unico","Un solo asiento con el total (recomendado)"),new("dia","Un asiento por día de acreditación")];
+    private string NombreCuentaLiq(string codigo)
+        => _liquidacion?.CuentasTarjeta.Concat(_liquidacion.CuentasGasto).FirstOrDefault(c => c.Codigo == codigo)?.Descripcion
+           ?? _liqCatalogo?.Catalogo.Bancos.FirstOrDefault(b => b.Codigo == codigo)?.Descripcion ?? "";
+    private IReadOnlyList<(string Cuenta,string Nombre,decimal Debe,decimal Haber)> VistaPreviaLiquidacion(LiquidacionPropuesta l)
+    {
+        var filas = new List<(string,string,decimal,decimal)> { (l.CuentaBanco,NombreCuentaLiq(l.CuentaBanco),l.Neto,0m) };
+        if (l.Comision > 0) filas.Add((l.CuentaComision,NombreCuentaLiq(l.CuentaComision),l.Comision,0m));
+        if (l.IvaComision > 0) filas.Add((l.CuentaIva,NombreCuentaLiq(l.CuentaIva),l.IvaComision,0m));
+        foreach (var g in l.Dias.SelectMany(d => d.Lineas).Where(x => x.Bruto != 0).GroupBy(x => x.Cuenta).OrderBy(g => g.Key))
+            filas.Add((g.Key,NombreCuentaLiq(g.Key),0m,g.Sum(x => x.Bruto)));
+        return filas;
+    }
     private async Task PrepararLiquidacion(CancellationToken ct)
     {
         _liquidacion = _resumenDetalle is not null && _filtro.HasValue ? await Servicio.PrepararLiquidacionAsync(_resumenDetalle.DetalleId,_filtro,ct) : null;
+        // Fecha sugerida del asiento único: fin de mes del último día cobrado.
+        if (_liqFecha.Length == 0 && _liquidacion is { Dias.Count: > 0 } prop)
+        {
+            var ultimo = prop.Dias.Max(d => d.Fecha);
+            _liqFecha = new DateTime(ultimo.Year,ultimo.Month,DateTime.DaysInMonth(ultimo.Year,ultimo.Month)).ToString("yyyy-MM-dd");
+        }
         if (_liquidacion is { Errores.Count: 0 } && _liqCatalogo is null)
         {
             _liqCatalogo = await Servicio.LiquidacionCatalogoAsync(ct);
@@ -880,14 +944,14 @@
     private Task GenerarLiquidacion() => Operar(async ct =>
     {
         if (_resumenDetalle is null || !_filtro.HasValue || !int.TryParse(_liqTalonario,out var talonario)) return;
-        var r = await Servicio.GenerarLiquidacionAsync(new(_liqOperacion,_filtro.Value,_resumenDetalle.DetalleId,_liqUnidad,talonario,_liqDetalle,_liqLibroIva),ct);
+        var r = await Servicio.GenerarLiquidacionAsync(new(_liqOperacion,_filtro.Value,_resumenDetalle.DetalleId,_liqUnidad,talonario,_liqDetalle,_liqLibroIva,_liqModo == "unico",DateTime.TryParse(_liqFecha,System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out var fechaAsiento) ? fechaAsiento : null),ct);
         ct.ThrowIfCancellationRequested();
         var lista = r.Generados.Count == 0 ? "" : $" Primero: {r.Generados[0].Comprobante}; último: {r.Generados[^1].Comprobante}.";
         _feedback = new AppUiMessage
         {
             Severity = r.Error is null ? AppUiFeedbackSeverity.Success : AppUiFeedbackSeverity.Warning,
-            Title = r.Error is null ? "Asientos de liquidación generados" : "Liquidación incompleta",
-            Message = $"{r.Generados.Count} asientos generados ({Dinero(r.Generados.Sum(g => g.Bruto))} bruto), {r.Omitidos} días ya liquidados.{lista}" + (r.Error is null ? "" : $" Se detuvo en {r.Error}")
+            Title = r.Error is null ? "Asiento de liquidación generado" : "Liquidación incompleta",
+            Message = $"{r.Generados.Count} asiento(s) generado(s) ({Dinero(r.Generados.Sum(g => g.Bruto))} bruto), {r.Omitidos} días ya liquidados.{lista}" + (r.Error is null ? "" : $" Se detuvo en {r.Error}")
         };
         _liqOperacion = Guid.NewGuid();
         _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1),ct);
@@ -908,6 +972,7 @@
         await Servicio.GuardarCuentaMedioAsync(medio,cuenta ?? "",ct);
         await PrepararLiquidacion(ct);
     });
+    private Task IrALiquidacion() => CambiarTab("liquidacion");
     private Task CambiarTab(string? tab) => Operar(async ct =>
     {
         _tab = tab ?? "importar";
@@ -917,6 +982,7 @@
     {
         if (_tab == "importar") _importaciones = await Servicio.ImportacionesAsync(_paginaImport,ct);
         else if (_tab=="conciliar") { if(_comparacion is not null) await _comparacion.ActualizarAsync(); }
+        else if (_tab=="liquidacion") await ActualizarCreditosProcesador(ct);
         else { _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(_paginaMov),ct); _seleccion = null; _detalle = []; await ActualizarCreditosProcesador(ct); }
     }
     private Task AbrirCobranza(ConciliacionMovimiento row,string? preferido=null) => Operar(async ct =>
@@ -1064,7 +1130,7 @@
             Title = "Conciliación bancaria asistida con IA", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria asistida con IA"],
             TopNavigationItems = Navegacion(),
             SearchContent = _tab=="conciliar" ? _busquedaConciliacion : _tab=="revisar" ? RenderBusquedaRevision() : null,
-            Search = _tab=="conciliar" ? null : new PageHeaderSearchConfig
+            Search = _tab is "conciliar" or "liquidacion" ? null : new PageHeaderSearchConfig
             {
                 Text=_buscarGlobal,Placeholder="Todos los bancos: importe, detalle o referencia…",Disabled=_busy,
                 OnTextChanged=value=> { _buscarGlobal=value; PublicarHeader(); return Task.CompletedTask; },
@@ -1083,7 +1149,7 @@
                     Title="Genera el asiento mensual de comisiones, IVA, retenciones e impuesto a los débitos y créditos. Elegí antes un extracto en Importación.",OnClick=AbrirGastos },
                 new() { Key="cuentas-asientos",Label="Cuentas para asientos",Icon="bi-journal-text",Disabled=_busy,OnClick=ConfigurarAsientos }
             ],
-            Pagination = _tab=="conciliar" ? null : new() { Label = $"{total} registros",PageLabel = $"{pagina} / {Math.Max(1,(int)Math.Ceiling(total/50d))}",
+            Pagination = _tab is "conciliar" or "liquidacion" ? null : new() { Label = $"{total} registros",PageLabel = $"{pagina} / {Math.Max(1,(int)Math.Ceiling(total/50d))}",
                 HasPrevious = pagina>1,HasNext = pagina*50<total,Disabled = _busy,OnPrevious = () => Paginar(-1),OnNext = () => Paginar(1) }
         });
     }

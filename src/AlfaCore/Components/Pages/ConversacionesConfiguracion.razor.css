@@ -500,6 +500,9 @@
 .wa-api-list { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
 .wa-api-list__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
 .wa-api-list__header h2 { margin: 0; color: var(--alfa-text-primary, #f5f5f7); font-size: 15px; line-height: 1.4; font-weight: 600; }
+.wa-api-opciones { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .2)); }
+.wa-api-opciones strong { color: var(--alfa-text-primary, #f5f5f7); font-size: 13px; }
+.wa-api-opciones span { color: var(--alfa-text-secondary, #94a3b8); font-size: 12px; line-height: 1.4; }
 .wa-api-list__header span { color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; }
 .wa-api-integration-row, .wa-api-number-row { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; width: 100%; padding: 12px; border: 1px solid var(--alfa-border-default, #333640); border-radius: 8px; background: var(--alfa-bg-surface-raised, #1d2026); color: var(--alfa-text-primary, #f5f5f7); text-align: left; cursor: pointer; }
 .wa-api-integration-row:hover, .wa-api-number-row:hover { background: var(--alfa-state-hover, #22262e); }

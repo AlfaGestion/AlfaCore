@@ -3249,6 +3249,8 @@ public sealed class ConversacionesAutomationPipelineTests
         public virtual Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<bool> GetLlamarActivoAsync(CancellationToken ct = default) => Task.FromResult(true);
+        public virtual Task SaveLlamarActivoAsync(bool activo, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default) => throw new NotSupportedException();

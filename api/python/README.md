@@ -4,7 +4,8 @@ Copia controlada del servicio Python que actualmente se ejecuta en:
 
 `\\10.8.0.6\c\inetpub\wwwroot\wsAlfa`
 
-El binding HTTP activo comprobado para consumirlo es `https://alfanetac.ddns.net/`.
+En el entorno actual, AlfaCore consume `wsAlfa` mediante `https://alfacentral.ddns.net/` y usa
+`https://alfanetac.ddns.net/` como respaldo si el primer endpoint no está disponible.
 
 ## Versiones
 

@@ -599,6 +599,14 @@ Criterio aplicado:
 - Datos que usa: `CONV_ADJUNTOS`, `CONV_MENSAJES`, `TA_CONFIGURACION` (`CONVERSACIONES-ADJUNTOS-*`), disco de `App_Data/uploads/conversaciones/<base>`.
 - Observaciones: un lote por base por pasada (cada minuto mientras haya trabajo, cada hora después). Nunca borra un archivo sin haber actualizado antes la fila; los huérfanos se borran solo con `CONVERSACIONES-ADJUNTOS-BORRAR-HUERFANOS = SI`.
 
+### ConversacionLlamadas
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionLlamadas.cs` (lectura/grabación del interruptor en `ConversacionesConfigService.GetLlamarActivoAsync` / `SaveLlamarActivoAsync`)
+- Propósito: botón **Llamar** de Conversaciones: arma el enlace `wa.me` del cliente y el texto de la nota interna que registra la llamada (hecha o recibida, resultado, minutos, nota).
+- Datos que usa: `TA_CONFIGURACION` (`CONV_WHATSAPP_LLAMAR_ACTIVO`, grupo `CONVERSACIONES`; vacío = prendido, `0` = apagado), `CONV_MENSAJES` (vía `AddInternalNoteAsync`).
+- Observaciones: con coexistence Meta no deja llamar por la API, así que la llamada se hace en la app WhatsApp Business y AlfaCore solo la anota. El enlace tiene que ser un `<a target="_blank">` (abrirlo desde el servidor lo bloquea el navegador). Ver `Docs/manual_conversaciones.md`, sección Llamadas.
+
 ## Gestión operativa y financiera
 
 ### Stock
