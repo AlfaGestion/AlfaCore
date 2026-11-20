@@ -14,8 +14,24 @@ public sealed class LegacyPythonApiOptions
 
     public string BaseUrl { get; set; } = "https://alfacentral.ddns.net/";
 
+    // Se prueban en orden. BaseUrl se conserva para instalaciones anteriores.
+    public List<string> BaseUrls { get; set; } = [];
+
     public int TimeoutSeconds { get; set; } = 120;
 
-    public bool IsConfigured => Enabled && Uri.TryCreate(BaseUrl.Trim(), UriKind.Absolute, out var uri)
-        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    public bool IsConfigured => Enabled && GetBaseUrls().Any(IsHttpUrl);
+
+    public IReadOnlyList<string> GetBaseUrls()
+    {
+        return BaseUrls
+            .Append(BaseUrl)
+            .Select(value => value?.Trim().TrimEnd('/') ?? string.Empty)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsHttpUrl(string value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 }
