@@ -158,6 +158,16 @@ public sealed partial class ConciliacionBancariaService
             else
                 await cn.ExecuteAsync(Q($"INSERT dbo.MV_ASIENTOS({ColumnasComunes}) VALUES({ValoresComunes});",args));
         }
+        // El registro del libro tiene que haber quedado grabado con el IVA y la comisión: si no, se revierte todo (nunca un asiento sin libro en silencio).
+        if(totalLibro>0&&s.IncluirLibroIva)
+        {
+            var enLibro=await cn.QuerySingleAsync<(int Filas,decimal Iva,decimal Total)>(Q("""
+                SELECT COUNT(*) Filas,ISNULL(SUM(ISNULL(LIVA_ImpIVA,0)),0) Iva,ISNULL(SUM(ISNULL(LIVA_TOTAL,0)),0) Total FROM dbo.MV_ASIENTOS
+                WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo AND LTRIM(RTRIM(ISNULL(LIVA_TIPO,'')))='COMPRAS';
+                """,args));
+            if(enLibro.Filas!=1||enLibro.Iva!=dia.IvaComision||enLibro.Total!=totalLibro)
+                throw new InvalidOperationException("El registro del Libro de IVA Compras no quedó grabado en el asiento. No se confirmó la operación.");
+        }
         if(await cn.ExecuteScalarAsync<int>(Q("SELECT COUNT(*) FROM dbo.MV_ASIENTOS WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo;",args))!=lineas.Count
             || await cn.ExecuteScalarAsync<decimal>(Q("SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END) FROM dbo.MV_ASIENTOS WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo;",args))!=0)
             throw new InvalidOperationException("El asiento no quedó balanceado. No se confirmó la operación.");

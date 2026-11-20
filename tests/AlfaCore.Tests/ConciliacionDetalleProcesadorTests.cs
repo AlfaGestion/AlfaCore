@@ -119,3 +119,30 @@ public sealed class ConciliacionLiquidacionTests
     public void Sugiere_la_cuenta_solo_si_el_nombre_coincide(string medio,string? esperado)
         =>Assert.Equal(esperado,ConciliacionBancariaService.SugerirCuentaMedio(medio,Cuentas));
 }
+
+public sealed class ConciliacionTarjetasExcelTests
+{
+    [Fact]
+    public void El_excel_de_nave_se_lee_como_liquidacion_con_el_bruto_por_operacion()
+    {
+        using var wb=new ClosedXML.Excel.XLWorkbook();
+        var ws=wb.AddWorksheet("Sheet0");
+        ws.Cell(9,1).Value="Informe de detalles - Todos los medios de cobro";
+        string[] cab=["Fecha de operación","Fecha de acreditación","Código de operación","Local","Nombre o ID","Medio de Cobro","Nombre de la persona","CUIT/CUIL/DNI","Medio de Pago","Monto bruto","Comisión","IVA comisión","Monto neto","Estado","ID externo de pago"];
+        for(var i=0;i<cab.Length;i++) ws.Cell(23,i+1).Value=cab[i];
+        ws.Cell(24,1).Value="01/10/2026 12:34"; ws.Cell(24,2).Value=" 03/10/2026"; ws.Cell(24,3).Value=" GSY1"; ws.Cell(24,9).Value=" Visa Débito";
+        ws.Cell(24,10).Value=10000; ws.Cell(24,11).Value=80; ws.Cell(24,12).Value=16.8; ws.Cell(24,13).Value=9903.2; ws.Cell(24,14).Value=" Acreditado";
+        using var ms=new MemoryStream(); wb.SaveAs(ms);
+        var bytes=ms.ToArray();
+        Assert.True(ConciliacionTarjetasService.EsExcel(bytes));
+        Assert.False(ConciliacionTarjetasService.EsExcel("%PDF-1.4"u8.ToArray()));
+        var l=ConciliacionTarjetasService.LecturaDesdeExcel(bytes);
+        var d=Assert.Single(l.Detalles);
+        Assert.Equal(10000m,d.Importe);
+        Assert.Equal(new DateTime(2026,10,1),d.Fecha);
+        Assert.Equal(new DateTime(2026,10,3),d.FechaPago);
+        Assert.Equal("GSY1",d.Liquidacion);
+        Assert.Equal(10000m,l.Bruto);
+        Assert.Equal(9903.2m,l.Neto);
+    }
+}

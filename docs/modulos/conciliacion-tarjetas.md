@@ -1,5 +1,9 @@
 # Conciliación de tarjetas: etapa inicial
 
+## Excel «Detalle de operaciones» de NAVE (20/11/2026)
+
+La importación acepta también el Excel de NAVE (.xlsx, detectado por firma ZIP, no por nombre). `ConciliacionTarjetasService.Excel.cs` lo convierte con `ConciliacionDetalleProcesador` en una lectura equivalente a la de PDF: un detalle por operación con **importe = BRUTO**, fecha de operación, fecha de acreditación, código de operación en Liquidacion y Nivel «Cupón». Así el cruce con las ventas de Alfa es por bruto y no por el neto del extracto. Banco=Galicia, Comercio/Tarjeta=NAVE; el aviso informa comisión, IVA y neto. Lo usan Leer, Importar y la vista previa LT (relee el original). Pendiente: que la generación del asiento LT reutilice el escritor de la solapa Liquidación de Conciliación bancaria.
+
 ## Consulta de desconciliación: rendimiento y errores visibles (30/10/2026)
 
 **Deshacer varias** abre el diálogo antes de consultar, con progreso dentro de la ventana. Si falla,

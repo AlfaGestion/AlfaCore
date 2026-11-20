@@ -54,14 +54,14 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
         (await c.QueryAsync<ConciliacionCuenta>(Cmd(CuentasTarjetasSql,null,t))).AsList(),ct);
     public Task<TarjetasLectura> LeerAsync(ConciliacionArchivo archivo,CancellationToken ct=default)=>Ejecutar("LeerPDF",async(c,t)=>
     {
-        var lectura=await lector.LeerAsync(archivo,await PythonAsync(c,t),t);
+        var lectura=await LeerDocumentoAsync(archivo,await PythonAsync(c,t),t);
         await DetectarCuenta(c,lectura,t);
         return lectura;
     },ct);
     public Task<long> ImportarAsync(ConciliacionArchivo archivo,string cuenta,string sucursal,bool recordar,CancellationToken ct=default)=>Ejecutar("Importar",async(c,t)=>
     {
         // Se relee el original; nunca se confía en totales manipulables desde la UI.
-        var lectura=await lector.LeerAsync(archivo,await PythonAsync(c,t),t);
+        var lectura=await LeerDocumentoAsync(archivo,await PythonAsync(c,t),t);
         if(sucursal.Length>10)throw new InvalidOperationException("La sucursal admite hasta diez caracteres.");
         var session=sessions.GetActiveSession()!.Id;
         using var tx=c.BeginTransaction(IsolationLevel.Serializable);

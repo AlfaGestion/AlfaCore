@@ -25,7 +25,7 @@ public sealed partial class ConciliacionTarjetasService
         var i=await ObtenerLtImportacion(c,id,t);
         var original=await c.QuerySingleAsync<Original>(Cmd("SELECT Nombre,Original Contenido,Hash FROM dbo.TJ_Importacion WHERE Id=@id",new{id},t));
         if(Convert.ToHexString(SHA256.HashData(original.Contenido))!=original.Hash)throw new InvalidOperationException("El PDF original no coincide con su huella. Solicitá revisión a soporte.");
-        var lectura=await lector.LeerAsync(new(original.Nombre,original.Contenido),await PythonAsync(c,t),t);
+        var lectura=await LeerDocumentoAsync(new(original.Nombre,original.Contenido),await PythonAsync(c,t),t);
         var cuentas=(await LtCuentas(c,t)).AsList();
         var reglas=JsonSerializer.Deserialize<List<LtRegla>>(await ConfigLt(c,t))??[];
         var guardada=reglas.SingleOrDefault(r=>r.Banco==i.Banco&&r.Comercio==i.Comercio&&r.Tarjeta==i.Tarjeta&&r.CuentaTarjeta==i.Cuenta);

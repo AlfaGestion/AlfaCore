@@ -34,8 +34,8 @@
     @if(_tab=="importar")
     {
         <section class="panel-card tarjetas-importar">
-            <label>Liquidación mensual PDF (hasta 20 MB)
-                <InputFile OnChange="Seleccionar" accept=".pdf" disabled="@_busy" />
+            <label>Liquidación PDF o Excel de NAVE «Detalle de operaciones» (hasta 20 MB)
+                <InputFile OnChange="Seleccionar" accept=".pdf,.xlsx" disabled="@_busy" />
             </label>
             <p>Se conserva el documento original como testigo. Esta etapa concilia presentaciones; no genera LT, asientos ni libro de IVA.</p>
             @if(_lectura is {} l)
