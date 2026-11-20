@@ -12,7 +12,7 @@ public sealed class LegacyPythonApiOptions
     // Una instalación puede desactivarla explícitamente con Api__PythonLegacy__Enabled=false.
     public bool Enabled { get; set; } = true;
 
-    public string BaseUrl { get; set; } = "https://alfacentral.ddns.net/";
+    public string BaseUrl { get; set; } = "http://alfanetac.ddns.net/";
 
     // Se prueban en orden. BaseUrl se conserva para instalaciones anteriores.
     public List<string> BaseUrls { get; set; } = [];
