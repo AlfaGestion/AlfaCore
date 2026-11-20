@@ -37,7 +37,7 @@ public sealed class CargaComprobantesDirectaHomologacionTests(ITestOutputHelper 
             new DocumentTemplateService(runtime.Configuration, runtime.Events, users, logs.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
             new DocumentRenderer(), pdf, new ArcaQrService(), runtime.Events, logs.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
         var service = new CargaComprobantesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
-            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emission, docs, pdf);
+            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emission, docs, pdf, null, null!);
         var root = Directory.GetCurrentDirectory();
         while (!File.Exists(Path.Combine(root, "src/AlfaCore/AlfaCore.csproj"))) root = Directory.GetParent(root)!.FullName;
         var destino = Path.Combine(root, "artifacts/ventas/homologacion"); Directory.CreateDirectory(destino);

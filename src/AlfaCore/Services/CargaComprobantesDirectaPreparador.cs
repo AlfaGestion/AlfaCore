@@ -104,7 +104,7 @@ public sealed class CargaComprobantesDirectaPreparador
             if (a is null) problemas.Add($"Renglón {i + 1} · artículo {item.Articulo.Trim()}: no existe en el maestro de artículos.");
             else if (a.Motivo.Length > 0) problemas.Add($"Renglón {i + 1} · {a.Codigo} {a.Descripcion.Trim()}: {a.Motivo}.");
             // Retail: los precios del maestro son costos; sin precio de venta en la lista no se factura.
-            else if (preciosLista.Retail && (!filasLista.TryGetValue(a.Codigo, out var filaRetail) || filaRetail.Precio(clase) <= 0))
+            else if (preciosLista.Retail && pricing.UsaListas && (!filasLista.TryGetValue(a.Codigo, out var filaRetail) || filaRetail.Precio(clase) <= 0))
                 problemas.Add($"Renglón {i + 1} · {a.Codigo} {a.Descripcion.Trim()}: no tiene precio de {preciosLista.NombreClase(clase)} en la lista {pricing.IdLista.Trim()}.");
         }
         if (problemas.Count > 0)
@@ -140,7 +140,15 @@ public sealed class CargaComprobantesDirectaPreparador
             var (neto, final) = (precio.Neto, precio.Final - interno);
             var descuentoLista = precio.Descuento;
             var costoLista = precio.Costo;
-            if (neto <= 0) throw new CargaComprobantesReglaException($"El artículo {a.Codigo} no tiene un precio de venta positivo.");
+            if (neto <= 0 && !EsPortal(ctx.Usuario))
+                throw new CargaComprobantesReglaException($"El artículo {a.Codigo} no tiene un precio de venta positivo.");
+            if (neto <= 0)
+            {
+                neto = 0;
+                final = 0;
+                descuentoLista = 0;
+                costoLista = 0;
+            }
             var referencia = neto;
             var descuento = descuentoLista;
             var editada = item.PrecioUnitarioNeto.HasValue || item.Descuento.HasValue;
@@ -174,4 +182,8 @@ public sealed class CargaComprobantesDirectaPreparador
         public decimal Internos { get; set; }
         public string Motivo { get; set; } = "";
     }
+
+    private static bool EsPortal(string usuario)
+        => usuario.Trim().StartsWith("Desde portal:", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(usuario.Trim(), "PORTALWEB", StringComparison.OrdinalIgnoreCase);
 }

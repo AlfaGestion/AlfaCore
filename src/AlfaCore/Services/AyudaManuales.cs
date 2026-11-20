@@ -84,6 +84,7 @@ public static class AyudaManuales
         ("/libro-iva","contabilidad","Libros de IVA"),
         ("/contabilidad","contabilidad","Cómo usar los reportes contables"),
         ("/ventas/carga-comprobantes/visor","ventas","Ver comprobantes"),
+        ("/portal-cliente/pedidos/nuevo","ventas-modulo","Pedidos del Portal Cliente"),
         ("/ventas/carga-comprobantes","ventas","Buscar pendientes y filtrar"),
         ("/ventas/reportes","reportes","Buscar y generar"),
         ("/ventas/configuracion","ventas-modulo","Configuración de ventas"),

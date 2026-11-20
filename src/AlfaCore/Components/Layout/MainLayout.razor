@@ -1626,6 +1626,7 @@ else
     private string _routeSessionLabel = string.Empty;
     private string? _sqlEngineOutdatedMessage;
     private bool _manualLoginOverlayOpen;
+    private int _ensuringActiveSessionFromRoute;
 
     protected override void OnInitialized()
     {
@@ -2112,6 +2113,25 @@ else
     }
 
     private async Task EnsureActiveSessionFromRouteAsync()
+    {
+        // SessionChanged puede dispararse mientras SwitchSession todavía está notificando
+        // suscriptores. Sin esta barrera, la restauración del token y la navegación a una ruta
+        // tenant pueden iniciar varias activaciones concurrentes y volver a entrar en este método
+        // hasta provocar un StackOverflow.
+        if (Interlocked.Exchange(ref _ensuringActiveSessionFromRoute, 1) != 0)
+            return;
+
+        try
+        {
+            await EnsureActiveSessionFromRouteCoreAsync();
+        }
+        finally
+        {
+            Volatile.Write(ref _ensuringActiveSessionFromRoute, 0);
+        }
+    }
+
+    private async Task EnsureActiveSessionFromRouteCoreAsync()
     {
         if (!AppMode.IsSaaSMode || !TryGetRouteBaseId(out var routeBaseId))
         {

@@ -7,9 +7,25 @@ namespace AlfaCore.Services;
 public sealed class CargaComprobantesRepository
 {
     public async Task<CargaComprobantesContexto> GetContextoAsync(SqlConnection cn, string usuario, CancellationToken ct,
-        SqlTransaction? transaction = null, bool incluirCatalogos = true)
+        SqlTransaction? transaction = null, bool incluirCatalogos = true, bool portalCliente = false)
     {
-        var contexto = await cn.QuerySingleOrDefaultAsync<CargaComprobantesContexto>(new CommandDefinition("""
+        // El planificador vuelve a cargar el contexto usando solo el usuario del contexto
+        // recibido. Mantener esta detección acá evita que el flujo público intente resolver
+        // PORTALWEB contra TA_USUARIOS.
+        portalCliente |= string.Equals(usuario.Trim(), "PORTALWEB", StringComparison.OrdinalIgnoreCase)
+            || usuario.Trim().StartsWith("Desde portal:", StringComparison.OrdinalIgnoreCase);
+
+        var contexto = portalCliente
+            ? new CargaComprobantesContexto
+            {
+                Usuario = usuario.Trim(),
+                AdminCentral = true,
+                PuedeEditarPrecio = false,
+                PuedeEditarDescuento = false,
+                PuedeCambiarLista = false,
+                PuedeCambiarClase = false
+            }
+            : await cn.QuerySingleOrDefaultAsync<CargaComprobantesContexto>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(NOMBRE)) Usuario, LTRIM(RTRIM(ISNULL(UNegocio,''))) UnidadNegocio,
                 CONVERT(bit, ISNULL(AdminCentral,0)) AdminCentral,
                 CONVERT(bit,ISNULL(V_ModificaPrecio,1)) PuedeEditarPrecio,CONVERT(bit,ISNULL(V_Descuentos,1)) PuedeEditarDescuento

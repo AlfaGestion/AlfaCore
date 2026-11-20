@@ -9,7 +9,8 @@ public sealed partial class CargaComprobantesService(
     IPermissionService permissions, IAppEventService events,
     CargaComprobantesRepository repository, CargaComprobantesElectronicaVerificador electronica,
     CargaComprobantesElectronicaEmisor emisorPrueba, CargaComprobantesEmisionService emision,
-    IFacturaDocumentService documents, IDocumentPdfService pdf, CorreoSalienteService? correo = null) : ICargaComprobantesService
+    IFacturaDocumentService documents, IDocumentPdfService pdf, CorreoSalienteService? correo,
+    ICatalogosClienteSessionService catalogosClienteSession) : ICargaComprobantesService
 {
     public const string MenuKey = "D60CCW";
 
@@ -183,15 +184,21 @@ public sealed partial class CargaComprobantesService(
         }, ct);
 
     public Task<CargaComprobantesPlanGrabacion> ValidarDirectaAsync(CargaComprobantesDirecta directa, int talonario, CancellationToken ct = default)
-        => ExecuteAsync("ValidarDirecta", (cn, ctx, token) => emision.ValidarAsync(cn, ctx, 0, talonario, [], token, directa), ct);
+    {
+        ValidarSolicitudPortal(directa);
+        return ExecuteAsync("ValidarDirecta", (cn, ctx, token) => emision.ValidarAsync(cn, ctx, 0, talonario, [], token, directa), ct);
+    }
 
     public Task<CargaComprobantesGrabacionResultado?> ConsultarDirectaAsync(Guid borrador, Guid operacion, CancellationToken ct = default)
         => ExecuteAsync("ConsultarDirecta", (cn, ctx, token) => emision.ConsultarDirectaAsync(cn, ctx, borrador, operacion, token), ct);
 
     public Task<CargaComprobantesGrabacionResultado> GrabarDirectaAsync(CargaComprobantesDirecta directa, int talonario,
         Guid operacion, string huellaEsperada, CancellationToken ct = default)
-        => ExecuteAsync("GrabarDirecta", (cn, ctx, token) => emision.EmitirAsync(cn, ctx, 0, talonario, [], operacion,
+    {
+        ValidarSolicitudPortal(directa);
+        return ExecuteAsync("GrabarDirecta", (cn, ctx, token) => emision.EmitirAsync(cn, ctx, 0, talonario, [], operacion,
             huellaEsperada, () => EnsureContext(ctx.SesionId, ctx.Usuario, ctx.Sistema), token, directa), ct);
+    }
 
     public Task<byte[]> GetPdfFacturaAsync(Guid operacion, CancellationToken ct = default)
         => ExecuteAsync("PdfFacturaHomologacion", async (cn, ctx, token) =>
@@ -580,16 +587,33 @@ public sealed partial class CargaComprobantesService(
     private async Task<T> ExecuteAsync<T>(string action,
         Func<SqlConnection, CargaComprobantesContexto, CancellationToken, Task<T>> operation, CancellationToken ct)
     {
-        if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessionService, appUserSession, out var sessionId))
-            throw new CargaComprobantesReglaException("Ingresá con un usuario autorizado en la base activa.");
-        var user = appUserSession.GetCurrentUserName().Trim();
-        var system = appUserSession.CurrentUser?.SystemCode ?? string.Empty;
+        var portalCliente = catalogosClienteSession?.CurrentClient is not null;
+        Guid sessionId;
+        string user;
+        string system;
+        if (portalCliente)
+        {
+            var activePortalSession = sessionService.GetActiveSession();
+            if (activePortalSession is null)
+                throw new CargaComprobantesReglaException("No se pudo resolver la base activa del Portal Cliente.");
+
+            sessionId = activePortalSession.Id;
+            user = ConstruirUsuarioPortal(catalogosClienteSession!.CurrentClient!);
+            system = "PORTAL";
+        }
+        else
+        {
+            if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessionService, appUserSession, out sessionId))
+                throw new CargaComprobantesReglaException("Ingresá con un usuario autorizado en la base activa.");
+            user = appUserSession.GetCurrentUserName().Trim();
+            system = appUserSession.CurrentUser?.SystemCode ?? string.Empty;
+        }
         var connectionString = sessionService.GetConnectionString();
         try
         {
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(ct);
-            if (!await permissions.HasAccessAsync(MenuKey, ct))
+            if (!portalCliente && !await permissions.HasAccessAsync(MenuKey, ct))
             {
                 // El servicio compartido devuelve false también para un conjunto vacío.
                 // Confirmar ausencia real de restricciones: nunca interpretar un fallo
@@ -608,7 +632,8 @@ public sealed partial class CargaComprobantesService(
                     throw new CargaComprobantesReglaException("Tu usuario no tiene acceso a Carga de Comprobantes.");
             }
             EnsureContext(sessionId, user, system);
-            var contexto = await repository.GetContextoAsync(cn, user, ct, incluirCatalogos: action == "Contexto");
+            var contexto = await repository.GetContextoAsync(cn, user, ct,
+                incluirCatalogos: action == "Contexto", portalCliente: portalCliente);
             contexto.SesionId = sessionId;
             contexto.Sistema = system;
             var result = await operation(cn, contexto, ct);
@@ -633,9 +658,40 @@ public sealed partial class CargaComprobantesService(
 
     private void EnsureContext(Guid sessionId, string user, string system)
     {
+        if (catalogosClienteSession?.CurrentClient is not null)
+        {
+            var currentPortalSession = sessionService.GetActiveSession();
+            if (currentPortalSession is null || currentPortalSession.Id != sessionId)
+                throw new CargaComprobantesReglaException("Cambió la base del Portal Cliente. Volvé a cargar la pantalla.");
+            return;
+        }
+
         if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessionService, appUserSession, out var current) || current != sessionId ||
             !string.Equals(user, appUserSession.GetCurrentUserName().Trim(), StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(system, appUserSession.CurrentUser?.SystemCode ?? string.Empty, StringComparison.OrdinalIgnoreCase))
             throw new CargaComprobantesReglaException("Cambió la base o el usuario. Volvé a cargar el módulo en la sesión actual.");
+    }
+
+    private void ValidarSolicitudPortal(CargaComprobantesDirecta directa)
+    {
+        var clientePortal = catalogosClienteSession?.CurrentClient;
+        if (clientePortal is null)
+            return;
+
+        if (!string.Equals(directa.Tc.Trim(), "NP", StringComparison.OrdinalIgnoreCase))
+            throw new CargaComprobantesReglaException("El Portal Cliente solo permite registrar Notas de Pedido.");
+        if (!string.Equals(directa.Cliente.Trim(), clientePortal.CodigoCliente.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new CargaComprobantesReglaException("El cliente del pedido no coincide con la sesión del Portal Cliente.");
+        if (directa.Lineas.Any(x => x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue))
+            throw new CargaComprobantesReglaException("El Portal Cliente no permite modificar precios ni descuentos.");
+    }
+
+    private static string ConstruirUsuarioPortal(CatalogosClienteSessionInfo cliente)
+    {
+        var nombre = string.IsNullOrWhiteSpace(cliente.RazonSocial)
+            ? cliente.CodigoCliente.Trim()
+            : cliente.RazonSocial.Trim();
+        // V_MV_CPTE.USUARIO y el registro de operación siguen el ancho legacy de 50.
+        return $"Desde portal: {nombre}"[..Math.Min(50, $"Desde portal: {nombre}".Length)];
     }
 }

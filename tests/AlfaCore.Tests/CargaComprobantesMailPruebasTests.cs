@@ -48,7 +48,7 @@ public sealed class CargaComprobantesMailPruebasTests(ITestOutputHelper output)
             new DocumentTemplateService(runtime.Configuration, runtime.Events, users, loggers.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
             new DocumentRenderer(), pdfService, new ArcaQrService(), runtime.Events, loggers.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
         var service = new CargaComprobantesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
-            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()));
+            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()), null!);
 
         var config = await service.GetMailConfigAsync();
         output.WriteLine($"Config: asunto «{config.Asunto}» · al emitir {config.EnviarAlEmitir} · prueba «{config.MailPrueba}»");
@@ -110,7 +110,7 @@ public sealed class CargaComprobantesMailPruebasTests(ITestOutputHelper output)
             new DocumentTemplateService(runtime.Configuration, runtime.Events, users, loggers.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
             new DocumentRenderer(), pdfService, new ArcaQrService(), runtime.Events, loggers.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
         var service = new CargaComprobantesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
-            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()));
+            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()), null!);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var borrador = await service.PrepararMailComprobanteAsync(factura.Tc, factura.Id);
@@ -154,7 +154,7 @@ public sealed class CargaComprobantesMailPruebasTests(ITestOutputHelper output)
             new DocumentTemplateService(runtime.Configuration, runtime.Events, users, loggers.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
             new DocumentRenderer(), pdfService, new ArcaQrService(), runtime.Events, loggers.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
         var service = new CargaComprobantesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
-            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()));
+            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()), null!);
 
         foreach (var orden in new[] { "", "fecha", "tipo", "numero", "cliente", "importe", "unidad", "usuario" })
             foreach (var desc in new[] { true, false })

@@ -1,0 +1,45 @@
+@page "/portal-cliente/pedidos/nuevo"
+@page "/{idweb}/{idbase:int}/portal-cliente/pedidos/nuevo"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Components.Shared
+
+@if (NotFound)
+{
+    <section class="page-grid portal-cliente">
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Base no disponible</h3>
+            <p class="panel-card__subtitle">No se pudo resolver la base asociada a este enlace.</p>
+        </section>
+    </section>
+}
+else if (!IsAuthenticated)
+{
+    <CatalogoClienteLoginPanel CatalogoNombre="Portal Cliente"
+                               BrandLogoUrl="@GetBrandingLogoUrl()"
+                               BrandName="@GetBrandingName()"
+                               IdWeb="@idweb"
+                               IdBase="@idbase"
+                               Codigo="@ClienteCodigo"
+                               CodigoChanged="v => ClienteCodigo = v"
+                               Password="@ClientePassword"
+                               PasswordChanged="v => ClientePassword = v"
+                               ShowPassword="@ShowPassword"
+                               ShowPasswordChanged="v => ShowPassword = v"
+                               Busy="@SessionBusy"
+                               Feedback="@LoginFeedback"
+                               OnSubmit="LoginClienteAsync"
+                               VolverUrl="@BuildPortalRoute("pedidos")"
+                               VolverTexto="Volver" />
+}
+else
+{
+    <VentasCargaDirecta idweb="@idweb"
+                        idbase="@idbase"
+                        EditarPedidoId="@EditarPedidoId" />
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "editar")]
+    public int? EditarPedidoId { get; set; }
+}

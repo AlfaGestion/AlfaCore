@@ -17,6 +17,7 @@
 @inject AlfaCore.Services.IArticuloImagenFtpService ArticuloImagenSvc
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPedidosEmailService PedidosEmailSvc
+@inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.IPortalClienteAutoLoginService PortalAutoLoginSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -591,6 +592,7 @@ else
     private ElementReference _toolbarRef;
     private bool _restoreAttempted;
     private bool _cartRestoreAttempted;
+    private bool _editPedidoAttempted;
     private string _cartContextKey = string.Empty;
     private bool _isDark = true;
 
@@ -603,6 +605,7 @@ else
     [Parameter] public bool Embedded { get; set; }
     [Parameter] public string? VolverUrl { get; set; }
     [Parameter] public string? VolverTexto { get; set; }
+    [Parameter] public int? ReemplazarPedidoId { get; set; }
     private CatalogoClienteLoginPanel? _loginPanel;
     private CatalogosPublicIdentityDto _branding = new();
 
@@ -905,6 +908,12 @@ else
         {
             _cartRestoreAttempted = true;
             await RestoreCarritoAsync();
+        }
+
+        if (IsAuthenticated && _catalogo is not null && !_editPedidoAttempted && ReemplazarPedidoId is > 0)
+        {
+            _editPedidoAttempted = true;
+            await CargarPedidoParaEditarAsync(ReemplazarPedidoId.Value);
         }
     }
 
@@ -1452,6 +1461,24 @@ else
         }
     }
 
+    private async Task CargarPedidoParaEditarAsync(int idPedido)
+    {
+        var detalle = await PortalClienteSvc.GetPedidoClienteDetalleAsync(
+            CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty, idPedido);
+        if (detalle is null || detalle.Anulada || !detalle.EsPedidoWeb || detalle.IdCatalogoWeb != IdInsert || _catalogo is null)
+            return;
+
+        _carrito.Clear();
+        foreach (var linea in detalle.Lineas)
+        {
+            if (linea.Cantidad > 0 && _catalogo.Articulos.Any(a => string.Equals(a.IdArticulo.Trim(), linea.IdArticulo.Trim(), StringComparison.OrdinalIgnoreCase)))
+                _carrito[linea.IdArticulo.Trim()] = linea.Cantidad;
+        }
+
+        await PersistCarritoAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
     private decimal GetCantidad(string idArticulo)
         => _carrito.TryGetValue(idArticulo.Trim(), out var cantidad) ? cantidad : 0m;
 
@@ -1614,6 +1641,25 @@ else
             _pedidoResultado = result.Value;
             _carrito.Clear();
             await PersistCarritoAsync();
+
+            if (ReemplazarPedidoId is > 0)
+            {
+                try
+                {
+                    await PortalClienteSvc.AnularPedidoClienteAsync(
+                        CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty,
+                        ReemplazarPedidoId.Value);
+                }
+                catch (Exception ex)
+                {
+                    _confirmFeedback = new AppUiMessage
+                    {
+                        Severity = AppUiFeedbackSeverity.Warning,
+                        Message = "El nuevo pedido se registró, pero no se pudo anular el pedido anterior. Contactá a administración."
+                    };
+                    Logger.LogWarning(ex, "No se pudo reemplazar el pedido anterior {IdPedido}", ReemplazarPedidoId.Value);
+                }
+            }
 
             await PostProcesarConfirmacionAsync();
         }

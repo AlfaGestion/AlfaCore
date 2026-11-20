@@ -21,18 +21,36 @@ public sealed class CargaComprobantesSeleccionPrecios
         !configuracion.Trim().Equals("NO", StringComparison.OrdinalIgnoreCase);
     private static bool ClasePermitida(string clases, int clase) => string.IsNullOrWhiteSpace(clases) ||
         clases.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Contains(clase.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private static bool EsPortal(string usuario)
+        => usuario.Trim().StartsWith("Desde portal:", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(usuario.Trim(), "PORTALWEB", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<(Usuario Usuario, Dictionary<string,string> Config)> LeerAsync(
         SqlConnection cn, string usuario, CancellationToken ct, SqlTransaction? tx)
     {
+        var config=(await cn.QueryAsync<Config>(new CommandDefinition(ConfigSql,transaction:tx,cancellationToken:ct)))
+            .ToDictionary(x=>x.Clave,x=>x.Valor,StringComparer.OrdinalIgnoreCase);
+
+        // El Portal Cliente no tiene un usuario en TA_USUARIOS. El nombre "Desde portal: ..."
+        // es la identidad de auditoría de la operación, no una cuenta interna. En este flujo la
+        // lista/clase/precio sensible ya están bloqueados por CargaComprobantesService, por lo
+        // que no corresponde consultar permisos comerciales del usuario interno.
+        if (EsPortal(usuario))
+        {
+            return (new Usuario
+            {
+                ModificaLista = false,
+                Clases = string.Join(',', Enumerable.Range(1, 8)),
+                VeCostos = false
+            }, config);
+        }
+
         var user = await cn.QuerySingleOrDefaultAsync<Usuario>(new CommandDefinition("""
             SELECT CONVERT(bit,ISNULL(ModificaListaPrecios,0)) ModificaLista,
                 ISNULL(LTRIM(RTRIM(CLASEPUSA)),'') Clases,CONVERT(bit,ISNULL(ModificaCostos,0)) VeCostos
             FROM dbo.TA_USUARIOS WHERE UPPER(LTRIM(RTRIM(NOMBRE)))=UPPER(@Usuario);
             """, new { Usuario=usuario },tx,cancellationToken:ct))
             ?? throw new CargaComprobantesReglaException("El usuario no está definido en la base activa.");
-        var config=(await cn.QueryAsync<Config>(new CommandDefinition(ConfigSql,transaction:tx,cancellationToken:ct)))
-            .ToDictionary(x=>x.Clave,x=>x.Valor,StringComparer.OrdinalIgnoreCase);
         return (user,config);
     }
 
@@ -74,6 +92,18 @@ public sealed class CargaComprobantesSeleccionPrecios
         var pricing=await new ArticuloPrecioResolverService().ResolveContextAsync(cn,draft.Cliente,ct,tx);
         if(CargaComprobantesTipos.EsCredito(draft.Tc)) return (pricing,precios);
         AplicarRetail(pricing,precios);
+        if (EsPortal(usuario))
+        {
+            // Una Nota de Pedido del Portal no es una venta fiscal: el cliente puede solicitar
+            // artículos aunque todavía no tengan precio en su lista. El importe queda en cero y
+            // los precios/listas siguen sin ser editables desde la pantalla.
+            pricing.UsaListas = false;
+            pricing.PreciosConIva = false;
+            // El maestro Retail solo tiene costos y el buscador lo oculta cuando Retail=true.
+            // Para pedidos del portal necesitamos igualmente mostrar el artículo, aun con precio 0.
+            pricing.Retail = false;
+            return (pricing, precios);
+        }
         var (user,cfg)=await LeerAsync(cn,usuario,ct,tx);
         var usaListas=Si(cfg.GetValueOrDefault("USALISTASDEPRECIOS"));
         if(draft.ListaPrecio is not null)

@@ -4,6 +4,96 @@ a, .btn-link {
     color: #006bb7;
 }
 
+.portal-cliente__pedido-editor-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgb(3 8 18 / 78%);
+}
+
+.portal-cliente__pedido-editor {
+    display: flex;
+    flex-direction: column;
+    width: min(1480px, 100%);
+    height: min(94vh, 980px);
+    overflow: hidden;
+    border: 1px solid var(--alfa-border, #334155);
+    border-radius: 14px;
+    background: var(--alfa-surface, #0f172a);
+    box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+}
+
+.portal-cliente__pedido-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--alfa-border, #334155);
+    background: var(--alfa-surface-raised, #111827);
+}
+
+.portal-cliente__pedido-editor-eyebrow {
+    display: block;
+    margin-bottom: 2px;
+    color: #7dd3fc;
+    font-size: .72rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.portal-cliente__pedido-editor-header h2 {
+    margin: 0;
+    color: var(--alfa-text, #f8fafc);
+    font-size: 1.05rem;
+}
+
+.portal-cliente__pedido-editor-close {
+    display: inline-grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid var(--alfa-border, #475569);
+    border-radius: 8px;
+    color: var(--alfa-text, #f8fafc);
+    background: transparent;
+    cursor: pointer;
+}
+
+.portal-cliente__pedido-editor-close:hover,
+.portal-cliente__pedido-editor-close:focus-visible {
+    background: rgb(255 255 255 / 10%);
+}
+
+.portal-cliente__pedido-editor-body {
+    flex: 1;
+    min-height: 0;
+    background: #0b0f14;
+}
+
+.portal-cliente__pedido-editor-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+@media (max-width: 760px) {
+    .portal-cliente__pedido-editor-backdrop {
+        padding: 0;
+    }
+
+    .portal-cliente__pedido-editor {
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+    }
+}
+
 .btn-primary {
     color: #fff;
     background-color: #1b6ec2;

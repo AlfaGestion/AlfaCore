@@ -10,11 +10,14 @@
 @inject IAppUserSessionService Users
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
+@inject ICatalogosClienteSessionService CatalogoClienteSession
+@inject IPortalClienteService PortalClienteSvc
+@inject ICentralBasesService CentralBasesSvc
 @implements IDisposable
 
-<PageTitle>Carga directa | AlfaCore</PageTitle>
+<PageTitle>@(PortalMode ? "Nuevo pedido | Portal Cliente" : "Carga directa | AlfaCore")</PageTitle>
 <div class="gd-page gd directa-page">
-    <AlfaNotification Message="@_feedback" />
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
     @if (_busy) { <AlfaNotification Message="@AppUiMessage.Info("Operación en curso", "Esperá a que aparezca el resultado.")" /> }
     @if (_resultado is { } r)
     {
@@ -26,29 +29,36 @@
     {
         @* Encabezado como en Alfa: primero el cliente; unidad de negocio arrastra depósito y talonario (2026-10-22). *@
         <section class="directa-fields" aria-label="Datos de la factura">
-            <AlfaLookup TItem="CargaComprobantesOpcionFiltro" Label="Cliente" Placeholder="Código, nombre o documento" Class="directa-cliente"
-                MinimumCharacters="1" @bind-SearchText="_clienteTexto" SelectedItem="_cliente" SelectedItemChanged="ClienteChanged" Disabled="@Bloqueado"
-                SearchFunc="Service.BuscarClientesDirectaAsync" ItemKey="x => x.Codigo">
-                <ItemTemplate Context="c">@c.Codigo · @c.Descripcion</ItemTemplate>
-            </AlfaLookup>
-            <AlfaSelect Label="Tipo de comprobante" Value="@_draft.Tc" ValueChanged="TipoChanged" Disabled="@Bloqueado"
+            @if (PortalMode)
+            {
+                <AlfaInput Label="Cliente" Value="@_clienteTexto" Disabled="true" Class="directa-cliente" />
+            }
+            else
+            {
+                <AlfaLookup TItem="CargaComprobantesOpcionFiltro" Label="Cliente" Placeholder="Código, nombre o documento" Class="directa-cliente"
+                    MinimumCharacters="1" @bind-SearchText="_clienteTexto" SelectedItem="_cliente" SelectedItemChanged="ClienteChanged" Disabled="@Bloqueado"
+                    SearchFunc="Service.BuscarClientesDirectaAsync" ItemKey="x => x.Codigo">
+                    <ItemTemplate Context="c">@c.Codigo · @c.Descripcion</ItemTemplate>
+                </AlfaLookup>
+            }
+            <AlfaSelect Label="Tipo de comprobante" Value="@_draft.Tc" ValueChanged="TipoChanged" Disabled="@(PortalMode || Bloqueado)"
                 Options="@TiposComprobante" />
-            <AlfaSelect Label="Unidad de negocio" Value="@_draft.UnidadNegocio" ValueChanged="UnidadChanged" Disabled="@Bloqueado"
+            <AlfaSelect Label="Unidad de negocio" Value="@_draft.UnidadNegocio" ValueChanged="UnidadChanged" Disabled="@(PortalMode || Bloqueado)"
                 Options="@_contexto.UnidadesNegocio.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()" Placeholder="Elegí una unidad" />
-            <AlfaSelect Label="Depósito" Value="@_draft.Deposito" ValueChanged="v => Cambiar(() => _draft.Deposito = v ?? string.Empty)" Disabled="@Bloqueado"
+            <AlfaSelect Label="Depósito" Value="@_draft.Deposito" ValueChanged="v => Cambiar(() => _draft.Deposito = v ?? string.Empty)" Disabled="@(PortalMode || Bloqueado)"
                 Options="@Depositos" Placeholder="Elegí un depósito" />
-            <AlfaSelect Label="Talonario" Value="@_talonario" ValueChanged="v => Cambiar(() => _talonario = v)" Disabled="@Bloqueado"
+            <AlfaSelect Label="Talonario" Value="@_talonario" ValueChanged="v => Cambiar(() => _talonario = v)" Disabled="@(PortalMode || Bloqueado)"
                 Options="@Talonarios" Placeholder="Elegí un talonario" />
             <AlfaSelect Label="Lista de precios" Value="@ListaSeleccionada" ValueChanged="ListaChanged"
-                Disabled="@(Bloqueado || !Editable || !_contexto.PuedeCambiarLista)" Options="@ListasPrecio" Placeholder="@ListaDelCliente" />
+                Disabled="@(PortalMode || Bloqueado || !Editable || !_contexto.PuedeCambiarLista)" Options="@ListasPrecio" Placeholder="@ListaDelCliente" />
             <AlfaSelect Label="Clase de precio" Value="@_draft.ClasePrecio?.ToString()" ValueChanged="ClaseChanged"
-                Disabled="@(Bloqueado || !Editable || !_contexto.PuedeCambiarClase)"
+                Disabled="@(PortalMode || Bloqueado || !Editable || !_contexto.PuedeCambiarClase)"
                 Options="@_contexto.ClasesPrecio.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Descripcion}")).ToList()" Placeholder="@ClaseDelCliente" />
             <AlfaInput Type="date" Label="Fecha" Value="@((_draft.Fecha ?? DateTime.Today).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))"
-                ValueChanged="FechaChanged" Disabled="@Bloqueado"
+                ValueChanged="FechaChanged" Disabled="@(PortalMode || Bloqueado)"
                 HelpText="@(CargaComprobantesTipos.EsElectronico(_draft.Tc) ? "Electrónicos: hasta 5 días antes o después de hoy." : null)" />
             <AlfaSelect Label="Vendedor" Value="@_draft.Vendedor" ValueChanged="v => Cambiar(() => _draft.Vendedor = string.IsNullOrEmpty(v) ? null : v)"
-                Disabled="@Bloqueado" Options="@Vendedores" Placeholder="@VendedorDelCliente" />
+                Disabled="@(PortalMode || Bloqueado)" Options="@Vendedores" Placeholder="@VendedorDelCliente" />
         </section>
         @if (_clienteResumen is { } cr)
         {
@@ -66,8 +76,11 @@
                     @if (cr.LimiteCredito > 0) { <span>Límite de crédito: <strong>@Dinero(cr.LimiteCredito)</strong></span> }
                     @if (cr.Bloqueado) { <span class="directa-cliente-card__alerta">Cliente bloqueado o dado de baja</span> }
                 </div>
-                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-person-lines-fill" Disabled="@Bloqueado"
-                            OnClick="_ => _fichaClienteAbierta = true">Ver / editar cliente</AlfaButton>
+                @if (!PortalMode)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-person-lines-fill" Disabled="@Bloqueado"
+                                OnClick="_ => _fichaClienteAbierta = true">Ver / editar cliente</AlfaButton>
+                }
             </section>
         }
         @if (CargaComprobantesTipos.RequiereAsociado(_draft.Tc))
@@ -88,7 +101,11 @@
                 <thead>
                     <tr>
                         <th class="col-n">#</th><th class="col-cod">Código</th><th>Descripción</th><th class="num col-cant">Cantidad</th>
-                        <th class="num col-cant">Bultos</th><th class="num col-precio">Precio neto</th><th class="num col-dto">Dto. %</th>
+                        @if (!PortalMode)
+                        {
+                            <th class="num col-cant">Bultos</th>
+                        }
+                        <th class="num col-precio">Precio neto</th><th class="num col-dto">Dto. %</th>
                         <th class="num col-iva">IVA %</th><th class="num col-total">Total</th><th class="col-acc"></th>
                     </tr>
                 </thead>
@@ -111,12 +128,15 @@
                             </td>
                             <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Cantidad {item.Articulo}")" value="@Num(item.Cantidad)"
                                 @onchange="e => CantidadChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || item.Bultos.HasValue)" /></td>
-                            <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Bultos {item.Articulo}")" value="@(item.Bultos is { } b ? Num(b) : "")"
-                                @onchange="e => BultosChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || EsCredito)" /></td>
+                            @if (!PortalMode)
+                            {
+                                <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Bultos {item.Articulo}")" value="@(item.Bultos is { } b ? Num(b) : "")"
+                                    @onchange="e => BultosChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || EsCredito)" /></td>
+                            }
                             <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Precio neto {item.Articulo}")" value="@Num(PrecioNeto(item))"
                                 @onchange="e => PrecioChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || !PuedeEditarPrecio)" /></td>
                             <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Descuento {item.Articulo}")" value="@Num(DescuentoLinea(item))" title="@(item.Descuento is null && DescuentoLinea(item) > 0 ? "Descuento automático por cantidad (lista de precios)" : null)"
-                                @onchange="e => DescuentoChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || !Editable || !_contexto.PuedeEditarDescuento)" /></td>
+                                @onchange="e => DescuentoChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || !Editable || _contexto?.PuedeEditarDescuento != true)" /></td>
                             <td class="num">@((art?.TasaIva ?? 0).ToString("0.##", Ar))</td>
                             <td class="num">@Dinero(TotalLinea(item))</td>
                             <td class="col-acc">
@@ -137,7 +157,7 @@
                         {
                             <tr class="directa-detalle">
                                 <td></td>
-                                <td colspan="9">
+                                <td colspan="@(PortalMode ? 8 : 9)">
                                     <div class="directa-detalle__precios">
                                         <span class="directa-muted">Lista @info.Lista@(info.ListaNombre.Length > 0 ? $" · {info.ListaNombre}" : "") · @(fl.ConIva ? "precios con IVA" : "precios sin IVA")</span>
                                         @foreach (var c in ClasesDetalle(info, fl))
@@ -179,7 +199,10 @@
                         </td>
                         <td class="num"><input id="cd-cantidad" class="directa-cell" inputmode="decimal" aria-label="Cantidad" value="@_nuevoCantidad"
                             @oninput="e => _nuevoCantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="CantidadKeyDown" disabled="@(NuevaLineaBloqueada || _nuevoArticulo is null)" /></td>
-                        <td></td>
+                        @if (!PortalMode)
+                        {
+                            <td></td>
+                        }
                         <td class="num"><input id="cd-precio" class="directa-cell" inputmode="decimal" aria-label="Precio neto" value="@_nuevoPrecio"
                             @oninput="e => _nuevoPrecio = e.Value?.ToString() ?? string.Empty" @onkeydown="PrecioKeyDown"
                             disabled="@(NuevaLineaBloqueada || _nuevoArticulo is null || !PuedeEditarPrecio)" /></td>
@@ -202,7 +225,7 @@
                                 Disabled="@NuevaLineaBloqueada" OnClick="_ => TraerConceptosFacturaAsync()">Traer conceptos de la factura</AlfaButton>
                 }
                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-circle"
-                            Disabled="@(NuevaLineaBloqueada || !PermiteConceptos)" OnClick="_ => AgregarConceptoAsync()">Agregar concepto</AlfaButton>
+                            Disabled="@(PortalMode || NuevaLineaBloqueada || !PermiteConceptos)" OnClick="_ => AgregarConceptoAsync()">Agregar concepto</AlfaButton>
             </header>
             @{ var conceptos = _draft.Lineas.Where(x => x.EsConcepto).ToList(); }
             @if (conceptos.Count == 0)
@@ -371,6 +394,7 @@
 }
 
 @code {
+    private const string PortalClienteTokenStorageKey = "alfacore_catalogo_cliente_token";
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
     private CargaComprobantesDirecta _draft = new();
     private Dictionary<string, CrmCotizacionArticuloDto> _articulos = new();
@@ -390,8 +414,18 @@
     private readonly CancellationTokenSource _lifetime = new();
     private DotNetObjectReference<VentasCargaDirecta>? _dotNetRef;
     private bool _jsListo, _borradorRevisado;
+    private bool _portalInicializado;
     private int? _baseInicial;
     private string _usuarioInicial = "";
+    [Parameter, SupplyParameterFromQuery(Name = "editar")] public int? EditarPedidoId { get; set; }
+    [Parameter] public bool PortalModeOverride { get; set; }
+    [Parameter] public EventCallback OnPortalClosed { get; set; }
+
+    private bool PortalMode => PortalModeOverride || Navigation.Uri.Contains("/portal-cliente/pedidos/nuevo", StringComparison.OrdinalIgnoreCase);
+    private bool PortalSessionValida
+        => PortalMode && CatalogoClienteSession.CurrentClient is { } cliente
+           && (string.IsNullOrWhiteSpace(idweb) || string.Equals(cliente.IdWeb.Trim('/'), idweb.Trim('/'), StringComparison.OrdinalIgnoreCase))
+           && (!idbase.HasValue || cliente.IdBase == idbase.Value);
 
     // Línea nueva (al pie de la grilla).
     private string _nuevoCodigo = "", _nuevoCantidad = "1", _nuevoPrecio = "";
@@ -497,7 +531,41 @@
         _usuarioInicial = Users.CurrentUser?.UserName ?? "";
         Sessions.SessionChanged += ContextChanged; Users.StateChanged += ContextChanged; UpdateHeader();
     }
-    protected override Task OnInitializedAsync() => InicializarAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        if (PortalMode)
+        {
+            await ActivarBasePortalAsync();
+            return;
+        }
+
+        await InicializarAsync();
+    }
+
+    private async Task ActivarBasePortalAsync()
+    {
+        if (!PortalMode || idbase is not > 0)
+            return;
+
+        var basePortal = await CentralBasesSvc.GetByIdAsync(idbase.Value);
+        if (basePortal is null)
+            return;
+
+        // El Portal Cliente es anónimo para AlfaCore: la base se autoriza por la ruta
+        // tenant y no por el login interno de AlfaCore.
+        Sessions.SetWebhookOverride(new SessionDto
+        {
+            Id = Guid.Parse($"00000000-0000-0000-0000-{basePortal.IdBase:000000000000}"),
+            BaseId = basePortal.IdBase,
+            Nombre = basePortal.Nombre,
+            Servidor = basePortal.DbServer,
+            BaseDatos = basePortal.DbName,
+            Usuario = basePortal.DbUser,
+            Password = basePortal.DbPassword,
+            TrustServerCertificate = true,
+            Activa = true
+        });
+    }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender) UpdateHeader();
@@ -507,21 +575,99 @@
             try { await Js.InvokeVoidAsync("cargaDirecta.init", _dotNetRef); _jsListo = true; }
             catch (JSDisconnectedException) { return; }
         }
+        if (firstRender && PortalMode && !_portalInicializado)
+        {
+            _portalInicializado = true;
+            await RestaurarSesionPortalAsync();
+            await InicializarAsync();
+            return;
+        }
         if (_jsListo && _contexto is not null && !_borradorRevisado)
         {
             _borradorRevisado = true;
             await RestaurarBorradorAsync();
         }
     }
+
+    private async Task RestaurarSesionPortalAsync()
+    {
+        if (!PortalMode || CatalogoClienteSession.IsAuthenticated)
+            return;
+
+        try
+        {
+            var token = await Js.InvokeAsync<string?>("localStorage.getItem", PortalClienteTokenStorageKey);
+            if (!string.IsNullOrWhiteSpace(token))
+                CatalogoClienteSession.TryRestoreFromToken(token);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
     private Task InicializarAsync() => RunAsync(async () =>
     {
         var version = _contextVersion;
+        if (PortalMode && !PortalSessionValida)
+            throw new InvalidOperationException("La sesión del Portal Cliente no está disponible. Volvé a ingresar desde el portal.");
+
         var contexto = await Service.GetContextoAsync(_lifetime.Token);
         if (_disposed || version != _contextVersion) return;
-        _contexto = contexto; _draft.UnidadNegocio = contexto.UnidadNegocio;
-        try { _mediosPago = await Service.GetMediosPagoAsync(_lifetime.Token); } catch (Exception ex) when (ex is not OperationCanceledException) { _mediosPago = []; }
+        _contexto = contexto;
+        if (PortalMode)
+        {
+            var cliente = CatalogoClienteSession.CurrentClient!;
+            _draft = new CargaComprobantesDirecta { Tc = "NP", Cliente = cliente.CodigoCliente.Trim() };
+            _cliente = new CargaComprobantesOpcionFiltro { Codigo = cliente.CodigoCliente.Trim(), Descripcion = cliente.RazonSocial.Trim() };
+            _clienteTexto = $"{_cliente.Codigo} · {_cliente.Descripcion}";
+        }
+        _draft.UnidadNegocio = contexto.UnidadNegocio;
+        // Las Notas de Pedido del Portal no cobran en el momento de la carga; evitar esta
+        // consulta adicional acelera la apertura y la edición sin cambiar el circuito interno.
+        if (!PortalMode)
+        {
+            try { _mediosPago = await Service.GetMediosPagoAsync(_lifetime.Token); } catch (Exception ex) when (ex is not OperationCanceledException) { _mediosPago = []; }
+        }
         AplicarDefaultsUnidad();
+        if (PortalMode)
+        {
+            await CargarClienteResumenAsync();
+            await CargarPedidoParaEditarAsync();
+        }
     });
+
+    private async Task CargarPedidoParaEditarAsync()
+    {
+        if (!PortalMode || EditarPedidoId is not > 0)
+            return;
+
+        var detalle = await PortalClienteSvc.GetPedidoClienteDetalleAsync(
+            CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty, EditarPedidoId.Value, _lifetime.Token);
+        if (detalle is null || detalle.Anulada)
+            throw new InvalidOperationException("El pedido no está disponible para editarlo.");
+
+        foreach (var linea in detalle.Lineas.Where(x => x.Cantidad > 0 && !string.IsNullOrWhiteSpace(x.IdArticulo)))
+        {
+            _draft.Lineas.Add(new CargaComprobantesDirectaLinea
+            {
+                Articulo = linea.IdArticulo.Trim(),
+                Cantidad = linea.Cantidad
+            });
+
+            // Para editar no se vuelve a resolver el artículo contra la lista vigente: la nota
+            // puede conservar un precio histórico aunque hoy el cliente no tenga precio en lista.
+            _articulos[linea.IdArticulo.Trim()] = new CrmCotizacionArticuloDto
+            {
+                IdArticulo = linea.IdArticulo.Trim(),
+                Codigo = linea.IdArticulo.Trim(),
+                Descripcion = linea.Descripcion.Trim(),
+                PrecioUnitarioNeto = linea.PrecioUnitarioNeto,
+                PrecioUnitarioConIva = linea.PrecioUnitario
+            };
+        }
+
+        _draft.Observaciones = "Pedido web - Portal Cliente";
+        _feedback = AppUiMessage.Info("Pedido cargado", "Podés modificar los artículos y las cantidades. Los datos del cliente están protegidos.");
+    }
 
     // Depósito y talonario salen de la unidad de negocio (como en Alfa): se completan solos y se pueden cambiar.
     private void AplicarDefaultsUnidad()
@@ -928,7 +1074,25 @@
             var resultado = await Service.GrabarDirectaAsync(_draft, plan.Talonario, _operacion, plan.Huella, _lifetime.Token);
             if (_disposed || version != _contextVersion) return;
             _resultado = resultado; _operacion = resultado.Operacion;
-            if (resultado.Estado == "GRABADA") await BorrarBorradorAsync();
+            if (resultado.Estado == "GRABADA")
+            {
+                await BorrarBorradorAsync();
+                if (PortalMode && EditarPedidoId is > 0)
+                {
+                    try
+                    {
+                        await PortalClienteSvc.AnularPedidoClienteAsync(
+                            CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty,
+                            EditarPedidoId.Value,
+                            _lifetime.Token);
+                        _feedback = AppUiMessage.Success("Pedido actualizado", "Se registró el nuevo pedido y se anuló el anterior.");
+                    }
+                    catch
+                    {
+                        _feedback = AppUiMessage.Warning("Pedido nuevo registrado", "No se pudo anular automáticamente el pedido anterior. Contactá a administración.");
+                    }
+                }
+            }
         });
     }
     private Task RecuperarAsync() => RunAsync(async () =>
@@ -976,14 +1140,19 @@
         _draft = new(); _articulos.Clear(); _cliente = null; _clienteTexto = ""; _clienteResumen = null; LimpiarAsociado(); LimpiarNuevaLinea();
         _plan = null; _resultado = null; _feedback = null; _operacion = Guid.NewGuid(); _intento = false; _talonario = null;
     }
-    private Task Volver()
+    private async Task Volver()
     {
-        if (_draft.Lineas.Count > 0 && !_intento) { _confirmarSalida = true; return InvokeAsync(StateHasChanged); }
-        return Salir();
+        if (_draft.Lineas.Count > 0 && !_intento) { _confirmarSalida = true; await InvokeAsync(StateHasChanged); return; }
+        await Salir();
     }
     private async Task Salir()
     {
         if (!_intento) await BorrarBorradorAsync();
+        if (PortalMode)
+        {
+            await OnPortalClosed.InvokeAsync();
+            return;
+        }
         var ruta = Navigation.Uri.Split('?')[0].TrimEnd('/');
         Navigation.NavigateTo(ruta[..^"/nuevo".Length] + new Uri(Navigation.Uri).Query);
     }
@@ -1030,7 +1199,7 @@
     private string BorradorKey => $"alfacore.cargaDirecta.{_baseInicial}.{_usuarioInicial}".ToLowerInvariant();
     private async Task GuardarBorradorAsync()
     {
-        if (!_jsListo || _disposed || _contexto is null) return;
+        if (PortalMode || !_jsListo || _disposed || _contexto is null) return;
         if (_draft.Lineas.Count == 0 && _cliente is null) { await BorrarBorradorAsync(); return; }
         var b = new Borrador { Draft = _draft, Articulos = _articulos, ClienteCodigo = _cliente?.Codigo ?? "", ClienteDescripcion = _cliente?.Descripcion ?? "",
             Talonario = _talonario, Operacion = _operacion, Intento = _intento };
@@ -1043,6 +1212,9 @@
     }
     private async Task RestaurarBorradorAsync()
     {
+        if (PortalMode)
+            return;
+
         try
         {
             var json = await Js.InvokeAsync<string?>("localStorage.getItem", BorradorKey);
@@ -1083,9 +1255,9 @@
 
     private void UpdateHeader() => PageHeader.Set(new PageHeaderConfig
     {
-        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas", Title = "Carga directa",
-        Breadcrumb = ["Ventas", "Carga de Comprobantes", "Carga directa"], ShowHistoryNavigation = false,
-        TopNavigationItems = [new() { Key = "carga", Label = "Carga de Comprobantes", Active = true }],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = PortalMode ? "portal-cliente" : "ventas", Title = PortalMode ? (EditarPedidoId is > 0 ? "Editar pedido" : "Nuevo pedido") : "Carga directa",
+        Breadcrumb = PortalMode ? ["Portal Cliente", "Pedidos", EditarPedidoId is > 0 ? "Editar pedido" : "Nuevo pedido"] : ["Ventas", "Carga de Comprobantes", "Carga directa"], ShowHistoryNavigation = false,
+        TopNavigationItems = [new() { Key = "carga", Label = PortalMode ? "Pedidos" : "Carga de Comprobantes", Active = true }],
         State = _busy ? PageHeaderState.Loading : PageHeaderState.Editing,
         Actions = Acciones()
     });
@@ -1115,11 +1287,13 @@
             acciones.Add(new() { Key = "recuperar", Label = "Recuperar operación", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = RecuperarAsync });
             return acciones;
         }
-        acciones.Add(new() { Key = "nuevo-cliente", Label = "Nuevo cliente / CUIT", Icon = "bi-person-plus", Disabled = Bloqueado, OnClick = () => AbrirClientes(true) });
+        if (!PortalMode)
+            acciones.Add(new() { Key = "nuevo-cliente", Label = "Nuevo cliente / CUIT", Icon = "bi-person-plus", Disabled = Bloqueado, OnClick = () => AbrirClientes(true) });
         acciones.Add(new() { Key = "validar", Label = "Validar", Icon = "bi-check2-square", Disabled = Bloqueado, OnClick = ValidarAsync });
         acciones.Add(new() { Key = "grabar", Label = CargaComprobantesTipos.EsElectronico(_draft.Tc) ? "Emitir" : CargaComprobantesTipos.EsProforma(_draft.Tc) ? "Grabar proforma" : "Grabar", Icon = "bi-save", Style = PageHeaderActionStyle.Primary,
             Disabled = Bloqueado || _plan is null || _contexto?.PuedeEmitir != true, OnClick = AbrirConfirmacion });
-        acciones.Add(new() { Key = "clientes", Label = "Buscar cliente", Icon = "bi-search", Priority = PageHeaderActionPriority.Overflow, Disabled = Bloqueado, OnClick = () => AbrirClientes(false) });
+        if (!PortalMode)
+            acciones.Add(new() { Key = "clientes", Label = "Buscar cliente", Icon = "bi-search", Priority = PageHeaderActionPriority.Overflow, Disabled = Bloqueado, OnClick = () => AbrirClientes(false) });
         acciones.Add(new() { Key = "buscar-articulo", Label = "Buscar artículo (F5)", Icon = "bi-box-seam", Priority = PageHeaderActionPriority.Overflow, Disabled = NuevaLineaBloqueada, OnClick = AbrirBusquedaAsync });
         return acciones;
     }

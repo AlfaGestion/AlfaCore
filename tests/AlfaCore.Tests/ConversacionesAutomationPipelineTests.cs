@@ -3184,6 +3184,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         public Task<PagedResult<PortalClientePedidoResumenDto>> GetPedidosClienteAsync(PortalClientePedidosFiltroDto filtro, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClientePedidoDetalleDto?> GetPedidoClienteDetalleAsync(string codigoCliente, int idComprobante, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task AnularPedidoClienteAsync(string codigoCliente, int idComprobante, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClienteEstadoCuentaDto> GetEstadoCuentaAsync(PortalClienteEstadoCuentaFiltroDto filtro, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClienteComprobantePendienteDetalleDto?> GetComprobanteClienteDetalleAsync(string codigoCliente, int idComprobante, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClienteMiCuentaDto?> GetMiCuentaAsync(string codigoCliente, CancellationToken ct = default) => throw new NotSupportedException();
@@ -3197,6 +3198,7 @@ public sealed class ConversacionesAutomationPipelineTests
         public Task<PortalClienteCuentaCorrienteDto> GetCuentaCorrienteAsync(PortalClienteCuentaCorrienteFiltroDto filtro, CancellationToken ct = default) => throw new InvalidOperationException("Backend no disponible (simulado).");
         public Task<PagedResult<PortalClientePedidoResumenDto>> GetPedidosClienteAsync(PortalClientePedidosFiltroDto filtro, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClientePedidoDetalleDto?> GetPedidoClienteDetalleAsync(string codigoCliente, int idComprobante, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task AnularPedidoClienteAsync(string codigoCliente, int idComprobante, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClienteEstadoCuentaDto> GetEstadoCuentaAsync(PortalClienteEstadoCuentaFiltroDto filtro, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClienteComprobantePendienteDetalleDto?> GetComprobanteClienteDetalleAsync(string codigoCliente, int idComprobante, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PortalClienteMiCuentaDto?> GetMiCuentaAsync(string codigoCliente, CancellationToken ct = default) => throw new NotSupportedException();

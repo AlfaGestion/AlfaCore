@@ -46,7 +46,7 @@ public sealed class CargaComprobantesProformaPruebasTests(ITestOutputHelper outp
             new DocumentTemplateService(runtime.Configuration, runtime.Events, users, loggers.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
             new DocumentRenderer(), pdfService, new ArcaQrService(), runtime.Events, loggers.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
         var service = new CargaComprobantesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
-            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService);
+            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, null, null!);
 
         var hoy = await cn.ExecuteScalarAsync<DateTime>("SELECT CONVERT(date,GETDATE())");
         var filas = await service.BuscarFacturacionAutomaticaAsync(new CargaComprobantesFiltro { TipoOrigen = CargaComprobantesFacturacionAutomatica.TipoOrigen, FechaFacturacion = hoy });
