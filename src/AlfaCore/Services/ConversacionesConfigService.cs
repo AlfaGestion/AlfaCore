@@ -1458,6 +1458,29 @@ public sealed class ConversacionesConfigService(
             };
         }, "No se pudo cargar la configuración de prioridad de atención.", ct);
 
+    public Task<bool> GetLlamarActivoAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetLlamarActivo", async token =>
+        {
+            var tenant = ResolveTenantConnection(null, "GetLlamarActivo");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
+            await cn.OpenAsync(token);
+            var cfg = await ConfiguracionSql.LeerAsync(cn, null, [ConversacionLlamadas.ClaveActivo], token);
+            return ConversacionLlamadas.EstaActivo(ConfiguracionSql.Valor(cfg, ConversacionLlamadas.ClaveActivo));
+        }, "No se pudo leer si el botón Llamar está activo.", ct);
+
+    public Task SaveLlamarActivoAsync(bool activo, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SaveLlamarActivo", async token =>
+        {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            await ConfiguracionSql.GrabarAsync(cn, tx, ConversacionLlamadas.ClaveActivo, activo ? "1" : "0",
+                ConversacionLlamadas.GrupoConfiguracion, "Botón Llamar en Conversaciones", token);
+            await tx.CommitAsync(token);
+            return true;
+        }, "No se pudo guardar la configuración del botón Llamar.", ct);
+
     public Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);

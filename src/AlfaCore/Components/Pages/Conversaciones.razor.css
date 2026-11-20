@@ -3805,3 +3805,19 @@
 .conversations-template-header-file { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .conversations-template-header-file__name { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--alfa-font-small, 13px); }
 .conversations-template-header-file__name small { color: var(--alfa-text-secondary, #94a3b8); }
+
+/* Botón Llamar del encabezado (abre WhatsApp y anota la llamada como nota interna). */
+.conversation-llamar { position: relative; display: inline-flex; }
+.conversation-llamar__fondo { position: fixed; inset: 0; z-index: 40; border: 0; background: transparent; cursor: default; }
+.conversation-llamar__menu { position: absolute; top: calc(100% + .3rem); left: 0; z-index: 41; display: flex; flex-direction: column; gap: .15rem; width: min(300px, calc(100vw - 32px)); padding: .4rem; border: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .3)); border-radius: 12px; background: var(--alfa-bg-surface-raised, #0f172a); box-shadow: 0 16px 32px rgba(2, 6, 23, .34); }
+.conversation-llamar__menu a,
+.conversation-llamar__menu button { display: flex; align-items: flex-start; gap: .6rem; width: 100%; padding: .5rem .55rem; border: 0; border-radius: 8px; background: transparent; color: var(--alfa-text-primary, #f5f5f7); font-size: var(--alfa-font-body, 14px); text-align: left; text-decoration: none; cursor: pointer; }
+.conversation-llamar__menu a:hover,
+.conversation-llamar__menu button:hover { background: var(--alfa-state-hover, rgba(148, 163, 184, .12)); }
+.conversation-llamar__menu i { margin-top: .15rem; color: var(--alfa-accent, #38bdf8); }
+.conversation-llamar__menu span { display: flex; flex-direction: column; gap: .1rem; }
+.conversation-llamar__menu small { color: var(--alfa-text-secondary, #94a3b8); font-size: var(--alfa-font-small, 12px); }
+.llamada-dialog__campo { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .9rem; }
+.llamada-dialog__etiqueta { color: var(--alfa-text-secondary, #94a3b8); font-size: var(--alfa-font-small, 13px); font-weight: 600; }
+.llamada-dialog__opciones { display: flex; flex-wrap: wrap; gap: .4rem; }
+.llamada-dialog__campo textarea { width: 100%; min-height: 4.5rem; padding: .55rem .7rem; border: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .3)); border-radius: 8px; background: var(--alfa-bg-input, transparent); color: var(--alfa-text-primary, #f5f5f7); font: inherit; resize: vertical; }

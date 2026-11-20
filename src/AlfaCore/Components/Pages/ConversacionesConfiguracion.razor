@@ -317,6 +317,14 @@ else
                     @OnboardingInProgressPanel
                 }
                 }
+
+                <div class="wa-api-opciones">
+                    <strong>Opciones</strong>
+                    <AlfaCheckbox Value="@_llamarActivo"
+                                  Disabled="@(Saving || !_llamarCargado)"
+                                  ValueChanged="@((bool? v) => GuardarLlamarActivoAsync(v == true))">Mostrar el botón Llamar en las conversaciones</AlfaCheckbox>
+                    <span>Abre el chat del cliente en WhatsApp para llamar desde ahí y después anota cómo fue la llamada en la conversación.</span>
+                </div>
             </aside>
 
             <section class="wa-api-detail">
@@ -3195,6 +3203,19 @@ else
             _feedback ??= prioridadResult.Feedback;
         }
 
+        var llamarResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetLlamarActivoAsync(),
+            "No se pudo leer si el botón Llamar está activo.");
+        if (llamarResult.Success)
+        {
+            _llamarActivo = llamarResult.Value;
+            _llamarCargado = true;
+        }
+        else
+        {
+            _feedback ??= llamarResult.Feedback;
+        }
+
         var usuariosResult = await UiOps.RunAsync(
             () => ConfigSvc.GetUsuariosSistemaAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar los usuarios del sistema.");
@@ -4868,6 +4889,37 @@ else
         _feedback = result.Success
             ? AppUiMessage.Success("Prioridad guardada", "La cola de espera del inbox ya usa este orden de prioridad.")
             : result.Feedback;
+
+        Saving = false;
+    }
+
+    private bool _llamarActivo;
+    private bool _llamarCargado;
+
+    private async Task GuardarLlamarActivoAsync(bool activo)
+    {
+        Saving = true;
+        _feedback = null;
+        var anterior = _llamarActivo;
+        _llamarActivo = activo;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveLlamarActivoAsync(activo),
+            "No se pudo guardar la configuración del botón Llamar.");
+
+        if (result.Success)
+        {
+            _feedback = AppUiMessage.Success(
+                activo ? "Botón Llamar activado" : "Botón Llamar desactivado",
+                activo
+                    ? "Las conversaciones de WhatsApp muestran el botón para llamar y anotar la llamada."
+                    : "Las conversaciones dejan de mostrar el botón Llamar.");
+        }
+        else
+        {
+            _llamarActivo = anterior;
+            _feedback = result.Feedback;
+        }
 
         Saving = false;
     }
