@@ -14,7 +14,8 @@ public sealed class LegacyPythonApiOptions
 
     public string BaseUrl { get; set; } = "http://alfanetac.ddns.net/";
 
-    // Se prueban en orden. BaseUrl se conserva para instalaciones anteriores.
+    // Se conserva como lista para permitir una transición futura, pero la instalación actual
+    // usa únicamente BaseUrl para no alterar el endpoint público que ya consumen los clientes.
     public List<string> BaseUrls { get; set; } = [];
 
     public int TimeoutSeconds { get; set; } = 120;
