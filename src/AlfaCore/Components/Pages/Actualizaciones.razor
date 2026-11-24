@@ -13,8 +13,7 @@
 
 <div class="gd-page gd gd-legacy updates-page">
     <header class="gd-header">
-        <h2>Actualizaciones de base de datos</h2>
-        <p>Controlá la versión `FECHAUPDATE_CORE`, elegí la carpeta de red para scripts SQL y revisá el historial de aplicaciones por base activa.</p>
+        <h2>Actualizaciones de base de datos<AlfaInfoTip>Controlá la versión `FECHAUPDATE_CORE`, elegí la carpeta de red para scripts SQL y revisá el historial de aplicaciones por base activa.</AlfaInfoTip></h2>
     </header>
 
     <AlfaNotification Message="@(string.IsNullOrWhiteSpace(_message) ? null : _notificacion.For(_message, _isError ? AppUiFeedbackSeverity.Error : _isWorkingMessage ? AppUiFeedbackSeverity.Info : AppUiFeedbackSeverity.Success, _isError ? "No se pudo completar la actualización" : "Actualizaciones"))" OnDismiss="() => _message = string.Empty" />

@@ -21,8 +21,7 @@
 
 <section class="gd-page gd gd-legacy carrito-general-page">
     <header class="gd-header">
-        <h2>@(_editingIdCarrito.HasValue ? $"Editar carrito general #{_editingIdCarrito}" : "Nuevo carrito")</h2>
-        <p>Configurá artículos y precios sin depender de un catálogo previo.</p>
+        <h2>@(_editingIdCarrito.HasValue ? $"Editar carrito general #{_editingIdCarrito}" : "Nuevo carrito")<AlfaInfoTip>Configurá artículos y precios sin depender de un catálogo previo.</AlfaInfoTip></h2>
     </header>
 
     <AlfaNotification Message="@_notificacion.For(_feedback, _feedbackSeverity, _feedbackTitle)" OnDismiss="() => SetFeedback(null)" />

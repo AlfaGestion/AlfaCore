@@ -8,4 +8,4 @@
 .cfgcont-check { display: flex; flex-direction: column; gap: 2px; }
 .cfgcont-check small, .cfgcont-nota { color: var(--alfa-text-secondary); font-size: 12px; }
 .cfgcont-nota { margin: 8px 0 0; }
-@media (max-width: 600px) { .cfgcont-nivel { grid-template-columns: 24px 1fr; } .cfgcont-nivel > :last-child { grid-column: 2; } }
+@media (max-width: 600px) { .cfgcont-nivel { grid-template-columns: 24px 1fr; } .cfgcont-nivel ::deep .alfa-field { grid-column: 2; } }

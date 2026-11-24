@@ -3821,3 +3821,395 @@
 .llamada-dialog__etiqueta { color: var(--alfa-text-secondary, #94a3b8); font-size: var(--alfa-font-small, 13px); font-weight: 600; }
 .llamada-dialog__opciones { display: flex; flex-wrap: wrap; gap: .4rem; }
 .llamada-dialog__campo textarea { width: 100%; min-height: 4.5rem; padding: .55rem .7rem; border: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .3)); border-radius: 8px; background: var(--alfa-bg-input, transparent); color: var(--alfa-text-primary, #f5f5f7); font: inherit; resize: vertical; }
+
+/* ===== Celular, estilo WhatsApp (2026-11-20) =====
+   Lista: una barra compacta (canal + modo + cola de espera); las acciones sobre una conversación pasan al ⋮ del chat.
+   Chat: sin la barra del canal; encabezado en una fila (← avatar nombre ⋮) con una tira de estados debajo;
+   se vuelven a ver los avisos (ventana vencida → Enviar plantilla, errores) y la nota interna cuando no hay ventana. */
+@media (max-width: 768px) {
+    /* --- Lista --- */
+    .conversations-page--odoo .conversations-filters.desktop-only {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: .4rem !important;
+        margin: 0 !important;
+        padding: .5rem .6rem !important;
+        border: 0 !important;
+        border-bottom: 1px solid rgba(56, 189, 248, .13) !important;
+        border-radius: 0 !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only > .conversations-canal {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        flex-wrap: nowrap !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only > .conversations-canal > .conversations-mode-select {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only > .conversations-canal > :not(.conversations-mode-select) {
+        flex: 0 0 auto !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only > .conversations-canal .conversations-filter-pill--dropdown {
+        display: block !important;
+        width: 100% !important;
+        text-align: left !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only > .conversations-mode-select {
+        flex: 0 0 auto !important;
+        order: 2 !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only > .conversations-module-actions {
+        flex: 0 0 auto !important;
+        order: 3 !important;
+        margin: 0 !important;
+    }
+
+    /* De la barra queda solo «ordenar por espera»; el resto actúa sobre la conversación abierta (menú ⋮). */
+    .conversations-page--odoo .conversations-module-actions > :not(.conversations-wait-time-button) {
+        display: none !important;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-filters.desktop-only {
+        display: none !important;
+    }
+
+    /* --- Chat: estructura en columna (los avisos ya no rompen la grilla) --- */
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat > * {
+        flex: 0 0 auto;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat > .conversations-thread-shell {
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
+    }
+
+    /* --- Encabezado del chat en una fila --- */
+    .conversations-page--odoo .conversations-chat__header {
+        padding: .45rem .5rem !important;
+        gap: .35rem !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__identity,
+    .conversations-page--whatsapp .conversations-chat__identity {
+        grid-template-columns: auto auto minmax(0, 1fr) !important;
+        column-gap: .5rem !important;
+        row-gap: .35rem !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__identity > .conversations-mobile-back {
+        grid-column: 1 !important;
+        grid-row: 1 !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__identity > .conversation-profile-avatar {
+        grid-column: 2 !important;
+        grid-row: 1 !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__identity > div:not(.conversation-profile-avatar):not(.conversations-chat__chips) {
+        grid-column: 3 !important;
+        grid-row: 1 !important;
+        min-width: 0 !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__identity .conversation-profile-avatar {
+        width: 38px !important;
+        height: 38px !important;
+        min-width: 38px !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__identity .panel-card__subtitle {
+        margin: 0 !important;
+    }
+
+    /* Tira de estados (ventana, técnico, abono, clasificación) debajo, deslizable. */
+    .conversations-page--odoo .conversations-chat__identity > .conversations-chat__chips {
+        grid-column: 1 / -1 !important;
+        grid-row: 2 !important;
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: .3rem !important;
+        overflow-x: auto !important;
+        scrollbar-width: none !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__chips .conversation-badge {
+        flex: 0 0 auto !important;
+        max-width: none !important;
+    }
+
+    /* Llamar se ve al lado del nombre (el resto de los botones del título va al ⋮). */
+    .conversations-page--odoo .conversation-llamar > .conversation-title-editor__button {
+        display: inline-flex !important;
+    }
+
+    .conversations-page--odoo .conversation-title-editor {
+        display: flex !important;
+        align-items: center !important;
+        gap: .3rem !important;
+    }
+
+    .conversations-page--odoo .conversations-mobile-chat-actions.mobile-only {
+        position: relative !important;
+        display: block !important;
+        align-self: start !important;
+    }
+
+    .conversations-page--odoo .conversations-mobile-chat-actions__menu {
+        z-index: 1200 !important;
+        width: min(280px, calc(100vw - 1rem)) !important;
+    }
+
+    /* --- Avisos visibles otra vez (ventana vencida con «Enviar plantilla», errores, número bloqueado) --- */
+    .conversations-page--odoo.conversations-page--chat-active .conversations-window-banner,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-notice {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: .4rem .6rem !important;
+        margin: 0 !important;
+        padding: .45rem .6rem !important;
+        border-radius: 0 !important;
+        font-size: .76rem !important;
+        line-height: 1.3 !important;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-window-banner span {
+        flex: 1 1 200px !important;
+        min-width: 0 !important;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-window-banner .btn {
+        flex: 0 0 auto !important;
+        min-height: 32px !important;
+    }
+
+    /* --- Sin ventana: la caja de nota interna (única forma de escribir) también en celular --- */
+    .conversations-page--odoo .conversations-composer:not(:has(.conversations-composer__reply)) > .conversations-composer__note {
+        display: block !important;
+        min-width: 0 !important;
+    }
+
+    .conversations-page--odoo .conversations-composer:not(:has(.conversations-composer__reply)) > .conversations-composer__note label {
+        display: none !important;
+    }
+
+    .conversations-page--odoo .conversations-composer:not(:has(.conversations-composer__reply)) > .conversations-composer__actions--note {
+        display: flex !important;
+        align-items: flex-end !important;
+    }
+}
+
+/* Celular, segunda vuelta: burbujas compactas, caja de respuesta a todo el ancho, etiquetas y resultados de búsqueda. */
+@media (max-width: 768px) {
+    /* --- Burbujas: nombre y hora en una línea, ✓✓ dentro de la burbuja, imágenes acotadas --- */
+    .conversations-page--odoo .message-bubble-shell,
+    .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
+        max-width: 85% !important;
+    }
+
+    .conversations-page--odoo .message-card {
+        position: relative !important;
+        padding: .35rem .55rem .3rem !important;
+        border-radius: 10px !important;
+    }
+
+    .conversations-page--odoo .message-card__meta {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: baseline !important;
+        justify-content: space-between !important;
+        gap: .5rem !important;
+        min-height: 0 !important;
+        height: auto !important;
+        margin: 0 0 .1rem !important;
+        font-size: .66rem !important;
+        line-height: 1.2 !important;
+        text-align: left !important;
+    }
+
+    .conversations-page--odoo .message-card__meta > span {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        opacity: .8;
+    }
+
+    .conversations-page--odoo .message-card__meta > span:last-child {
+        flex: 0 0 auto !important;
+    }
+
+    .conversations-page--odoo .message-card__text {
+        margin: 0 !important;
+        font-size: .86rem !important;
+        font-weight: 500 !important;
+        line-height: 1.3 !important;
+    }
+
+    /* Saliente: el ✓✓ en la esquina, en el mismo renglón del texto. */
+    .conversations-page--odoo .message-card--outgoing {
+        padding-right: 1.6rem !important;
+    }
+
+    .conversations-page--odoo .message-card--outgoing > .message-card__delivery {
+        position: absolute !important;
+        right: .4rem !important;
+        bottom: .3rem !important;
+        height: auto !important;
+        margin: 0 !important;
+        width: auto !important;
+    }
+
+    .conversations-page--odoo .message-card__problema {
+        margin-top: .3rem !important;
+        padding: .3rem .45rem !important;
+        font-size: .7rem !important;
+        line-height: 1.25 !important;
+    }
+
+    .conversations-page--odoo .message-attachment--image img,
+    .conversations-page--odoo .message-attachment video {
+        width: auto !important;
+        max-width: 100% !important;
+        max-height: 220px !important;
+        object-fit: cover !important;
+    }
+
+    .conversations-page--odoo .conversations-thread {
+        gap: .35rem !important;
+        padding-bottom: .75rem !important;
+    }
+
+    /* --- Caja de respuesta: deja de flotar (no tapa el último mensaje) y usa todo el ancho --- */
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer {
+        position: relative !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        column-gap: .4rem !important;
+        row-gap: .35rem !important;
+        padding: .4rem .5rem max(.4rem, env(safe-area-inset-bottom)) !important;
+    }
+
+    .conversations-page--odoo .conversations-composer > .conversations-send-account {
+        grid-column: 1 / -1 !important;
+        grid-row: 1 !important;
+        justify-self: start !important;
+        max-width: 100% !important;
+        min-height: 0 !important;
+        height: 28px !important;
+        padding: 0 .4rem !important;
+        font-size: .72rem !important;
+    }
+
+    .conversations-page--odoo .conversations-composer > .conversations-send-account select {
+        height: 24px !important;
+        min-height: 0 !important;
+        width: auto !important;
+        max-width: 60vw !important;
+        padding: 0 1.4rem 0 .4rem !important;
+        font-size: .72rem !important;
+    }
+
+    .conversations-page--odoo .conversations-composer > .conversations-composer__reply {
+        grid-column: 1 !important;
+        grid-row: 2 !important;
+    }
+
+    .conversations-page--odoo .conversations-composer > .conversations-composer__actions--reply {
+        grid-column: 2 !important;
+        grid-row: 2 !important;
+        align-self: end !important;
+        gap: .25rem !important;
+    }
+
+    .conversations-page--odoo .conversations-composer > .conversations-composer__actions--reply .btn {
+        width: 38px !important;
+        height: 38px !important;
+        min-height: 38px !important;
+        padding: 0 !important;
+    }
+
+    .conversations-page--odoo .conversations-composer textarea {
+        min-height: 38px !important;
+        padding: .45rem .6rem !important;
+        font-size: .9rem !important;
+    }
+
+    /* --- Etiquetas: renglón finito --- */
+    .conversations-page--odoo .conversation-etiquetas {
+        min-height: 0 !important;
+        padding: .2rem .5rem !important;
+        gap: .3rem !important;
+    }
+
+    .conversations-page--odoo .conversation-etiquetas__agregar,
+    .conversations-page--odoo .conversation-etiquetas__chip {
+        min-height: 24px !important;
+        height: 24px !important;
+        padding: 0 .5rem !important;
+        font-size: .72rem !important;
+    }
+
+    /* --- Mensajes encontrados: cada resultado con su alto (se encimaban) --- */
+    .conversations-page--odoo .conversation-audit-results__list {
+        grid-auto-rows: max-content !important;
+        align-content: start !important;
+    }
+
+    .conversations-page--odoo .conversation-audit-result {
+        min-height: 0 !important;
+        height: auto !important;
+        padding: .55rem .65rem !important;
+    }
+
+    .conversations-page--odoo .conversation-audit-result p {
+        font-size: .82rem !important;
+        overflow: hidden !important;
+        display: -webkit-box !important;
+        -webkit-line-clamp: 3 !important;
+        -webkit-box-orient: vertical !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .conversations-page--odoo .conversations-composer textarea::placeholder {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+@media (max-width: 768px) {
+    .conversations-page--odoo .conversation-audit-results__head {
+        justify-content: flex-start !important;
+        align-items: center !important;
+        gap: .6rem !important;
+    }
+
+    .conversations-page--odoo .conversation-audit-results__back.mobile-only {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        flex: 0 0 auto !important;
+    }
+}

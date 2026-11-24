@@ -66,6 +66,12 @@
     font-weight: 600;
 }
 
+/* La burbuja (i) del texto explicativo (AlfaInfoTip) se ancla al título. */
+.gd-header h2,
+.page-intro__title {
+    position: relative;
+}
+
 .gd-header p {
     max-width: 920px;
     margin: var(--alfa-space-4, 4px) 0 0;
@@ -1336,3 +1342,28 @@ body .shell .main-page-header .main-page-header__search .smart-search__panel.sma
 /* Ícono de ayuda breve junto al título de una columna del Smart Search (el texto va en el tooltip). */
 .smart-search__info { margin-left: 4px; color: var(--alfa-text-secondary); font-size: 12px; cursor: help; }
 .smart-search__info:hover, .smart-search__info:focus-visible { color: var(--alfa-accent-hover); outline: none; }
+
+/* Celular: los indicadores de a dos por fila (con uno por fila había que bajar varias pantallas para ver el
+   resto). El valor achica la letra y puede cortar línea si es un importe largo. */
+@media (max-width: 640px) {
+    .gd .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: var(--alfa-space-8, 8px);
+    }
+
+    .gd .kpi-card {
+        padding: 10px 12px;
+    }
+
+    .gd .kpi-card__value {
+        font-size: 17px;
+        overflow-wrap: anywhere;
+    }
+}
+
+/* Celular: menos margen a los costados para que las tarjetas y tablas aprovechen el ancho. */
+@media (max-width: 640px) {
+    .gd-page {
+        padding: var(--alfa-space-12, 12px) var(--alfa-space-12, 12px) var(--alfa-space-32, 32px);
+    }
+}

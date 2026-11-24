@@ -8,8 +8,7 @@
 <div class="gd-page gd">
     <header class="gd-header">
         <div>
-            <h2>Ventas por @(PorVendedor ? "vendedor" : "unidad de negocio")</h2>
-            <p>Compará las ventas del período y abrí el detalle para consultar su evolución y comprobantes. Los importes incluyen notas de crédito con su signo.</p>
+            <h2>Ventas por @(PorVendedor ? "vendedor" : "unidad de negocio")<AlfaInfoTip>Compará las ventas del período y abrí el detalle para consultar su evolución y comprobantes. Los importes incluyen notas de crédito con su signo.</AlfaInfoTip></h2>
         </div>
     </header>
     @if (!string.IsNullOrEmpty(_error))

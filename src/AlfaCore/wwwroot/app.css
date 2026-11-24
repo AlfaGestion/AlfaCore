@@ -2977,6 +2977,9 @@ html[data-theme="dark"] .carrito-page .alfa-link-button:hover {
 
 .costos-nueva__profile-results {
     display: grid;
+    /* Cada fila del alto de su contenido: con el alto máximo de la lista las filas se achicaban y el
+       código del proveedor quedaba encimado con la opción siguiente. */
+    grid-auto-rows: max-content;
     gap: 0.55rem;
     max-height: 320px;
     overflow-y: auto;
@@ -13912,7 +13915,8 @@ textarea {
         min-height: 42px;
     }
 
-    input,
+    /* Las casillas (checkbox/radio) quedan con su tamaño: si no, en celular se veían como cajas de 42px. */
+    input:where(:not([type="checkbox"]):not([type="radio"])),
     select,
     textarea {
         min-height: 42px;
@@ -19728,10 +19732,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         min-width: 0;
     }
 
-    .field input,
+    /* :where() deja la misma prioridad que antes; las casillas (checkbox/radio) no se estiran a todo el ancho. */
+    .field input:where(:not([type="checkbox"]):not([type="radio"])),
     .field select,
     .field textarea,
-    input,
+    input:where(:not([type="checkbox"]):not([type="radio"])),
     select,
     textarea {
         width: 100%;
@@ -30438,5 +30443,26 @@ html[data-theme="dark"] .portal-cliente .alfa-dialog__error {
 
     .portal-comprobante__table-scroll {
         overflow-x: visible;
+    }
+}
+
+/* Tareas en celular: el filtro de asignados (230px fijos) dejaba el título de la lista en una columna
+   angosta ("Todas / las / listas"). Título arriba y filtro abajo, a todo el ancho. */
+@media (max-width: 640px) {
+    .shell__content .tareas-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .shell__content .tareas-toolbar > div:first-child {
+        flex: 1 1 100%;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 8px;
+    }
+
+    .shell__content .tareas-assignee-filter {
+        flex: 1 1 100%;
+        min-width: 0;
     }
 }

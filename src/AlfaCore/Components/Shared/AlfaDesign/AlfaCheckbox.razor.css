@@ -9,9 +9,12 @@
     font: inherit;
     cursor: pointer;
     padding: 0;
+    /* Es un <button>: sin esto, un texto largo que corta renglón (en celular) quedaba centrado. */
+    text-align: left;
 }
 
 .alfa-checkbox__box {
+    flex: 0 0 18px;
     width: 18px;
     height: 18px;
     border: 1px solid var(--alfa-border-strong);
