@@ -10,6 +10,14 @@
         const items = Array.from(nav.querySelectorAll(":scope > [data-topnav-item]"));
         const menuItems = Array.from(more.querySelectorAll("[data-topnav-more-menu] > [data-topnav-item]"));
 
+        // Celular: todas las secciones van al desplegable; el botón muestra la sección actual (CSS).
+        if (items.length > 0 && window.matchMedia("(max-width: 640px)").matches) {
+            items.forEach(i => { i.hidden = true; });
+            menuItems.forEach(m => { m.hidden = false; });
+            more.hidden = false;
+            return;
+        }
+
         items.forEach(i => { i.hidden = false; });
         more.hidden = true;
         if (nav.scrollWidth <= nav.clientWidth + 1) {

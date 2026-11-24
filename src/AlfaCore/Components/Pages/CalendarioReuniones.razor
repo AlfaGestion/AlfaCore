@@ -13,8 +13,7 @@
 
 <section class="gd-page gd gd-legacy cal-reuniones-page" @onclick="DismissFeedback">
     <header class="gd-header">
-        <h2>Reuniones públicas</h2>
-        <p>Agendas para que los clientes reserven capacitaciones online.</p>
+        <h2>Reuniones públicas<AlfaInfoTip>Agendas para que los clientes reserven capacitaciones online.</AlfaInfoTip></h2>
     </header>
 
     <AlfaNotification Message="@_notificacion.For(_feedbackText, _feedbackKind switch { "error" or "danger" => AppUiFeedbackSeverity.Error, "warning" => AppUiFeedbackSeverity.Warning, _ => AppUiFeedbackSeverity.Success }, _feedbackTitle)" OnDismiss="DismissFeedback" />

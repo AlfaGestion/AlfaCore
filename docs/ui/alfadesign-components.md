@@ -21,6 +21,7 @@ La implementación reusable vive en `src/AlfaCore/Components/Shared/AlfaDesign/`
 | `AlfaLookup<TItem>` | búsqueda de relaciones/catálogos grandes | compartido |
 | `AlfaNotification` | feedback flotante con `AppUiMessage` | compartido |
 | `AlfaEmptyState` | vacío, sin resultados, error recuperable | compartido |
+| `AlfaInfoTip` | botón (i) con el texto explicativo de la pantalla en una burbuja; va dentro del título (`<h2>Título<AlfaInfoTip>texto</AlfaInfoTip></h2>`) | compartido |
 
 No usar `.btn`, `.form-control`, modal Bootstrap o dropdown Bootstrap cuando exista esta semántica. Que un componente aparezca en Razor no acredita cumplimiento: debe renderizar e integrarse según contrato.
 

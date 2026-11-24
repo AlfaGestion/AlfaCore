@@ -1589,3 +1589,29 @@
         border-bottom: 1px solid var(--inf-border);
     }
 }
+
+/* Celular: la barra del documento (ruta + Guardado + acciones) no entraba en una línea y los textos se
+   partían letra por letra. Ruta arriba; acciones abajo, en una fila que se desliza de costado. */
+@media (max-width: 640px) {
+    .informes-toolbar {
+        flex-wrap: wrap;
+        gap: .35rem;
+        padding-block: .4rem;
+    }
+
+    .informes-breadcrumb {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .informes-actions {
+        flex: 1 1 100%;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+
+    .informes-actions > * {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+}

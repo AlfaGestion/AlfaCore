@@ -52,3 +52,21 @@
     color: var(--alfa-text-secondary);
     font-size: 11px;
 }
+
+/* Pantallas angostas: las solapas van en una sola línea y se deslizan de costado (antes cada nombre se partía
+   en 2-3 renglones y las últimas quedaban cortadas). Mismo criterio que ya usaban CRM y Tickets. */
+@media (max-width: 900px) {
+    .alfa-tabs {
+        max-width: 100%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        scrollbar-width: thin;
+    }
+
+    .alfa-tabs__item {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+}

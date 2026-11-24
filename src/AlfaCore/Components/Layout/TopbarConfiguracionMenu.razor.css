@@ -152,3 +152,15 @@
     font-size: var(--alfa-font-small, 12px);
     text-decoration: none;
 }
+
+/* Celular: el panel ocupa el ancho de la pantalla (anclado al botón se salía por la izquierda). */
+@media (max-width: 640px) {
+    .tb-cfg__panel {
+        position: fixed;
+        top: calc(var(--alfa-topbar-height, 40px) + 4px);
+        left: 8px;
+        right: 8px;
+        width: auto;
+        max-height: calc(100dvh - var(--alfa-topbar-height, 40px) - 16px);
+    }
+}

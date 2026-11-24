@@ -191,3 +191,36 @@
 .cuentas-kanban-card__status.is-active { color: var(--alfa-status-success, #2e7d32); }
 .cuentas-kanban-card__status.is-inactive { color: var(--alfa-status-danger, #c62828); }
 .cuentas-kanban-card__status.is-blocked { color: var(--alfa-status-danger, #c62828); }
+
+/* Las 5 columnas fijas aplastaban las tarjetas en pantallas chicas (en celular quedaban de ~50px).
+   Mismos cortes que ContactosKanbanView. */
+@media (min-width: 1601px) {
+    .cuentas-kanban__grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1359px) {
+    .cuentas-kanban__grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+    }
+}
+
+@media (max-width: 1099px) {
+    .cuentas-kanban__grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 899px) {
+    .cuentas-kanban__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 599px) {
+    .cuentas-kanban__grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
