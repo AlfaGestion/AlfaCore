@@ -79,6 +79,24 @@
     touch-action: none;
 }
 
+.salon-plano__agregar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--alfa-accent);
+    border-radius: 50%;
+    background: var(--alfa-accent);
+    color: #fff;
+    font-size: 1.25rem;
+    cursor: pointer;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .3);
+}
+
+.salon-plano__agregar:hover { filter: brightness(1.12); transform: scale(1.04); }
+
 .salon-mesa {
     position: absolute;
     display: flex;
@@ -96,6 +114,49 @@
     text-align: center;
     line-height: 1.15;
     transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.salon-mesa--circular { border-radius: 50%; }
+.salon-mesa--triangular {
+    border-radius: 0;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    padding: 1.1rem 0.45rem 0.35rem;
+}
+
+.salon-mesa__resize {
+    display: none;
+}
+
+.salon-plano--editando .salon-mesa__resize {
+    display: block;
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: 30px;
+    height: 30px;
+    border-right: 4px solid currentColor;
+    border-bottom: 4px solid currentColor;
+    background: color-mix(in srgb, var(--alfa-bg-surface-raised) 55%, transparent);
+    cursor: nwse-resize;
+    opacity: 0.75;
+    z-index: 2;
+}
+
+.salon-mesa--inactiva {
+    opacity: .48;
+    filter: grayscale(.8);
+    border-style: dashed;
+}
+
+.salon-mesa--inactiva::after {
+    content: "INACTIVA";
+    position: absolute;
+    top: .35rem;
+    right: .35rem;
+    font-size: .58rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--alfa-warning);
 }
 
 .salon-mesa:hover {
@@ -378,6 +439,17 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+}
+
+.salon-modal--mesa-editor { max-width: 560px; }
+.salon-modal__form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+    .salon-modal__form-grid { grid-template-columns: 1fr; }
 }
 
 .salon-modal h3 {

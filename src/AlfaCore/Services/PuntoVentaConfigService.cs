@@ -441,6 +441,7 @@ public sealed class PuntoVentaConfigService(
                 SELECT
                     ID, CODIGO, IDSECTOR, NOMBRE, CAPACIDAD,
                     POSX AS PosX, POSY AS PosY, WIDTH, HEIGHT,
+                    ISNULL(FORMATO, 'CUADRADA') AS Formato,
                     ISNULL(ICONO, '') AS Icono,
                     ISNULL(IMAGEN, '') AS Imagen,
                     ACTIVO
@@ -462,6 +463,7 @@ public sealed class PuntoVentaConfigService(
             request.Nombre = (request.Nombre ?? string.Empty).Trim();
             request.Icono = (request.Icono ?? string.Empty).Trim();
             request.Imagen = (request.Imagen ?? string.Empty).Trim();
+            request.Formato = PuntoVentaMesaFormatoKeys.Normalizar(request.Formato);
 
             var validation = await validator.ValidateMesaForSaveAsync(request, token);
             if (!validation.IsValid)
@@ -476,9 +478,9 @@ public sealed class PuntoVentaConfigService(
             {
                 const string insertSql = """
                     INSERT INTO dbo.POS_MESA
-                        (CODIGO, IDSECTOR, NOMBRE, CAPACIDAD, POSX, POSY, WIDTH, HEIGHT, ICONO, IMAGEN, ACTIVO, FECHAHORA_ALTA)
+                        (CODIGO, IDSECTOR, NOMBRE, CAPACIDAD, POSX, POSY, WIDTH, HEIGHT, FORMATO, ICONO, IMAGEN, ACTIVO, FECHAHORA_ALTA)
                     VALUES
-                        (@Codigo, @IdSector, @Nombre, @Capacidad, @PosX, @PosY, @Width, @Height, @Icono, @Imagen, @Activo, GETDATE());
+                        (@Codigo, @IdSector, @Nombre, @Capacidad, @PosX, @PosY, @Width, @Height, @Formato, @Icono, @Imagen, @Activo, GETDATE());
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """;
                 return await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
@@ -491,6 +493,7 @@ public sealed class PuntoVentaConfigService(
                     request.PosY,
                     request.Width,
                     request.Height,
+                    request.Formato,
                     request.Icono,
                     request.Imagen,
                     request.Activo
@@ -507,6 +510,7 @@ public sealed class PuntoVentaConfigService(
                     POSY = @PosY,
                     WIDTH = @Width,
                     HEIGHT = @Height,
+                    FORMATO = @Formato,
                     ICONO = @Icono,
                     IMAGEN = @Imagen,
                     ACTIVO = @Activo,
@@ -524,6 +528,7 @@ public sealed class PuntoVentaConfigService(
                 request.PosY,
                 request.Width,
                 request.Height,
+                request.Formato,
                 request.Icono,
                 request.Imagen,
                 request.Activo

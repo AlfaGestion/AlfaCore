@@ -16,6 +16,18 @@
         }
         canvas.dataset.salonDrag = "1";
 
+        // El pointerup de un arrastre también genera un click sobre el botón Blazor.
+        // Se cancela solo ese click cuando realmente hubo movimiento, no el toque simple
+        // que debe abrir la edición de la mesa.
+        canvas.addEventListener("click", function (ev) {
+            const mesa = ev.target.closest("[data-mesa-id]");
+            if (mesa && mesa.dataset.salonSuppressClick === "1") {
+                mesa.dataset.salonSuppressClick = "0";
+                ev.preventDefault();
+                ev.stopPropagation();
+            }
+        }, true);
+
         let drag = null;
 
         canvas.addEventListener("pointerdown", function (ev) {
@@ -28,11 +40,20 @@
             }
             ev.preventDefault();
             const rect = canvas.getBoundingClientRect();
+            const mesaRect = mesa.getBoundingClientRect();
+            const resize = ev.target.closest("[data-mesa-resize]")
+                || (ev.clientX >= mesaRect.right - 34 && ev.clientY >= mesaRect.bottom - 34);
             drag = {
                 el: mesa,
                 rect: rect,
                 offsetX: ev.clientX - mesa.getBoundingClientRect().left,
-                offsetY: ev.clientY - mesa.getBoundingClientRect().top
+                offsetY: ev.clientY - mesa.getBoundingClientRect().top,
+                resize: !!resize,
+                startWidth: mesaRect.width,
+                startHeight: mesaRect.height,
+                startX: ev.clientX,
+                startY: ev.clientY,
+                moved: false
             };
             mesa.setPointerCapture(ev.pointerId);
             mesa.classList.add("salon-mesa--dragging");
@@ -45,6 +66,16 @@
             const r = drag.rect;
             const w = drag.el.offsetWidth;
             const h = drag.el.offsetHeight;
+            if (Math.abs(ev.clientX - drag.startX) > 3 || Math.abs(ev.clientY - drag.startY) > 3) {
+                drag.moved = true;
+            }
+            if (drag.resize) {
+                const width = clamp(drag.startWidth + ev.clientX - drag.startX, 56, r.width - (drag.el.offsetLeft));
+                const height = clamp(drag.startHeight + ev.clientY - drag.startY, 56, r.height - (drag.el.offsetTop));
+                drag.el.style.width = width + "px";
+                drag.el.style.height = height + "px";
+                return;
+            }
             const left = clamp(ev.clientX - r.left - drag.offsetX, 0, r.width - w);
             const top = clamp(ev.clientY - r.top - drag.offsetY, 0, r.height - h);
             drag.el.style.left = (left / r.width * 100) + "%";
@@ -57,6 +88,9 @@
             }
             try { drag.el.releasePointerCapture(ev.pointerId); } catch (e) { /* sin captura */ }
             drag.el.classList.remove("salon-mesa--dragging");
+            if (drag.moved) {
+                drag.el.dataset.salonSuppressClick = "1";
+            }
             drag = null;
         }
 

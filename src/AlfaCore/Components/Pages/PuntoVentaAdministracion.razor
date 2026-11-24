@@ -374,6 +374,15 @@
                             <input type="number" @bind="_mesaForm.Height" placeholder="Opcional" />
                         </div>
                         <div class="field">
+                            <label>Formato</label>
+                            <select @bind="_mesaForm.Formato">
+                                <option value="@PuntoVentaMesaFormatoKeys.Cuadrada">Cuadrada</option>
+                                <option value="@PuntoVentaMesaFormatoKeys.Circular">Circular</option>
+                                <option value="@PuntoVentaMesaFormatoKeys.Triangular">Triangular</option>
+                            </select>
+                            <small>También podés cambiar el tamaño arrastrando el tirador en “Editar plano”.</small>
+                        </div>
+                        <div class="field">
                             <label>Ícono (clase, ej. bi-circle)</label>
                             <input @bind="_mesaForm.Icono" placeholder="Opcional" />
                         </div>
@@ -440,6 +449,7 @@
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "ventas",
         TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteContext, Nav, "puntos-venta")
     });
 
@@ -633,6 +643,7 @@
             PosY = mesa.PosY,
             Width = mesa.Width,
             Height = mesa.Height,
+            Formato = PuntoVentaMesaFormatoKeys.Normalizar(mesa.Formato),
             Icono = mesa.Icono,
             Imagen = mesa.Imagen,
             Activo = mesa.Activo

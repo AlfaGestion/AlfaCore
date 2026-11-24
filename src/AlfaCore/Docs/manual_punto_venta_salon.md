@@ -118,7 +118,9 @@ Desde el detalle de la mesa:
 
 1. Tocá **Editar plano**.
 2. Arrastrá cada mesa a su lugar, con el mouse o con el dedo.
-3. Tocá **Guardar plano**. **Cancelar** deja todo como estaba.
+3. Arrastrá el tirador de la esquina inferior derecha para agrandarla o achicarla a gusto.
+4. Para cambiar la forma, entrá a **Puntos de Venta → mesas → Editar**, elegí **Cuadrada**, **Circular** o **Triangular** y guardá.
+5. Tocá **Guardar plano**. **Cancelar** deja todo como estaba.
 
 Las mesas nuevas, que todavía no tienen lugar, aparecen ordenadas en fila hasta que las acomodes.
 

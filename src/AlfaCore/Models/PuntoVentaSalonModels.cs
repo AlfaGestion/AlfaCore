@@ -70,7 +70,9 @@ public sealed class PuntoVentaSalonMesaDto
     public double? PosY { get; set; }
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public string Formato { get; set; } = PuntoVentaMesaFormatoKeys.Cuadrada;
     public string Icono { get; set; } = string.Empty;
+    public bool Activo { get; set; } = true;
 
     // Pedido abierto (si lo hay)
     public int? IdPedido { get; set; }
