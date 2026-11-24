@@ -1,0 +1,313 @@
+@page "/tickets/seguimiento"
+@page "/{idweb}/{idbase:int}/tickets/seguimiento"
+@using AlfaCore.Models
+@using System.Globalization
+@inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Seguimiento de tickets | Alfa Gestión</PageTitle>
+
+<div class="gd-page gd tks-page">
+    <header class="gd-header tks-header">
+        <div>
+            <h2>Seguimiento de tickets<AlfaInfoTip>Cómo viene la mesa de ayuda: cuánto entra y cuánto se cierra, qué está atrasado, si se cumplen los plazos, cuánto tarda cada etapa y la carga de cada técnico. Cada número abre la lista de tickets ya filtrada.</AlfaInfoTip></h2>
+        </div>
+        <div class="tks-periodo" role="group" aria-label="Período">
+            @foreach (var d in Periodos)
+            {
+                <button type="button" class="tks-periodo__btn @(d == _dias ? "is-active" : null)" @onclick="() => CambiarPeriodoAsync(d)" disabled="@_cargando">
+                    Últimos @d días
+                </button>
+            }
+        </div>
+    </header>
+
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_datos is null)
+    {
+        <AlfaEmptyState Title="@(_cargando ? "Armando el panel" : "Sin datos")" Message="@(_cargando ? "Esperá un momento." : "No se pudo armar el panel.")" />
+    }
+    else
+    {
+        var d = _datos;
+        if (d.Truncado)
+        {
+            <p class="gd-hint">Hay más de @d.Abiertos tickets abiertos: los números de abiertos se calculan sobre los más recientes.</p>
+        }
+
+        <section class="kpi-grid tks-kpis">
+            <a class="tks-kpi" href="@Lista(TicketBandejaKeys.Abiertos)"><KpiCard Titulo="Abiertos" Valor="@N(d.Abiertos)" Icono="<i class='bi bi-inbox'></i>" Descripcion="@($"{N(d.SinAsignar)} sin asignar")" /></a>
+            <a class="tks-kpi" href="@Lista(TicketBandejaKeys.Nosotros)"><KpiCard Titulo="Esperan respuesta nuestra" Valor="@N(d.EsperanNuestra)" Icono="<i class='bi bi-reply'></i>" Destacado="true" /></a>
+            <a class="tks-kpi tks-kpi--rojo" href="@Lista(TicketBandejaKeys.Plazo)"><KpiCard Titulo="Plazo vencido" Valor="@N(d.Vencidos)" Icono="<i class='bi bi-alarm'></i>" Descripcion="@($"{N(d.PorVencer)} por vencer")" /></a>
+            <a class="tks-kpi" href="@Lista(TicketBandejaKeys.Cliente)"><KpiCard Titulo="Esperando al cliente" Valor="@N(d.EsperandoCliente)" Icono="<i class='bi bi-hourglass-split'></i>" /></a>
+            <a class="tks-kpi" href="@Lista(TicketBandejaKeys.Seguimientos)"><KpiCard Titulo="Seguimientos vencidos" Valor="@N(d.SeguimientosVencidos)" Icono="<i class='bi bi-calendar-x'></i>" /></a>
+            <a class="tks-kpi" href="@Lista(TicketBandejaKeys.Prioritarios)"><KpiCard Titulo="De clientes prioritarios" Valor="@N(d.Prioritarios)" Icono="<i class='bi bi-star'></i>" /></a>
+        </section>
+
+        <div class="tks-grid">
+            <section class="panel-card tks-card tks-card--ancho">
+                <div class="tks-card__head">
+                    <h3 class="panel-card__title">Entradas y cierres por semana</h3>
+                    <p class="panel-card__subtitle">
+                        En los últimos @_dias días entraron <strong>@N(d.EntradasPeriodo)</strong> y se cerraron <strong>@N(d.CierresPeriodo)</strong>
+                        @(d.EntradasPeriodo > d.CierresPeriodo ? "— la pila crece." : d.EntradasPeriodo < d.CierresPeriodo ? "— la pila baja." : "— la pila se mantiene.")
+                    </p>
+                </div>
+                <div class="tks-chart">
+                    <DualBarChart Data="d.Semanas" Label1="Entran" Label2="Se cierran" Moneda="false" Ancho="1400" />
+                </div>
+            </section>
+
+            <section class="panel-card tks-card">
+                <h3 class="panel-card__title">Abiertos por antigüedad</h3>
+                <p class="panel-card__subtitle">Días desde que se abrió el ticket.</p>
+                @{ var maxTramo = Math.Max(1, d.Antiguedad.Max(t => t.Nosotros + t.Cliente)); }
+                <div class="tks-tramos">
+                    @foreach (var tramo in d.Antiguedad)
+                    {
+                        <div class="tks-tramo">
+                            <span class="tks-tramo__nombre">@tramo.Nombre</span>
+                            <div class="tks-tramo__barra" aria-hidden="true">
+                                <span class="tks-tramo__nos" style="width:@Pct(tramo.Nosotros, maxTramo)"></span>
+                                <span class="tks-tramo__cli" style="width:@Pct(tramo.Cliente, maxTramo)"></span>
+                            </div>
+                            <span class="tks-tramo__n">@tramo.Nosotros <small>/ @tramo.Cliente</small></span>
+                        </div>
+                    }
+                </div>
+                <p class="tks-leyenda"><span class="tks-dot tks-dot--nos"></span> Esperan respuesta nuestra <span class="tks-dot tks-dot--cli"></span> Esperan al cliente</p>
+            </section>
+
+            <section class="panel-card tks-card">
+                <h3 class="panel-card__title">Cumplimiento de plazos</h3>
+                <p class="panel-card__subtitle">Tickets cerrados en los últimos @_dias días, con los plazos de <a href="@RouteContext.BuildRoute("/tickets/configuracion")">Configuración</a>.</p>
+                <div class="tks-cumple">
+                    <div>
+                        <span class="tks-cumple__pct @ClaseCumple(d.CumplimientoRespuesta)">@Porcentaje(d.CumplimientoRespuesta)</span>
+                        <span class="tks-cumple__label">Primera respuesta a tiempo</span>
+                        <small>@N(d.RespuestaMedidos) con respuesta registrada</small>
+                    </div>
+                    <div>
+                        <span class="tks-cumple__pct @ClaseCumple(d.CumplimientoResolucion)">@Porcentaje(d.CumplimientoResolucion)</span>
+                        <span class="tks-cumple__label">Resueltos a tiempo</span>
+                        <small>@N(d.CerradosMedidos) cerrados</small>
+                    </div>
+                </div>
+                @if (d.HorasResolucionPromedio is double h)
+                {
+                    <p class="tks-nota">Tiempo promedio de resolución: <strong>@HorasTexto(h)</strong> hábiles (sin contar la espera del cliente).</p>
+                }
+            </section>
+
+            <section class="panel-card tks-card">
+                <h3 class="panel-card__title">Tiempo en cada etapa</h3>
+                <p class="panel-card__subtitle">Promedio de horas hábiles antes de pasar a la etapa siguiente.</p>
+                @if (d.TiempoPorEtapa.Count == 0)
+                {
+                    <p class="tks-nota">Todavía no hay cambios de etapa para medir@(d.HistorialDesde is DateTime hd ? $" (se registran desde el {hd:dd/MM/yyyy})" : string.Empty).</p>
+                }
+                else
+                {
+                    <table class="tks-tabla">
+                        <thead><tr><th>Etapa</th><th class="num">Promedio</th><th class="num">Veces</th></tr></thead>
+                        <tbody>
+                            @foreach (var etapa in d.TiempoPorEtapa)
+                            {
+                                <tr><td>@etapa.Nombre</td><td class="num">@etapa.Texto</td><td class="num">@etapa.Tramos</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (d.HistorialDesde is DateTime hd)
+                    {
+                        <p class="tks-nota">Se mide desde el @hd.ToString("dd/MM/yyyy").</p>
+                    }
+                }
+            </section>
+
+            <section class="panel-card tks-card">
+                <h3 class="panel-card__title">Carga por técnico</h3>
+                <p class="panel-card__subtitle">Tickets abiertos de cada uno.</p>
+                <table class="tks-tabla">
+                    <thead><tr><th>Técnico</th><th class="num">Abiertos</th><th class="num">Responder</th><th class="num">Vencidos</th><th>Más viejo</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in d.Tecnicos)
+                        {
+                            <tr>
+                                <td><a href="@ListaTecnico(t.IdTecnico)">@t.Nombre</a></td>
+                                <td class="num">@t.Abiertos</td>
+                                <td class="num">@t.EsperanNuestra</td>
+                                <td class="num @(t.Vencidos > 0 ? "tks-rojo" : null)">@t.Vencidos</td>
+                                <td>@if (t.MasViejoId is long idViejo) { <a href="@RouteContext.BuildRoute($"/tickets?id={idViejo}")">#@t.MasViejoNumero?.ToString("D2")</a> <small>@t.MasViejoTexto</small> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="panel-card tks-card">
+                <h3 class="panel-card__title">Clientes con más casos abiertos</h3>
+                <p class="panel-card__subtitle">«Nuevos» = abiertos en los últimos @_dias días.</p>
+                @if (d.Clientes.Count == 0)
+                {
+                    <p class="tks-nota">No hay tickets abiertos con cliente.</p>
+                }
+                else
+                {
+                    <table class="tks-tabla">
+                        <thead><tr><th>Cliente</th><th class="num">Abiertos</th><th class="num">Vencidos</th><th class="num">Nuevos</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in d.Clientes)
+                            {
+                                <tr>
+                                    <td>
+                                        <a href="@ListaCliente(c)">@c.Nombre</a>
+                                        @if (c.Prioritario)
+                                        {
+                                            <span class="tks-chip">@(c.EstadoAbono == ConversacionAbonoEstados.Abonado ? "Con abono" : "Prioritario")</span>
+                                        }
+                                    </td>
+                                    <td class="num">@c.Abiertos</td>
+                                    <td class="num @(c.Vencidos > 0 ? "tks-rojo" : null)">@c.Vencidos</td>
+                                    <td class="num">@c.CreadosPeriodo</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="panel-card tks-card tks-card--ancho">
+                <h3 class="panel-card__title">Los 10 que hay que atender primero</h3>
+                <p class="panel-card__subtitle">Mismo orden que «Atender primero» en la lista.</p>
+                @if (d.MasAtrasados.Count == 0)
+                {
+                    <p class="tks-nota">No hay tickets esperando respuesta nuestra.</p>
+                }
+                else
+                {
+                    <ol class="tks-top">
+                        @foreach (var t in d.MasAtrasados)
+                        {
+                            <li>
+                                <a href="@RouteContext.BuildRoute($"/tickets?id={t.IdTicket}")"><strong>@t.CodigoVisible</strong> @t.Titulo</a>
+                                <span class="tks-top__meta">@DisplayOr(t.ClienteNombre, "Sin cliente") · @DisplayOr(t.TecnicoNombre, "Sin asignar")</span>
+                                <span class="tks-top__motivos">@string.Join(" · ", t.Motivos.Take(3))</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly int[] Periodos = [30, 90, 180];
+    private static readonly CultureInfo EsAr = CultureInfo.GetCultureInfo("es-AR");
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private TicketsSeguimientoDto? _datos;
+    private AppUiMessage? _feedback;
+    private bool _cargando;
+    private int _dias = 90;
+    private bool _headerCargando;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || _headerCargando != _cargando)
+        {
+            _headerCargando = _cargando;
+            UpdatePageHeader();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        Title = "Seguimiento",
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildTickets(RouteContext, Nav, "seguimiento"),
+        Actions =
+        [
+            new PageHeaderAction
+            {
+                Key = "recargar",
+                Label = "Recargar",
+                Icon = "bi-arrow-clockwise",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Busy = _cargando,
+                Disabled = _cargando,
+                OnClick = () => InvokeAsync(async () => { await CargarAsync(); StateHasChanged(); })
+            },
+            new PageHeaderAction
+            {
+                Key = "lista",
+                Label = "Ir a la lista",
+                Icon = "bi-list-ul",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Normal,
+                OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/tickets")); return Task.CompletedTask; }
+            }
+        ]
+    });
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetSeguimientoAsync(_dias), "No se pudo armar el panel de seguimiento.");
+        _cargando = false;
+        if (result.Success && result.Value is not null)
+            _datos = result.Value;
+        else
+            _feedback = result.Feedback;
+    }
+
+    private async Task CambiarPeriodoAsync(int dias)
+    {
+        if (_cargando || dias == _dias)
+            return;
+        _dias = dias;
+        await CargarAsync();
+    }
+
+    private string Lista(string bandeja) => RouteContext.BuildRoute($"/tickets?bandeja={Uri.EscapeDataString(bandeja)}");
+
+    private string ListaTecnico(string idTecnico)
+        => string.IsNullOrWhiteSpace(idTecnico)
+            ? Lista(TicketBandejaKeys.SinAsignar)
+            : RouteContext.BuildRoute($"/tickets?bandeja={TicketBandejaKeys.Abiertos}&tecnico={Uri.EscapeDataString(idTecnico)}");
+
+    private string ListaCliente(TicketsClienteCasosDto c)
+        => RouteContext.BuildRoute($"/tickets?bandeja={TicketBandejaKeys.Abiertos}&cliente={Uri.EscapeDataString(c.Codigo)}&clienteNombre={Uri.EscapeDataString(c.Nombre)}");
+
+    private static string N(int valor) => valor.ToString("N0", EsAr);
+
+    private static string Pct(int valor, int max) => (valor * 100.0 / max).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private static string Porcentaje(double? valor) => valor is double v ? v.ToString("P0", EsAr) : "—";
+
+    private static string ClaseCumple(double? valor) => valor switch
+    {
+        null => string.Empty,
+        >= 0.9 => "tks-verde",
+        >= 0.7 => "tks-ambar",
+        _ => "tks-rojo"
+    };
+
+    private static string HorasTexto(double horas)
+        => horas < 1 ? "menos de 1 h" : $"{horas.ToString("0.#", EsAr)} h";
+
+    private static string DisplayOr(string? valor, string fallback) => string.IsNullOrWhiteSpace(valor) ? fallback : valor;
+}

@@ -1001,6 +1001,7 @@ public sealed class ConversacionesConfigService(
                 BotEsperaMinutos = ReadIntValue(values, "CONV_BOT_ESPERA_MINUTOS", 0, 0),
                 BotCanales = ParseBotCanales(ReadValue(values, "CONV_BOT_CANALES", string.Empty)),
                 BotGeneraTicket = ReadValue(values, "CONV_BOT_GENERA_TICKET", string.Empty, "1") != "0",
+                BotTicketEtiqueta = ReadValue(values, "CONV_BOT_TICKET_ETIQUETA", string.Empty, "Bot"),
                 BotWebPideDatos = ReadValue(values, "CONV_BOT_WEB_PIDE_DATOS", string.Empty, "1") != "0",
                 AutoCierreActivo = ReadValue(values, "CONV_AUTOCIERRE_ACTIVO", string.Empty) == "1",
                 AutoCierreHorasAviso = ReadIntValue(values, "CONV_AUTOCIERRE_HORAS_AVISO", 0, 23),
@@ -1155,6 +1156,7 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_BOT_ESPERA_MINUTOS", Math.Max(0, config.BotEsperaMinutos).ToString(inv)));
             items.Add(("CONV_BOT_CANALES", FormatBotCanales(config.BotCanales)));
             items.Add(("CONV_BOT_GENERA_TICKET", config.BotGeneraTicket ? "1" : "0"));
+            items.Add(("CONV_BOT_TICKET_ETIQUETA", (config.BotTicketEtiqueta ?? string.Empty).Trim()));
             items.Add(("CONV_BOT_WEB_PIDE_DATOS", config.BotWebPideDatos ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()));

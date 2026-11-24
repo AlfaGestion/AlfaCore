@@ -203,6 +203,32 @@
         </div>
     }
 
+    @if (!_showEditor && _bandejas.Count > 0)
+    {
+        @* Bandejas de "Atender primero" (2026-11-24): cada una con su contador; respetan los demás filtros. *@
+        <nav class="tk-bandejas" aria-label="Bandejas de tickets">
+            <button type="button" class="@BandejaClass(string.Empty, false)" @onclick="() => ElegirBandejaAsync(string.Empty)" disabled="@_loading">
+                <i class="bi bi-list-ul" aria-hidden="true"></i><span>Todos</span>
+            </button>
+            @foreach (var bandeja in _bandejas)
+            {
+                <button type="button" class="@BandejaClass(bandeja.Key, bandeja.Alerta)" title="@bandeja.Label"
+                        @onclick="() => ElegirBandejaAsync(bandeja.Key)" disabled="@_loading">
+                    <i class="bi @bandeja.Icono" aria-hidden="true"></i>
+                    <span>@bandeja.Label</span>
+                    <span class="tk-bandeja__n">@bandeja.Cantidad</span>
+                </button>
+            }
+            @if (_viewMode == "lista" && !EsOrdenAtencion)
+            {
+                <button type="button" class="tk-bandeja tk-bandeja--orden" @onclick="OrdenarPorAtencionAsync" disabled="@_loading"
+                        title="Volver al orden que pone primero lo que hay que atender">
+                    <i class="bi bi-sort-down" aria-hidden="true"></i><span>Atender primero</span>
+                </button>
+            }
+        </nav>
+    }
+
     @if (_showEditor)
     {
         @* Ficha del ticket (2026-10-19): título, barra de etapas (cambia al instante, como en Odoo), datos
@@ -220,6 +246,34 @@
                     <p>@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
                 </div>
                 <div class="actions">
+                    @if (!_isNew && _detail is not null && !_detail.FechaHoraCierre.HasValue)
+                    {
+                        <div class="tk-recordar">
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _showRecordar = !_showRecordar" disabled="@_saving"
+                                    aria-expanded="@(_showRecordar ? "true" : "false")">
+                                <i class="bi bi-alarm"></i>
+                                @(_detail.FechaSeguimiento is DateTime fs && fs > DateTime.Now ? $"Seguimiento {fs:dd/MM HH:mm}" : "Recordarme…")
+                            </button>
+                            @if (_showRecordar)
+                            {
+                                <button type="button" class="tk-popover-fondo" aria-label="Cerrar" @onclick="() => _showRecordar = false"></button>
+                                <div class="tk-popover tk-recordar__menu" role="dialog" aria-label="Programar seguimiento">
+                                    <p class="tk-recordar__ayuda">El ticket sale de la cola y vuelve solo en la fecha elegida (o antes, si el cliente escribe).</p>
+                                    <button type="button" class="tk-popover__accion" @onclick="() => ProgramarSeguimientoAsync(ProximoDiaHabil(1))"><i class="bi bi-sunrise"></i> Mañana</button>
+                                    <button type="button" class="tk-popover__accion" @onclick="() => ProgramarSeguimientoAsync(ProximoDiaHabil(3))"><i class="bi bi-calendar3"></i> En 3 días</button>
+                                    <button type="button" class="tk-popover__accion" @onclick="() => ProgramarSeguimientoAsync(ProximoLunes())"><i class="bi bi-calendar-week"></i> La semana que viene</button>
+                                    <div class="tk-recordar__fecha">
+                                        <input type="datetime-local" aria-label="Elegir fecha y hora" @bind="_recordarFecha" />
+                                        <button type="button" class="btn btn--primary btn--sm" @onclick="() => ProgramarSeguimientoAsync(_recordarFecha)" disabled="@(_recordarFecha is null)">Programar</button>
+                                    </div>
+                                    @if (_detail.FechaSeguimiento.HasValue)
+                                    {
+                                        <button type="button" class="tk-popover__accion" @onclick="() => ProgramarSeguimientoAsync(null)"><i class="bi bi-x-circle"></i> Quitar seguimiento</button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                     @if (!_isNew && _detail?.IdConversacion is long idConv)
                     {
                         <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/conversaciones?id={idConv}")">
@@ -234,6 +288,32 @@
                     }
                 </div>
             </header>
+
+            @if (!_isNew && _detail is not null && !string.IsNullOrEmpty(_detail.EsperandoA))
+            {
+                <div class="tk-atencion">
+                    <div class="tk-atencion__estado">
+                        @RenderPlazo(_detail)
+                        @RenderEsperando(_detail)
+                        @RenderTipoCliente(_detail)
+                    </div>
+                    @if (_detail.Motivos.Count > 0)
+                    {
+                        <ul class="tk-motivos" aria-label="Por qué está en este lugar de la cola">
+                            @foreach (var motivo in _detail.Motivos)
+                            {
+                                <li>@motivo</li>
+                            }
+                        </ul>
+                    }
+                    @if (_detail.CasosAbiertosCliente > 1 && !string.IsNullOrWhiteSpace(_detail.ClienteCodigo))
+                    {
+                        <button type="button" class="tk-atencion__link" @onclick="VerCasosDelClienteAsync">
+                            <i class="bi bi-collection"></i> Ver los @_detail.CasosAbiertosCliente casos abiertos de @DisplayOrFallback(_detail.ClienteNombre, "este cliente")
+                        </button>
+                    }
+                </div>
+            }
 
             <nav class="tk-etapas" aria-label="Etapa del ticket">
                 @foreach (var state in EtapasOrdenadas)
@@ -336,6 +416,24 @@
                         }
                         <span class="tk-estrellas__texto">@(_form.Prioridad <= 0 ? "Sin prioridad" : RenderPriority(_form.Prioridad))</span>
                     </div>
+                    <button type="button" class="tk-ia-sugerir" title="Sugerir la prioridad con IA según el pedido y la conversación"
+                            disabled="@(_saving || _iaSugiriendo)" @onclick="SugerirPrioridadIaAsync">
+                        <i class="bi @(_iaSugiriendo ? "bi-hourglass-split" : "bi-stars")"></i> @(_iaSugiriendo ? "Pensando…" : "Sugerir con IA")
+                    </button>
+                    @if (_iaSugerencia is { Disponible: true } sugerencia)
+                    {
+                        <div class="tk-ia-sugerencia" role="status">
+                            <p><i class="bi bi-stars"></i> La IA sugiere <strong>@RenderPriority(sugerencia.Prioridad)</strong>@(sugerencia.Motivo.Length > 0 ? $": {sugerencia.Motivo}" : string.Empty)</p>
+                            @if (sugerencia.Resumen.Length > 0)
+                            {
+                                <small>@sugerencia.Resumen</small>
+                            }
+                            <div class="tk-ia-sugerencia__acciones">
+                                <button type="button" class="btn btn--primary btn--sm" disabled="@_saving" @onclick="AplicarSugerenciaIa">Aplicar</button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _iaSugerencia = null">Descartar</button>
+                            </div>
+                        </div>
+                    }
                 </div>
                 <div class="tk-prop tk-prop--etiquetas">
                     <label>Etiquetas</label>
@@ -598,7 +696,8 @@
                          @ondrop="() => SoltarTicketAsync(state.CodigoEstado)">
                         @foreach (var item in items)
                         {
-                            <article class="@GetTicketCardClass(item)"
+                            <article @key="item.IdTicket"
+                                     class="@GetTicketCardClass(item)"
                                      draggable="true"
                                      data-ticket-id="@item.IdTicket"
                                      title="Arrastrá para cambiar de etapa"
@@ -613,6 +712,17 @@
                                     <span><i class="bi bi-person"></i> @DisplayOrFallback(item.TecnicoNombre, "Sin asignar")</span>
                                     <span><i class="bi bi-building"></i> @DisplayOrFallback(item.ClienteNombre, item.ContactoNombre, "Sin contacto")</span>
                                 </div>
+                                @if (!string.IsNullOrEmpty(item.EsperandoA))
+                                {
+                                    <div class="tickets-card__atencion">
+                                        @RenderPlazo(item)
+                                        @RenderEsperando(item)
+                                        @if (item.ClientePrioritario)
+                                        {
+                                            @RenderTipoCliente(item)
+                                        }
+                                    </div>
+                                }
                                 @if (item.Etiquetas.Count > 0)
                                 {
                                     <div class="tickets-tags">
@@ -847,7 +957,10 @@
     private PageHeaderConfig? _pageHeaderPublicado;
 
     private TicketLookupDto _lookups = new();
-    private TicketsFilters _filters = new();
+    private TicketsFilters _filters = new() { OrdenarPor = TicketViewColumnKeys.Atencion };
+    private List<TicketBandejaDto> _bandejas = [];
+    private bool _showRecordar;
+    private DateTime? _recordarFecha;
     private string _prioridadFiltro = string.Empty;
     private string _viewMode = "kanban";
     private bool _loading;
@@ -1414,6 +1527,29 @@
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
         if (query.TryGetValue("id", out var rawId) && long.TryParse(rawId.ToString(), out var id) && id > 0)
             _startupTicketId = id;
+
+        // Enlaces del panel de seguimiento: /tickets?bandeja=plazo&tecnico=2&cliente=112010002&clienteNombre=...
+        var desdeEnlace = false;
+        if (query.TryGetValue("bandeja", out var bandeja) && !string.IsNullOrWhiteSpace(bandeja))
+        {
+            _filters.Bandeja = bandeja.ToString().Trim().ToLowerInvariant();
+            desdeEnlace = true;
+        }
+        if (query.TryGetValue("tecnico", out var tecnico) && !string.IsNullOrWhiteSpace(tecnico))
+        {
+            _filters.IdTecnico = tecnico.ToString().Trim();
+            desdeEnlace = true;
+        }
+        if (query.TryGetValue("cliente", out var cliente) && !string.IsNullOrWhiteSpace(cliente))
+        {
+            _filters.ClienteCodigo = cliente.ToString().Trim();
+            _filterClientLabel = query.TryGetValue("clienteNombre", out var nombre) && !string.IsNullOrWhiteSpace(nombre)
+                ? nombre.ToString().Trim()
+                : _filters.ClienteCodigo;
+            desdeEnlace = true;
+        }
+        if (desdeEnlace)
+            _viewMode = "lista";
     }
 
     private async Task ApplyCurrentLocationAsync()
@@ -1900,6 +2036,7 @@
             if (!_showEditor)
                 UpdatePageHeader();
         }
+        await CargarBandejasAsync();
     }
 
     private async Task CambiarPaginaAsync(int page)
@@ -1961,7 +2098,7 @@
 
     private async Task LimpiarFiltros()
     {
-        _filters = new TicketsFilters();
+        _filters = new TicketsFilters { OrdenarPor = TicketViewColumnKeys.Atencion };
         _prioridadFiltro = string.Empty;
         _filterClientSearch = string.Empty;
         _filterContactSearch = string.Empty;
@@ -1974,7 +2111,185 @@
     }
 
     private void SyncFilters()
-        => _filters.Prioridad = int.TryParse(_prioridadFiltro, out var priority) ? priority : null;
+    {
+        _filters.Prioridad = int.TryParse(_prioridadFiltro, out var priority) ? priority : null;
+        _filters.IdTecnicoActual = TecnicoActual?.IdTecnico;
+    }
+
+    /// <summary>Técnico del usuario logueado (mismo criterio que Conversaciones: usuario asociado o nombre).</summary>
+    private ConversacionTecnicoOptionDto? TecnicoActual
+    {
+        get
+        {
+            var user = CurrentUserName;
+            if (string.IsNullOrWhiteSpace(user))
+                return null;
+            return _lookups.Tecnicos.FirstOrDefault(t => string.Equals(t.UsuarioAsociado?.Trim(), user, StringComparison.OrdinalIgnoreCase))
+                   ?? _lookups.Tecnicos.FirstOrDefault(t => string.Equals(t.Nombre?.Trim(), user, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private bool EsOrdenAtencion => string.Equals(_filters.OrdenarPor, TicketViewColumnKeys.Atencion, StringComparison.OrdinalIgnoreCase);
+
+    private async Task CargarBandejasAsync()
+    {
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetBandejasAsync(_filters), "No se pudieron contar los tickets por bandeja.");
+        if (result.Success && result.Value is not null)
+            _bandejas = result.Value.ToList();
+    }
+
+    private string BandejaClass(string key, bool alerta)
+    {
+        var css = "tk-bandeja";
+        if (string.Equals(_filters.Bandeja ?? string.Empty, key, StringComparison.OrdinalIgnoreCase))
+            css += " is-active";
+        if (alerta)
+            css += " tk-bandeja--alerta";
+        return css;
+    }
+
+    private async Task ElegirBandejaAsync(string key)
+    {
+        if (_loading)
+            return;
+        _filters.Bandeja = string.Equals(_filters.Bandeja, key, StringComparison.OrdinalIgnoreCase) ? string.Empty : key;
+        _filters.PageNumber = 1;
+        ClearTicketSelection(updateHeader: false);
+        await BuscarAsync();
+    }
+
+    private async Task OrdenarPorAtencionAsync()
+    {
+        _filters.OrdenarPor = TicketViewColumnKeys.Atencion;
+        _filters.OrdenDescendente = false;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task VerCasosDelClienteAsync()
+    {
+        if (_detail is null || string.IsNullOrWhiteSpace(_detail.ClienteCodigo))
+            return;
+        _filters.ClienteCodigo = _detail.ClienteCodigo;
+        _filterClientLabel = DisplayOrFallback(_detail.ClienteNombre, _detail.ClienteCodigo);
+        _filters.Bandeja = TicketBandejaKeys.Abiertos;
+        _filters.PageNumber = 1;
+        CerrarEditor();
+        await BuscarAsync();
+    }
+
+    private static DateTime ProximoDiaHabil(int dias)
+    {
+        var fecha = DateTime.Today;
+        var sumados = 0;
+        while (sumados < dias)
+        {
+            fecha = fecha.AddDays(1);
+            if (fecha.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
+                sumados++;
+        }
+        return fecha.AddHours(9);
+    }
+
+    private static DateTime ProximoLunes()
+    {
+        var fecha = DateTime.Today.AddDays(1);
+        while (fecha.DayOfWeek != DayOfWeek.Monday)
+            fecha = fecha.AddDays(1);
+        return fecha.AddHours(9);
+    }
+
+    private async Task ProgramarSeguimientoAsync(DateTime? fecha)
+    {
+        if (_detail is null)
+            return;
+        if (fecha is DateTime f && f <= DateTime.Now)
+        {
+            SetFeedback(AppUiMessage.Warning("Seguimiento", "Elegí una fecha futura."));
+            return;
+        }
+
+        var id = _detail.IdTicket;
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TicketsSvc.SetSeguimientoAsync(new TicketSeguimientoRequest { IdTicket = id, Fecha = fecha, UsuarioAccion = CurrentUserName });
+            return true;
+        }, "No se pudo programar el seguimiento.");
+        _showRecordar = false;
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        var fresco = await UiOps.RunAsync(() => TicketsSvc.GetByIdAsync(id), "No se pudo actualizar el ticket.");
+        if (fresco.Success && fresco.Value is not null && _detail?.IdTicket == id)
+        {
+            _detail.FechaSeguimiento = fresco.Value.FechaSeguimiento;
+            _detail.EsperandoA = fresco.Value.EsperandoA;
+            _detail.EsperandoTexto = fresco.Value.EsperandoTexto;
+            _detail.PlazoEstado = fresco.Value.PlazoEstado;
+            _detail.PlazoTexto = fresco.Value.PlazoTexto;
+            _detail.Motivos = fresco.Value.Motivos;
+            _detail.Actividad = fresco.Value.Actividad;
+        }
+        SetFeedback(AppUiMessage.Success("Seguimiento", fecha is DateTime nueva
+            ? $"Te lo recordamos el {nueva:dd/MM} a las {nueva:HH:mm}. Hasta entonces sale de la cola."
+            : "Se quitó el seguimiento: el ticket vuelve a la cola."));
+    }
+
+    private static string Antiguedad(DateTime alta)
+    {
+        var dias = (DateTime.Today - alta.Date).Days;
+        return dias <= 0 ? "Hoy" : dias == 1 ? "1 día" : $"{dias} días";
+    }
+
+    private static MarkupString PlazoHtml(TicketGridItemDto item)
+    {
+        if (string.IsNullOrEmpty(item.PlazoEstado))
+            return new MarkupString("-");
+        var css = item.PlazoEstado switch
+        {
+            TicketPlazoEstados.Vencido => "tk-chip--rojo",
+            TicketPlazoEstados.PorVencer => "tk-chip--ambar",
+            TicketPlazoEstados.EnTermino => "tk-chip--verde",
+            _ => "tk-chip--gris"
+        };
+        var tipo = item.PlazoTipo == TicketPlazoTipos.Respuesta ? "Respuesta" : "Resolución";
+        return new MarkupString($"<span class=\"tk-chip {css}\" title=\"Plazo de {tipo.ToLowerInvariant()}\"><i class=\"bi bi-alarm\"></i> {System.Net.WebUtility.HtmlEncode(item.PlazoTexto)}</span>");
+    }
+
+    private static MarkupString EsperandoHtml(TicketGridItemDto item)
+    {
+        var (texto, css, icono) = item.EsperandoA switch
+        {
+            TicketEsperandoA.Nosotros => ($"Nosotros · {item.EsperandoTexto}", "tk-chip--azul", "bi-reply"),
+            TicketEsperandoA.Cliente => ($"Cliente · {item.EsperandoTexto}", "tk-chip--gris", "bi-hourglass-split"),
+            TicketEsperandoA.Seguimiento => (item.FechaSeguimiento is DateTime f ? $"Seguimiento {f:dd/MM}" : "Seguimiento", "tk-chip--gris", "bi-calendar-check"),
+            _ => (string.Empty, string.Empty, string.Empty)
+        };
+        if (texto.Length == 0)
+            return new MarkupString("-");
+        if (item.SeguimientoVencido)
+            (texto, css) = ($"Seguimiento vencido · {item.EsperandoTexto}", "tk-chip--rojo");
+        return new MarkupString($"<span class=\"tk-chip {css}\"><i class=\"bi {icono}\"></i> {System.Net.WebUtility.HtmlEncode(texto)}</span>");
+    }
+
+    private static MarkupString TipoClienteHtml(TicketGridItemDto item)
+    {
+        if (string.IsNullOrEmpty(item.EsperandoA) && !item.ClientePrioritario)
+            return new MarkupString("-");
+        if (!item.ClientePrioritario)
+            return new MarkupString(string.IsNullOrWhiteSpace(item.ClienteCodigo) ? "-" : "<span class=\"tk-tipo\">Normal</span>");
+        var texto = string.Equals(item.EstadoAbono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase)
+            ? "Con abono"
+            : "Prioritario";
+        return new MarkupString($"<span class=\"tk-chip tk-chip--violeta\"><i class=\"bi bi-star-fill\"></i> {texto}</span>");
+    }
+
+    private static RenderFragment RenderPlazo(TicketGridItemDto item) => b => b.AddContent(0, PlazoHtml(item));
+    private static RenderFragment RenderEsperando(TicketGridItemDto item) => b => b.AddContent(0, EsperandoHtml(item));
+    private static RenderFragment RenderTipoCliente(TicketGridItemDto item) => b => b.AddContent(0, TipoClienteHtml(item));
 
     private bool HasVisibleTicketData()
         => _viewMode == "kanban" ? _kanbanItems.Count > 0 : _listItems.Count > 0;
@@ -1990,6 +2305,7 @@
         _detail = null;
         _newNote = string.Empty;
         _descriptionEditorReady = false;
+        _iaSugerencia = null;
         _form = new TicketUpdateRequest
         {
             CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo,
@@ -2019,6 +2335,7 @@
         }
 
         _detail = result.Value;
+        _iaSugerencia = null;
         _form = new TicketUpdateRequest
         {
             IdTicket = _detail.IdTicket,
@@ -2283,6 +2600,52 @@
         await _ticketsEditorJs.InvokeVoidAsync("runCommand", _descriptionEditor, option.Command);
         await SyncDescriptionFromEditorAsync();
         _showDescriptionCommands = false;
+    }
+
+    private bool _iaSugiriendo;
+    private TicketSugerenciaIaDto? _iaSugerencia;
+
+    private async Task SugerirPrioridadIaAsync()
+    {
+        _iaSugiriendo = true;
+        _iaSugerencia = null;
+        try
+        {
+            await SyncDescriptionFromEditorAsync();
+            var sugerencia = await TicketsSvc.SugerirPrioridadAsync(new TicketSugerenciaIaRequest
+            {
+                IdTicket = _isNew ? null : _detail?.IdTicket,
+                Titulo = _form.Titulo ?? string.Empty,
+                Descripcion = _form.Descripcion ?? string.Empty,
+                Cliente = _selectedClientLabel
+            });
+            if (sugerencia.Disponible)
+                _iaSugerencia = sugerencia;
+            else
+                SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Sugerencia con IA", Message = sugerencia.Mensaje });
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "Sugerencia con IA", Message = ex.Message });
+        }
+        finally
+        {
+            _iaSugiriendo = false;
+        }
+    }
+
+    private void AplicarSugerenciaIa()
+    {
+        if (_iaSugerencia is null)
+            return;
+        _form.Prioridad = _iaSugerencia.Prioridad;
+        _iaSugerencia = null;
+        SetFeedback(new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Info,
+            Title = "Prioridad sugerida",
+            Message = _isNew ? "Se aplicó la prioridad. Se guarda al crear el ticket." : "Se aplicó la prioridad. Guardá el ticket para confirmarla."
+        });
     }
 
     private async Task SyncDescriptionFromEditorAsync()
@@ -2990,7 +3353,8 @@
 
     private IReadOnlyList<TicketGridGroup> BuildListGroups()
     {
-        return _viewSettings.AgruparPor switch
+        var agrupar = EsOrdenAtencion && _viewSettings.AgruparPor == TicketViewGroupKeys.Estado ? TicketViewGroupKeys.None : _viewSettings.AgruparPor;
+        return agrupar switch
         {
             TicketViewGroupKeys.Prioridad => _listItems.GroupBy(x => RenderPriority(x.Prioridad)).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
             TicketViewGroupKeys.Tecnico => _listItems.GroupBy(x => DisplayOrFallback(x.TecnicoNombre, "Sin asignar")).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
@@ -3003,6 +3367,32 @@
     {
         if (string.Equals(key, TicketViewColumnKeys.Etiquetas, StringComparison.OrdinalIgnoreCase))
             return RenderTicketTags(item.Etiquetas);
+        switch (key)
+        {
+            case TicketViewColumnKeys.Titulo:
+                var titulo = System.Net.WebUtility.HtmlEncode(item.Titulo);
+                if (item.Motivos.Count == 0 || item.EsperandoA != TicketEsperandoA.Nosotros)
+                    return new MarkupString(titulo);
+                // Plazo y espera ya tienen su columna: en la fila van los demás motivos.
+                var motivos = string.Join(string.Empty, item.Motivos.Where(m => !m.StartsWith("Plazo de", StringComparison.Ordinal) && !m.StartsWith("Esperando", StringComparison.Ordinal)).Take(3).Select(m => $"<li>{System.Net.WebUtility.HtmlEncode(m)}</li>"));
+                return motivos.Length == 0
+                    ? new MarkupString(titulo)
+                    : new MarkupString($"<span class=\"tk-titulo\">{titulo}</span><ul class=\"tk-motivos tk-motivos--fila\">{motivos}</ul>");
+            case TicketViewColumnKeys.Plazo:
+                return PlazoHtml(item);
+            case TicketViewColumnKeys.Esperando:
+                return EsperandoHtml(item);
+            case TicketViewColumnKeys.TipoCliente:
+                return TipoClienteHtml(item);
+            case TicketViewColumnKeys.Antiguedad:
+                return new MarkupString(System.Net.WebUtility.HtmlEncode(Antiguedad(item.FechaHoraAlta)));
+            case TicketViewColumnKeys.CasosCliente:
+                return new MarkupString(item.CasosAbiertosCliente > 0 ? item.CasosAbiertosCliente.ToString() : "-");
+            case TicketViewColumnKeys.Seguimiento:
+                return item.FechaSeguimiento is DateTime f
+                    ? new MarkupString($"<span class=\"tk-chip {(item.SeguimientoVencido ? "tk-chip--rojo" : "tk-chip--gris")}\">{f:dd/MM HH:mm}</span>")
+                    : new MarkupString("-");
+        }
 
         var text = key switch
         {
@@ -3132,24 +3522,7 @@
             Reglas = source.Reglas.Select(r => new SearchRuleDto { Campo = r.Campo, Operador = r.Operador, Valor = r.Valor }).ToList()
         };
 
-    private static TicketViewSettingsDto BuildDefaultViewSettings()
-        => new()
-        {
-            AgruparPor = TicketViewGroupKeys.Estado,
-            Columnas =
-            [
-                new() { Key = TicketViewColumnKeys.Numero, Label = "Nro.", Visible = true, Order = 0, WidthPx = 84 },
-                new() { Key = TicketViewColumnKeys.Titulo, Label = "Ticket", Visible = true, Order = 1, WidthPx = 300 },
-                new() { Key = TicketViewColumnKeys.Prioridad, Label = "Prioridad", Visible = true, Order = 2, WidthPx = 118 },
-                new() { Key = TicketViewColumnKeys.Estado, Label = "Etapa", Visible = true, Order = 3, WidthPx = 128 },
-                new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4, WidthPx = 150 },
-                new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5, WidthPx = 210 },
-                new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = true, Order = 6, WidthPx = 190 },
-                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7, WidthPx = 180 },
-                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8, WidthPx = 112 },
-                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9, WidthPx = 160 }
-            ]
-        };
+    private static TicketViewSettingsDto BuildDefaultViewSettings() => TicketViewDefaults.Crear();
 
     private static List<TicketViewColumnDto> CloneColumns(IEnumerable<TicketViewColumnDto> columns)
         => columns.OrderBy(c => c.Order).Select(c => new TicketViewColumnDto
@@ -3161,33 +3534,12 @@
             WidthPx = NormalizeColumnWidth(c.WidthPx, GetDefaultColumnWidth(c.Key))
         }).ToList();
 
-    private static int GetDefaultColumnWidth(string key)
-        => key switch
-        {
-            TicketViewColumnKeys.Numero => 84,
-            TicketViewColumnKeys.Titulo => 300,
-            TicketViewColumnKeys.Prioridad => 118,
-            TicketViewColumnKeys.Estado => 128,
-            TicketViewColumnKeys.Asignado => 150,
-            TicketViewColumnKeys.Cliente => 210,
-            TicketViewColumnKeys.Contacto => 190,
-            TicketViewColumnKeys.Etiquetas => 180,
-            TicketViewColumnKeys.Mensajes => 112,
-            TicketViewColumnKeys.Fecha => 160,
-            _ => 150
-        };
+    private static int GetDefaultColumnWidth(string key) => TicketViewDefaults.Ancho(key);
 
     private static int NormalizeColumnWidth(int width, int fallback)
         => Math.Clamp(width > 0 ? width : fallback, 72, 520);
 
-    private static string RenderPriority(int priority)
-        => priority switch
-        {
-            >= 3 => "Alta",
-            2 => "Media",
-            1 => "Baja",
-            _ => "Sin prioridad"
-        };
+    private static string RenderPriority(int priority) => AlfaCore.Services.TicketsService.NombrePrioridad(priority);
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;

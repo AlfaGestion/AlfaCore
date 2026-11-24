@@ -8,12 +8,16 @@ using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
-public sealed class TicketsService(
+public sealed partial class TicketsService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
     IConversacionesService conversacionesService,
-    IAvisosPushNotifier? avisosPush = null) : ITicketsService
+    IAvisosPushNotifier? avisosPush = null,
+    IConversacionesConfigService? conversacionesConfig = null,
+    INotificacionesPushService? pushService = null,
+    IConversacionAnalisisService? ia = null,
+    IIaConsumoService? iaConsumo = null) : ITicketsService
 {
     private const string ModuleName = "Tickets";
     private const string ConfigGroup = "TICKETS";
@@ -121,6 +125,29 @@ public sealed class TicketsService(
             var skip = (pageNumber - 1) * pageSize;
             var orderBy = BuildTicketOrderBy(filters.OrdenarPor, filters.OrdenDescendente);
 
+            // "Atender primero", bandejas y columnas calculadas (plazo, espera...) se ordenan/filtran en memoria
+            // sobre los primeros AtencionTope tickets que cumplen los filtros.
+            var porAtencion = string.Equals(filters.OrdenarPor, TicketViewColumnKeys.Atencion, StringComparison.OrdinalIgnoreCase);
+            var columnaCalculada = EsColumnaCalculada(filters.OrdenarPor);
+            if (porAtencion || columnaCalculada || !string.IsNullOrWhiteSpace(filters.Bandeja))
+            {
+                await using var cnAtencion = new SqlConnection(ConnectionString);
+                await cnAtencion.OpenAsync(token);
+                var lista = await BuscarParaAtencionAsync(cnAtencion, filters, porAtencion || columnaCalculada ? "t.FechaHoraAlta DESC" : orderBy, token);
+                IEnumerable<TicketGridItemDto> ordenados = porAtencion
+                    ? TicketsAtencionCalculo.Ordenar(lista)
+                    : columnaCalculada ? OrdenarPorColumnaCalculada(lista, filters.OrdenarPor, filters.OrdenDescendente) : lista;
+                var pagina = ordenados.Skip(skip).Take(pageSize).ToList();
+                await HydrateEtiquetasAsync(cnAtencion, pagina, token);
+                return new PagedResult<TicketGridItemDto>
+                {
+                    Items = pagina,
+                    Total = lista.Count,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize
+                };
+            }
+
             var sql = $"""
                 {TicketListSelectSql()}
                 {TicketWhereSql()}
@@ -151,6 +178,7 @@ public sealed class TicketsService(
             }
 
             await HydrateEtiquetasAsync(cn, rows, token);
+            await EnriquecerAtencionAsync(cn, rows, token);
 
             return new PagedResult<TicketGridItemDto>
             {
@@ -174,10 +202,31 @@ public sealed class TicketsService(
             TicketViewColumnKeys.Contacto => "ISNULL(mc.Nombre_y_Apellido, '')",
             TicketViewColumnKeys.Etiquetas => "(SELECT MIN(eOrden.Nombre) FROM dbo.TICK_TICKET_ETIQUETAS teOrden INNER JOIN dbo.TICK_ETIQUETAS eOrden ON eOrden.IdEtiqueta = teOrden.IdEtiqueta WHERE teOrden.IdTicket = t.IdTicket AND ISNULL(eOrden.Activa, 1) = 1)",
             TicketViewColumnKeys.Mensajes => "ISNULL(msg.CantidadMensajes, 0)",
+            TicketViewColumnKeys.Antiguedad => "DATEDIFF(minute, t.FechaHoraAlta, GETDATE())",
             _ => "t.FechaHoraAlta"
         };
 
         return $"{expression} {(descending ? "DESC" : "ASC")}";
+    }
+
+    private static bool EsColumnaCalculada(string? key)
+        => key is TicketViewColumnKeys.Esperando or TicketViewColumnKeys.Plazo or TicketViewColumnKeys.TipoCliente
+            or TicketViewColumnKeys.CasosCliente or TicketViewColumnKeys.Seguimiento;
+
+    private static IEnumerable<TicketGridItemDto> OrdenarPorColumnaCalculada(IEnumerable<TicketGridItemDto> rows, string? key, bool descending)
+    {
+        // Los cerrados (sin datos de atención) siempre al final.
+        IOrderedEnumerable<TicketGridItemDto> conDatos = rows.OrderBy(t => string.IsNullOrEmpty(t.EsperandoA) ? 1 : 0);
+        Func<TicketGridItemDto, double> clave = key switch
+        {
+            TicketViewColumnKeys.Esperando => t => t.EsperandoA == TicketEsperandoA.Nosotros ? t.HorasHabilesEsperando : -1,
+            TicketViewColumnKeys.Plazo => t => string.IsNullOrEmpty(t.PlazoEstado) ? double.MaxValue : t.PlazoHorasRestantes,
+            TicketViewColumnKeys.TipoCliente => t => (t.ClientePrioritario ? 2 : 0) + (t.EstadoAbono == ConversacionAbonoEstados.Abonado ? 1 : 0),
+            TicketViewColumnKeys.CasosCliente => t => t.CasosAbiertosCliente,
+            TicketViewColumnKeys.Seguimiento => t => t.FechaSeguimiento?.Ticks ?? double.MaxValue,
+            _ => t => t.FechaHoraAlta.Ticks
+        };
+        return descending ? conDatos.ThenByDescending(clave) : conDatos.ThenBy(clave);
     }
 
     public Task<IReadOnlyList<TicketGridItemDto>> GetKanbanAsync(TicketsFilters filters, CancellationToken ct = default)
@@ -185,27 +234,53 @@ public sealed class TicketsService(
         {
             filters ??= new TicketsFilters();
             var limit = Math.Clamp(filters.PageSize <= 0 ? 120 : filters.PageSize, 25, 200);
-            var sql = $"""
-                {TicketListSelectSql()}
-                {TicketWhereSql()}
-                ORDER BY e.Orden, t.Prioridad DESC, t.FechaHoraAlta DESC, t.IdTicket DESC
-                OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY;
-                """;
-
-            var rows = new List<TicketGridItemDto>();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await using var cmd = new SqlCommand(sql, cn);
-            AddFilterParameters(cmd, filters);
-            cmd.Parameters.AddWithValue("@Limit", limit);
-            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            List<TicketGridItemDto> rows;
+            if (!string.IsNullOrWhiteSpace(filters.Bandeja))
             {
-                while (await rd.ReadAsync(token))
-                    rows.Add(ReadTicketGridItem(rd));
+                rows = await BuscarParaAtencionAsync(cn, filters, "t.FechaHoraAlta DESC", token);
+            }
+            else
+            {
+                // Tope por columna (etapa), no total: antes venían los primeros N tickets ordenados por etapa y,
+                // con muchos «Nuevo», las demás columnas quedaban vacías y una tarjeta movida desaparecía.
+                // Abiertas: hasta AtencionTope para ordenar por «Atender primero»; cerradas: las @Limit más recientes.
+                var sql = $"""
+                    {TicketListSelectSql()}
+                    {TicketWhereSql()}
+                    AND ISNULL(e.EsCerrado, 0) = 0
+                    ORDER BY t.FechaHoraAlta DESC, t.IdTicket DESC
+                    OFFSET 0 ROWS FETCH NEXT {AtencionTope} ROWS ONLY;
+
+                    {TicketListSelectSql()}
+                    {TicketWhereSql()}
+                    AND ISNULL(e.EsCerrado, 0) = 1
+                    ORDER BY ISNULL(t.FechaHoraCierre, t.FechaHoraAlta) DESC, t.IdTicket DESC
+                    OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY;
+                    """;
+                rows = [];
+                await using var cmd = new SqlCommand(sql, cn);
+                AddFilterParameters(cmd, filters);
+                cmd.Parameters.AddWithValue("@Limit", limit);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                do
+                {
+                    while (await rd.ReadAsync(token))
+                        rows.Add(ReadTicketGridItem(rd));
+                }
+                while (await rd.NextResultAsync(token));
+                await rd.CloseAsync();
+                await EnriquecerAtencionAsync(cn, rows, token);
             }
 
-            await HydrateEtiquetasAsync(cn, rows, token);
-            return (IReadOnlyList<TicketGridItemDto>)rows;
+            // Dentro de cada columna, primero lo que hay que atender; cada columna muestra hasta @Limit tarjetas.
+            var resultado = TicketsAtencionCalculo.Ordenar(rows)
+                .GroupBy(t => t.CodigoEstado, StringComparer.OrdinalIgnoreCase)
+                .SelectMany(g => g.Take(limit))
+                .ToList();
+            await HydrateEtiquetasAsync(cn, resultado, token);
+            return (IReadOnlyList<TicketGridItemDto>)resultado;
         }, "No se pudo cargar la vista kanban de tickets.", ct);
 
     public Task<IReadOnlyList<TicketRelatedMatchDto>> FindRelatedOpenTicketsAsync(TicketRelatedSearchRequest request, CancellationToken ct = default)
@@ -494,6 +569,7 @@ public sealed class TicketsService(
             await InsertTicketMessagesAsync(cn, (SqlTransaction)tx, idTicket, messageIds, token);
             await SyncTicketEtiquetasAsync(cn, (SqlTransaction)tx, idTicket, tagIds, token);
             await InsertActivityAsync(cn, (SqlTransaction)tx, idTicket, "CREACION", $"Ticket creado: {title}", user, token);
+            await InsertEstadoHistAsync(cn, (SqlTransaction)tx, idTicket, null, state, user, token);
 
             await tx.CommitAsync(token);
 
@@ -559,6 +635,7 @@ public sealed class TicketsService(
             await SyncTicketEtiquetasAsync(cn, (SqlTransaction)tx, request.IdTicket, tagIds, token);
             var current = await GetTicketEditSnapshotAsync(cn, (SqlTransaction)tx, request.IdTicket, token);
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "EDICION", BuildTicketUpdateActivity(previous, current), user, token);
+            await InsertEstadoHistAsync(cn, (SqlTransaction)tx, request.IdTicket, previous.CodigoEstado, current.CodigoEstado, user, token);
             await tx.CommitAsync(token);
             await AvisarAsignacionAsync(current.IdTecnico, previous.IdTecnico, $"Te asignaron un ticket: {current.Titulo}", request.IdTicket, token);
         }, "No se pudo actualizar el ticket.", ct);
@@ -574,7 +651,9 @@ public sealed class TicketsService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var tx = await cn.BeginTransactionAsync(token);
-            var anterior = request.IdTecnico is null ? null : await GetTicketEditSnapshotAsync(cn, (SqlTransaction)tx, request.IdTicket, token);
+            var anterior = request.IdTecnico is null && string.IsNullOrWhiteSpace(request.CodigoEstado)
+                ? null
+                : await GetTicketEditSnapshotAsync(cn, (SqlTransaction)tx, request.IdTicket, token);
             await using var cmd = new SqlCommand { Connection = cn, Transaction = (SqlTransaction)tx };
             cmd.Parameters.AddWithValue("@IdTicket", request.IdTicket);
 
@@ -607,8 +686,10 @@ public sealed class TicketsService(
                 throw new InvalidOperationException("El ticket seleccionado ya no existe en la base activa.");
 
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "CAMBIO", "Ticket actualizado desde acción rápida.", NormalizeUser(request.UsuarioAccion), token);
+            if (anterior is not null && !string.IsNullOrWhiteSpace(request.CodigoEstado))
+                await InsertEstadoHistAsync(cn, (SqlTransaction)tx, request.IdTicket, anterior.CodigoEstado, request.CodigoEstado.Trim().ToUpperInvariant(), NormalizeUser(request.UsuarioAccion), token);
             await tx.CommitAsync(token);
-            if (anterior is not null)
+            if (anterior is not null && request.IdTecnico is not null)
                 await AvisarAsignacionAsync(request.IdTecnico, anterior.IdTecnico, $"Te asignaron un ticket: {anterior.Titulo}", request.IdTicket, token);
         }, "No se pudo actualizar el ticket.", ct);
 
@@ -658,6 +739,15 @@ public sealed class TicketsService(
                 cmd.Parameters.AddWithValue(parameterName, ticketIds[index]);
             }
 
+            var estadosAnteriores = new Dictionary<long, string>();
+            if (!string.IsNullOrWhiteSpace(request.CodigoEstado))
+            {
+                cmd.CommandText = $"SELECT IdTicket, ISNULL(CodigoEstado, '') FROM dbo.TICK_TICKETS WHERE IdTicket IN ({string.Join(", ", idParameters)});";
+                await using var rdEstados = await cmd.ExecuteReaderAsync(token);
+                while (await rdEstados.ReadAsync(token))
+                    estadosAnteriores[rdEstados.GetInt64(0)] = GetString(rdEstados, 1);
+            }
+
             updates.Add("FechaHoraModificacion = GETDATE()");
             cmd.CommandText = $"UPDATE dbo.TICK_TICKETS SET {string.Join(", ", updates)} WHERE IdTicket IN ({string.Join(", ", idParameters)});";
             var affected = await cmd.ExecuteNonQueryAsync(token);
@@ -666,7 +756,11 @@ public sealed class TicketsService(
 
             var user = NormalizeUser(request.UsuarioAccion);
             foreach (var ticketId in ticketIds)
+            {
                 await InsertActivityAsync(cn, (SqlTransaction)tx, ticketId, "CAMBIO", "Ticket actualizado desde acción masiva.", user, token);
+                if (estadosAnteriores.TryGetValue(ticketId, out var estadoAnterior))
+                    await InsertEstadoHistAsync(cn, (SqlTransaction)tx, ticketId, estadoAnterior, request.CodigoEstado!.Trim().ToUpperInvariant(), user, token);
+            }
 
             await tx.CommitAsync(token);
             if (request.ActualizarTecnico && avisosPush is not null && !string.IsNullOrWhiteSpace(request.IdTecnico))
@@ -692,6 +786,39 @@ public sealed class TicketsService(
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "NOTA", request.Texto.Trim(), NormalizeUser(request.UsuarioAccion), token);
             await tx.CommitAsync(token);
         }, "No se pudo agregar la nota al ticket.", ct);
+
+    public Task<int> AsegurarEtiquetaAsync(string nombre, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "AsegurarEtiqueta", async token =>
+        {
+            var name = NormalizeEtiquetaName(nombre);
+            // A diferencia de SaveEtiquetaAsync, una etiqueta existente queda como está (color y Activa
+            // los decide quien la administra en Tickets).
+            const string sql = """
+                DECLARE @IdEtiqueta int;
+
+                SELECT TOP (1) @IdEtiqueta = IdEtiqueta
+                FROM dbo.TICK_ETIQUETAS WITH (UPDLOCK, HOLDLOCK)
+                WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(@Nombre)
+                ORDER BY IdEtiqueta;
+
+                IF @IdEtiqueta IS NULL
+                BEGIN
+                    INSERT INTO dbo.TICK_ETIQUETAS (Nombre, Color, Activa)
+                    VALUES (@Nombre, @Color, 1);
+
+                    SET @IdEtiqueta = CAST(SCOPE_IDENTITY() AS int);
+                END
+
+                SELECT @IdEtiqueta;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Nombre", name);
+            cmd.Parameters.AddWithValue("@Color", NormalizeEtiquetaColor(null));
+            return Convert.ToInt32(await cmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
+        }, "No se pudo preparar la etiqueta del ticket.", ct);
 
     public Task<int> SaveEtiquetaAsync(TicketEtiquetaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveEtiqueta", async token =>
@@ -934,6 +1061,7 @@ public sealed class TicketsService(
                 return null;
 
             await HydrateEtiquetasAsync(cn, new List<TicketGridItemDto> { detail }, token);
+            await EnriquecerAtencionAsync(cn, new List<TicketGridItemDto> { detail }, token);
             detail.MensajesOrigenDetalle = (await GetSourceMessagesAsync(cn, detail.IdTicket, token)).ToList();
             detail.Actividad = (await GetActivityAsync(cn, detail.IdTicket, token)).ToList();
             return detail;
@@ -1091,7 +1219,8 @@ public sealed class TicketsService(
             MensajesOrigen = GetInt(rd, 16),
             FechaHoraAlta = rd.IsDBNull(17) ? DateTime.MinValue : rd.GetDateTime(17),
             FechaHoraModificacion = rd.IsDBNull(18) ? null : rd.GetDateTime(18),
-            FechaHoraCierre = rd.IsDBNull(19) ? null : rd.GetDateTime(19)
+            FechaHoraCierre = rd.IsDBNull(19) ? null : rd.GetDateTime(19),
+            UsuarioAltaTicket = rd.FieldCount > 20 ? GetString(rd, 20) : string.Empty
         };
 
     private static void AddFilterParameters(SqlCommand cmd, TicketsFilters filters)
@@ -1622,7 +1751,8 @@ public sealed class TicketsService(
         const string sql = """
             SELECT TOP (1)
                 ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
-                c.IdContacto
+                c.IdContacto,
+                ISNULL(c.OrigenContexto, N'')
             FROM dbo.CONV_CONVERSACIONES c
             LEFT JOIN dbo.MA_CONTACTOS mc
                 ON mc.id = c.IdContacto
@@ -1659,6 +1789,52 @@ public sealed class TicketsService(
             request.ClienteCodigo = GetString(rd, 0);
         if (!request.IdContacto.HasValue && !rd.IsDBNull(1))
             request.IdContacto = rd.GetInt32(1);
+        var contexto = GetString(rd, 2);
+        await rd.CloseAsync();
+
+        // Chat de soporte abierto desde Alfa Gestión sin cliente vinculado ("Sin identificar"): el cliente
+        // sale del "CLI:" que manda el sistema, si existe en Clientes (ticket #176 quedó sin cliente, 2026-11-18).
+        if (string.IsNullOrWhiteSpace(request.ClienteCodigo)
+            && WebChatContextoSoporte.Campo(contexto, "CLI") is { Length: > 0 } codigoContexto)
+        {
+            const string sqlCliente = """
+                SELECT TOP (1) LTRIM(RTRIM(CODIGO))
+                FROM dbo.VT_CLIENTES
+                WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(@Codigo);
+                """;
+            await using var cmdCliente = new SqlCommand(sqlCliente, cn, tx);
+            cmdCliente.Parameters.AddWithValue("@Codigo", codigoContexto);
+            if (await cmdCliente.ExecuteScalarAsync(ct) is string codigo && codigo.Length > 0)
+                request.ClienteCodigo = codigo;
+        }
+
+        // Contacto: si no hay uno vinculado, el único contacto de ese cliente con el nombre del usuario
+        // que escribió (USR:). Con dos o más homónimos no se elige ninguno.
+        if (!request.IdContacto.HasValue
+            && !string.IsNullOrWhiteSpace(request.ClienteCodigo)
+            && WebChatContextoSoporte.Campo(contexto, "USR") is { Length: > 0 } usuarioContexto)
+        {
+            const string sqlContacto = """
+                SELECT TOP (2) c.id
+                FROM dbo.MA_CONTACTOS c
+                WHERE LTRIM(RTRIM(c.Nombre_y_Apellido)) COLLATE Latin1_General_CI_AI = @Nombre
+                  AND (UPPER(LTRIM(RTRIM(ISNULL(c.CuentaRel, '')))) = UPPER(@Cuenta)
+                       OR EXISTS (SELECT 1 FROM dbo.MA_CONTACTOS_CUENTAS rel
+                                  WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                                    AND UPPER(LTRIM(RTRIM(rel.Cuenta))) = UPPER(@Cuenta)));
+                """;
+            await using var cmdContacto = new SqlCommand(sqlContacto, cn, tx);
+            cmdContacto.Parameters.AddWithValue("@Nombre", usuarioContexto);
+            cmdContacto.Parameters.AddWithValue("@Cuenta", request.ClienteCodigo.Trim());
+            var ids = new List<int>();
+            await using (var rdContacto = await cmdContacto.ExecuteReaderAsync(ct))
+            {
+                while (await rdContacto.ReadAsync(ct))
+                    ids.Add(rdContacto.GetInt32(0));
+            }
+            if (ids.Count == 1)
+                request.IdContacto = ids[0];
+        }
     }
 
     private static async Task ApplyContactDefaultsAsync(SqlConnection cn, SqlTransaction tx, TicketCreateRequest request, CancellationToken ct)
@@ -1743,6 +1919,27 @@ public sealed class TicketsService(
         }
     }
 
+    /// <summary>Historial de estados (TICK_ESTADOS_HIST): frena el plazo mientras se espera al cliente. Sin cambio, no graba.</summary>
+    private static async Task InsertEstadoHistAsync(SqlConnection cn, SqlTransaction tx, long idTicket, string? anterior, string nuevo, string user, CancellationToken ct)
+    {
+        var desde = (anterior ?? string.Empty).Trim().ToUpperInvariant();
+        var hasta = (nuevo ?? string.Empty).Trim().ToUpperInvariant();
+        if (hasta.Length == 0 || string.Equals(desde, hasta, StringComparison.Ordinal))
+            return;
+
+        const string sql = """
+            IF OBJECT_ID(N'dbo.TICK_ESTADOS_HIST', N'U') IS NOT NULL
+                INSERT INTO dbo.TICK_ESTADOS_HIST (IdTicket, EstadoAnterior, EstadoNuevo, FechaHora, Usuario)
+                VALUES (@IdTicket, @Anterior, @Nuevo, GETDATE(), @Usuario);
+            """;
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@IdTicket", idTicket);
+        cmd.Parameters.AddWithValue("@Anterior", desde.Length == 0 ? DBNull.Value : desde);
+        cmd.Parameters.AddWithValue("@Nuevo", hasta);
+        cmd.Parameters.AddWithValue("@Usuario", user);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static async Task InsertActivityAsync(SqlConnection cn, SqlTransaction tx, long idTicket, string type, string description, string user, CancellationToken ct)
     {
         const string sql = """
@@ -1758,24 +1955,7 @@ public sealed class TicketsService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static TicketViewSettingsDto CreateDefaultViewSettings()
-        => new()
-        {
-            AgruparPor = TicketViewGroupKeys.Estado,
-            Columnas =
-            [
-                new() { Key = TicketViewColumnKeys.Numero, Label = "Nro.", Visible = true, Order = 0, WidthPx = 84 },
-                new() { Key = TicketViewColumnKeys.Titulo, Label = "Ticket", Visible = true, Order = 1, WidthPx = 300 },
-                new() { Key = TicketViewColumnKeys.Prioridad, Label = "Prioridad", Visible = true, Order = 2, WidthPx = 118 },
-                new() { Key = TicketViewColumnKeys.Estado, Label = "Etapa", Visible = true, Order = 3, WidthPx = 128 },
-                new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4, WidthPx = 150 },
-                new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5, WidthPx = 210 },
-                new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = true, Order = 6, WidthPx = 190 },
-                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7, WidthPx = 180 },
-                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8, WidthPx = 112 },
-                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9, WidthPx = 160 }
-            ]
-        };
+    private static TicketViewSettingsDto CreateDefaultViewSettings() => TicketViewDefaults.Crear();
 
     private static TicketViewSettingsDto NormalizeViewSettings(TicketViewSettingsDto? settings)
     {
