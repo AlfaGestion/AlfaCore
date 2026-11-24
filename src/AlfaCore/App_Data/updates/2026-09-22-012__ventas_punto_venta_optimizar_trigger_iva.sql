@@ -8,7 +8,7 @@ SET NOCOUNT ON;
 
 IF OBJECT_ID(N'dbo.FMT_V_MV_CPTE_ID', N'TR') IS NOT NULL
 BEGIN
-    EXEC(N'
+    DECLARE @Trigger nvarchar(max) = N'
 ALTER TRIGGER [dbo].[FMT_V_MV_CPTE_ID] ON [dbo].[V_MV_Cpte]
 FOR INSERT, UPDATE
 AS
@@ -70,5 +70,12 @@ BEGIN
     UPDATE dbo.TA_CONFIGURACION
        SET VALOR = CASE WHEN @PorcentajeRealAl21 < @PorcentajeAl21 THEN ''21'' ELSE ''10.5'' END
      WHERE CLAVE = ''PIVA'';
-END');
+END';
+
+    -- LANUEVA y otras bases legacy pueden estar en compatibilidad SQL 2008 (nivel 100).
+    -- TRY_CONVERT existe en el motor moderno, pero no se puede compilar en ese nivel.
+    IF (SELECT compatibility_level FROM sys.databases WHERE database_id = DB_ID()) < 110
+        SET @Trigger = REPLACE(@Trigger, N'TRY_CONVERT(', N'CONVERT(');
+
+    EXEC sys.sp_executesql @Trigger;
 END;
