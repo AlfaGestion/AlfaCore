@@ -272,6 +272,7 @@ public class Program
         builder.Services.AddScoped<IMonitorClientesService, MonitorClientesService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
+        builder.Services.AddScoped<IVentaDemoService, VentaDemoService>();
         builder.Services.AddScoped<IPlanesService, PlanesService>();
         builder.Services.AddScoped<IPaymentProvider, ManualPaymentProvider>();
         builder.Services.AddScoped<IBillingService, BillingService>();

@@ -1,0 +1,110 @@
+@page "/vendedores"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inject IConfiguration Configuration
+
+@* Programa de vendedores (docs/modulos/venta-online.md). Link oculto: no se enlaza desde
+   ninguna página y pide a los buscadores no indexarla. El formulario de alta llega en la fase 4;
+   por ahora el contacto es por WhatsApp. *@
+
+<PageTitle>Vendedores | AlfaCore</PageTitle>
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="stylesheet" href="/css/landing.css" />
+    <link rel="stylesheet" href="/css/landing-rubros.css?v=20261123a" />
+</HeadContent>
+
+<header class="venta-topnav">
+    <div class="venta-topnav__inner">
+        <a href="/sistema" class="venta-topnav__brand">
+            <img src="/logos/Logo.png" alt="" />
+            <span>AlfaCore</span>
+        </a>
+        <span class="landing-hero__badge" style="margin: 0">Programa de vendedores</span>
+    </div>
+</header>
+
+<section class="landing-hero">
+    <div class="landing-hero__inner">
+        <h1>Vendé AlfaCore en tu zona y cobrá todos los meses</h1>
+        <p class="landing-hero__desc">
+            Recomendás el sistema a los comercios que conocés. Nosotros hacemos la puesta en marcha y el
+            soporte. Vos cobrás una comisión por cada cliente mientras siga activo.
+        </p>
+        <div class="landing-hero__actions">
+            <a href="/vendedores#sumarme" class="btn btn--primary btn--lg">Quiero sumarme</a>
+            <a href="/sistema" class="btn btn--ghost btn--lg">Ver lo que vas a vender</a>
+        </div>
+    </div>
+</section>
+
+<section class="venta-vend">
+    <div class="venta-vend__inner">
+        <div class="venta-vend__cards">
+            <div class="venta-vend__card">
+                <span class="venta-vend__dato">[X] %</span>
+                <strong>del abono, todos los meses</strong>
+                <span>Mientras tu cliente siga activo.</span>
+            </div>
+            <div class="venta-vend__card">
+                <span class="venta-vend__dato">[$ X]</span>
+                <strong>por cada alta</strong>
+                <span>Cuando el cliente paga el primer mes.</span>
+            </div>
+            <div class="venta-vend__card">
+                <span class="venta-vend__dato">0</span>
+                <strong>costo para empezar</strong>
+                <span>Sin cuota ni stock. Solo tu link.</span>
+            </div>
+        </div>
+
+        <h2>Cómo funciona</h2>
+        <div class="venta-vend__cards">
+            <div class="venta-vend__card"><strong>1. Te sumás</strong><span>Te damos tu código de vendedor y tu link.</span></div>
+            <div class="venta-vend__card"><strong>2. Mostrás la demo</strong><span>El comercio entra con su rubro desde tu link, sin registrarse.</span></div>
+            <div class="venta-vend__card"><strong>3. Contrata online</strong><span>El alta queda asociada a tu código.</span></div>
+            <div class="venta-vend__card"><strong>4. Cobrás cada mes</strong><span>Ves tus clientes y comisiones en tu panel.</span></div>
+        </div>
+
+        <div class="venta-vend__cols">
+            <div class="venta-vend__card">
+                <strong>Qué te damos</strong>
+                <ul>
+                    <li>Tu link de demo con tu código</li>
+                    <li>Panel con tus clientes y comisiones</li>
+                    <li>Folletos, videos cortos y textos para WhatsApp</li>
+                    <li>Capacitación para mostrar el sistema</li>
+                    <li>Nosotros instalamos, migramos y damos soporte</li>
+                </ul>
+            </div>
+            <div class="venta-vend__card">
+                <strong>Ideal si sos</strong>
+                <ul>
+                    <li>Técnico de PC o redes con clientes comerciales</li>
+                    <li>Contador o estudio con clientes que facturan</li>
+                    <li>Vendedor que ya visita comercios</li>
+                    <li>Alguien con buena llegada en su pueblo o barrio</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="sumarme" class="landing-cta">
+    <div class="landing-cta__inner">
+        <h2>Quiero sumarme</h2>
+        <p>Escribinos por WhatsApp contándonos a qué te dedicás y en qué zona estás.</p>
+        @if (!string.IsNullOrWhiteSpace(WhatsAppUrl))
+        {
+            <a href="@WhatsAppUrl" class="btn btn--primary btn--lg" target="_blank" rel="noopener">Escribir por WhatsApp</a>
+        }
+    </div>
+</section>
+
+<footer class="landing-footer">
+    <span>© @DateTime.Now.Year ALFA NET — Soluciones Informáticas</span>
+</footer>
+
+@code {
+    /// <summary>Link de WhatsApp de ventas (ej. https://wa.me/549XXXXXXXXXX). Configuración VentaOnline:WhatsAppUrl.</summary>
+    private string? WhatsAppUrl => Configuration["VentaOnline:WhatsAppUrl"];
+}

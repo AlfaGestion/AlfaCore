@@ -1,0 +1,425 @@
+/* Página de venta por rubros (/sistema), vendedores (/vendedores) y barra DEMO.
+   Complementa landing.css; mismos colores. Ver docs/modulos/venta-online.md. */
+
+.venta-topnav,
+.venta-confianza,
+.venta-rubros,
+.venta-pasos,
+.venta-vend {
+    color-scheme: light;
+}
+
+/* --- Barra superior --- */
+
+.venta-topnav {
+    background: #ffffff;
+    border-bottom: 1px solid rgba(15, 33, 56, 0.09);
+}
+
+.venta-topnav__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 12px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 24px;
+}
+
+.venta-topnav__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: #0f2138;
+    font-weight: 700;
+    font-size: 1.15rem;
+}
+
+.venta-topnav__brand img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+}
+
+.venta-topnav__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1 1 auto;
+}
+
+.venta-topnav__links a,
+.venta-topnav__login {
+    padding: 10px 14px;
+    border-radius: 10px;
+    color: #334155;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.venta-topnav__links a:hover,
+.venta-topnav__login:hover {
+    background: #eff5fb;
+    color: #0f2138;
+}
+
+.venta-topnav__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* --- Franja de confianza --- */
+
+.venta-confianza {
+    background: #ffffff;
+    border-bottom: 1px solid rgba(15, 33, 56, 0.09);
+}
+
+.venta-confianza__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 18px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px 32px;
+    color: #334155;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.venta-confianza__inner i {
+    color: #0b74c9;
+    margin-right: 6px;
+}
+
+/* --- Rubros --- */
+
+.venta-rubros {
+    background: #f6f8fb;
+    padding: 64px 20px 48px;
+}
+
+.venta-rubros__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.venta-section-head {
+    max-width: 720px;
+}
+
+.venta-section-head h2,
+.venta-pasos h2,
+.venta-vend h2 {
+    margin: 0 0 10px;
+    color: #10233d;
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    line-height: 1.1;
+}
+
+.venta-section-head p {
+    margin: 0;
+    color: #516275;
+    font-size: 1.05rem;
+    line-height: 1.55;
+}
+
+.venta-familia {
+    --venta-tint: #dbeafe;
+    --venta-ink: #1e3a8a;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.venta-familia--bares { --venta-tint: #ffedd5; --venta-ink: #9a3412; }
+.venta-familia--comercio { --venta-tint: #dbeafe; --venta-ink: #1e3a8a; }
+.venta-familia--distribuidoras { --venta-tint: #dcfce7; --venta-ink: #166534; }
+.venta-familia--servicios { --venta-tint: #ede9fe; --venta-ink: #5b21b6; }
+
+.venta-familia__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.venta-familia__head h3 {
+    margin: 0;
+    color: #10233d;
+    font-size: 1.35rem;
+}
+
+.venta-familia__icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--venta-tint);
+    color: var(--venta-ink);
+    font-size: 1.2rem;
+}
+
+.venta-familia__bajada {
+    color: #516275;
+}
+
+.venta-familia__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px;
+}
+
+.venta-rubro {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 56px;
+    padding: 14px 18px;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px solid rgba(15, 33, 56, 0.1);
+    color: #10233d;
+    font-weight: 600;
+    text-decoration: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.venta-rubro i {
+    color: var(--venta-ink);
+}
+
+.venta-rubro:hover,
+.venta-rubro:focus-visible {
+    border-color: var(--venta-ink);
+    box-shadow: 0 8px 20px rgba(15, 33, 56, 0.08);
+    transform: translateY(-1px);
+    color: #10233d;
+}
+
+.venta-rubros__otro {
+    margin: 0;
+    color: #516275;
+}
+
+.venta-rubros__otro strong {
+    color: #10233d;
+}
+
+/* --- Pasos --- */
+
+.venta-pasos {
+    background: #0f2138;
+    color: #f8fafc;
+    padding: 64px 20px;
+}
+
+.venta-pasos h2 {
+    color: #f8fafc;
+}
+
+.venta-pasos__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+}
+
+.venta-pasos__grid {
+    list-style: none;
+    counter-reset: paso;
+    margin: 24px 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 24px;
+}
+
+.venta-pasos__grid li {
+    counter-increment: paso;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.venta-pasos__grid li::before {
+    content: counter(paso);
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: #93c5fd;
+    line-height: 1;
+}
+
+.venta-pasos__grid strong {
+    font-size: 1.2rem;
+}
+
+.venta-pasos__grid span {
+    color: #cbd5e1;
+    line-height: 1.5;
+}
+
+/* --- Vendedores --- */
+
+.venta-vend {
+    background: #f6f8fb;
+    padding: 56px 20px;
+}
+
+.venta-vend__inner {
+    max-width: 1080px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.venta-vend__cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.venta-vend__card {
+    padding: 22px;
+    border-radius: 16px;
+    background: #ffffff;
+    border: 1px solid rgba(15, 33, 56, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #10233d;
+}
+
+.venta-vend__card strong {
+    font-size: 1.15rem;
+}
+
+.venta-vend__card span {
+    color: #516275;
+    line-height: 1.5;
+}
+
+.venta-vend__dato {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #0b74c9;
+}
+
+.venta-vend__cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.venta-vend__cols ul {
+    margin: 0;
+    padding-left: 20px;
+    color: #334155;
+    line-height: 1.8;
+}
+
+/* --- Ingreso a la demo --- */
+
+.venta-demo-ingreso {
+    color-scheme: light;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: linear-gradient(135deg, #eff5fb 0%, #dbe7f5 48%, #edf4fb 100%);
+    color: #10233d;
+}
+
+.venta-demo-ingreso__card {
+    max-width: 480px;
+    padding: 32px;
+    border-radius: 20px;
+    background: #ffffff;
+    box-shadow: 0 20px 50px rgba(15, 33, 56, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    text-align: center;
+}
+
+.venta-demo-ingreso__card h1 {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.venta-demo-ingreso__card p {
+    margin: 0;
+    color: #516275;
+    line-height: 1.5;
+}
+
+/* --- Barra DEMO (dentro de la app) --- */
+
+.venta-demo-banner {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 1080;
+    max-width: calc(100vw - 32px);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: #0f172a;
+    color: #f8fafc;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
+    font-size: 0.9rem;
+}
+
+.venta-demo-banner__tag {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #fde68a;
+    color: #78350f;
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+}
+
+.venta-demo-banner a {
+    color: #ffffff;
+    font-weight: 700;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #0b74c9;
+    text-decoration: none;
+}
+
+.venta-demo-banner a:hover {
+    background: #095d9f;
+    color: #ffffff;
+}
+
+.venta-demo-banner__cerrar {
+    border: 0;
+    background: transparent;
+    color: #cbd5e1;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+}
+
+.venta-demo-banner__cerrar:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+@media print {
+    .venta-demo-banner { display: none; }
+}
