@@ -85,7 +85,7 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
             using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
+            using var response = await client.PostAsync(ChatCompletionsUrl(), content, ct);
             if (!response.IsSuccessStatusCode)
                 return null;
 
@@ -103,6 +103,15 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
             return null;
         }
     }
+
+    /// <summary>
+    /// Endpoint de chat. OPENAI_BASE_URL (variable de entorno del servidor) permite usar un proxy compatible o un
+    /// servidor de prueba local; sin ella, OpenAI.
+    /// </summary>
+    internal static string ChatCompletionsUrl()
+        => (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") is { Length: > 0 } baseUrl
+               ? baseUrl.Trim().TrimEnd('/')
+               : "https://api.openai.com/v1") + "/chat/completions";
 
     private static Dictionary<string, object?> BuildChatPayload(string model, IReadOnlyList<object> messages, double? temperature = null)
     {

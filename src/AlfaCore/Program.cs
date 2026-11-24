@@ -598,6 +598,7 @@ public class Program
             builder.Services.AddHostedService<CalendarioRecordatoriosHostedService>();
             builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
             builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+            builder.Services.AddHostedService<TicketsAvisosHostedService>();
             builder.Services.AddHostedService<ConversacionesAdjuntosCompactacionHostedService>();
             builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();

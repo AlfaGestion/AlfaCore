@@ -393,6 +393,8 @@ public sealed class ConversacionAutomatizacionesConfigDto
 
     /// <summary>Si el bot no encuentra respuesta (deriva), genera un ticket vinculado a la conversación.</summary>
     public bool BotGeneraTicket { get; set; } = true;
+    /// <summary>Etiqueta que lleva cada ticket que crea el asistente, para filtrarlos en Tickets (CONV_BOT_TICKET_ETIQUETA; vacía = "Bot").</summary>
+    public string BotTicketEtiqueta { get; set; } = "Bot";
 
     /// <summary>Solo Chat web: el bot le pide al visitante su WhatsApp y la razón social para saber quién escribe.</summary>
     public bool BotWebPideDatos { get; set; } = true;

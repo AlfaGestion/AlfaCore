@@ -68,6 +68,8 @@ else
     [Parameter] public string Label2    { get; set; } = "Compras";
     // Ancho del viewBox (ver LineChart.Ancho): mayor para gráficos a todo el ancho.
     [Parameter] public int    Ancho     { get; set; } = 800;
+    /// <summary>Eje Y con signo $ (importes). En false muestra cantidades (ej. tickets).</summary>
+    [Parameter] public bool   Moneda    { get; set; } = true;
 
     private double _legend2Offset;
 
@@ -148,7 +150,9 @@ else
         var c = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
         _yLabels = string.Join("", _gridLines.Select(g =>
         {
-            var label = g.Value switch
+            var label = !Moneda
+                ? g.Value.ToString("#,##0", c)
+                : g.Value switch
             {
                 >= 1_000_000_000m => $"$ {(g.Value / 1_000_000_000m).ToString("N1", c)}B",
                 >= 1_000_000m     => $"$ {(g.Value / 1_000_000m).ToString("N0", c)}M",

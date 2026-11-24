@@ -1555,7 +1555,7 @@
     .shell.shell--alfa-design .smart-search__panel {
         grid-template-columns: minmax(0, 1fr) !important;
         gap: 0 !important;
-        max-height: calc(100dvh - 150px) !important;
+        max-height: calc(100dvh - 190px) !important;
         padding: 12px 12px 0 !important;
     }
 

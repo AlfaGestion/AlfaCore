@@ -1776,21 +1776,8 @@ public sealed partial class ConversacionesService(
                     WHERE LTRIM(RTRIM(clienteContexto.Codigo)) <> ''
                       AND UPPER(LTRIM(RTRIM(cliCls.CODIGO))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
                 ) clienteClasificacion
-                OUTER APPLY (
-                    -- Abonado al mantenimiento: cualquier fila de la cuenta en MA_CUENTAS_AUTOCPTES (sin
-                    -- filtrar por Concepto), la más reciente por FechaUltMov si hay varias (distintas
-                    -- sucursales/conceptos). Sin fila = NULL = "sin abono" (se resuelve en C#).
-                    SELECT TOP (1)
-                        CASE
-                            WHEN ISNULL(auto.Activo, 0) = 0 THEN 'Suspendido'
-                            WHEN auto.FechaUltMov IS NULL OR auto.FechaUltMov < DATEADD(MONTH, -3, GETDATE()) THEN 'Suspendido'
-                            ELSE 'Abonado'
-                        END AS Estado
-                    FROM dbo.MA_CUENTAS_AUTOCPTES auto
-                    WHERE LTRIM(RTRIM(clienteContexto.Codigo)) <> ''
-                      AND UPPER(LTRIM(RTRIM(auto.Cuenta))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
-                    ORDER BY auto.FechaUltMov DESC
-                ) clienteAbono
+                -- Abonado al mantenimiento (definición compartida con Tickets e informes). Sin fila = NULL = "sin abono".
+                {ClienteAtencionSql.AbonoApply("clienteContexto.Codigo", "clienteAbono")}
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -10188,6 +10175,19 @@ public sealed partial class ConversacionesService(
                 if (tipo == "DERIVA" && !usoFallbackBot && !MencionaAlEquipo(respuesta) && respuesta.Contains('?'))
                     tipo = "ACLARA";
 
+                // Ya derivó y todavía no contestó nadie del equipo: cada mensaje nuevo del cliente mandaba otra
+                // contención ("Voy a derivar tu consulta…" cuatro veces seguidas, ticket #176, 2026-11-18). El
+                // cliente ya sabe que lo van a atender y el operador ve los mensajes nuevos en la conversación.
+                if (tipo == "DERIVA" && await DerivacionPendienteAsync(idConversacion, token).ConfigureAwait(false))
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotDerivacionRepetidaOmitida", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El asistente ya había derivado la conversación y nadie del equipo respondió todavía: no se mandó otra contención.",
+                        new { idConversacion, respuesta }, token).ConfigureAwait(false);
+                    return;
+                }
+
                 // El bot escala en silencio (nunca manda EscalationHint al cliente), pero deja la
                 // pista en el timeline interno para que el humano que retome sepa que hay
                 // documentación marcada "uso interno" en AlfaKnowledge relacionada con esta consulta.
@@ -10218,7 +10218,7 @@ public sealed partial class ConversacionesService(
 
                 if (tipo == "DERIVA" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && abrirTicketSegunIa && EsConsultaParaTicket(texto))
                 {
-                    numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, token).ConfigureAwait(false);
+                    numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, config.BotTicketEtiqueta, token).ConfigureAwait(false);
                     if (numeroTicketBot is int numero)
                         respuesta = $"{respuesta}\n\nRegistramos tu consulta con el número de ticket #{numero.ToString(CultureInfo.InvariantCulture)}.";
                 }
@@ -10260,11 +10260,16 @@ public sealed partial class ConversacionesService(
                 {
                     if (!fueraDeHorario)
                     {
-                        await AddInternalEventCoreAsync(idConversacion,
-                            "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
+                        await AddInternalEventCoreAsync(idConversacion, NotaBotDerivo,
                             null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                         if (!esUrgente && !esPrioritario)
                             await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        // Marca para DerivacionPendienteAsync también fuera de horario (antes no quedaba nada).
+                        await AddInternalEventCoreAsync(idConversacion, NotaBotDerivoFueraDeHorario,
+                            null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                     }
                     await _appEvents.LogAuditAsync(
                         "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
@@ -10896,6 +10901,8 @@ public sealed partial class ConversacionesService(
     internal const string NotaPidioPersona ="🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
     internal const string RespuestaPidioPersona = "Entendido, te paso con alguien del equipo. En breve te responde por acá.";
 
+    internal const string NotaBotDerivo = "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.";
+    internal const string NotaBotDerivoFueraDeHorario = "🤖➡️👤 Fuera de horario: el asistente le mandó una contención al cliente. Requiere que un operador lo tome al volver.";
     internal const string NotaBotAclaracion ="🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
     private static readonly TimeSpan VentanaUltimaAclaracion = TimeSpan.FromMinutes(30);
 
@@ -11031,7 +11038,7 @@ public sealed partial class ConversacionesService(
     /// registrado sin cortar la respuesta al cliente). TicketsService se resuelve en el momento porque
     /// depende de este servicio.
     /// </summary>
-    private async Task<int?> TryCrearTicketBotAsync(long idConversacion, string texto, CancellationToken ct)
+    private async Task<int?> TryCrearTicketBotAsync(long idConversacion, string texto, string? etiqueta, CancellationToken ct)
     {
         if (serviceProvider?.GetService(typeof(ITicketsService)) is not ITicketsService ticketsService)
             return null;
@@ -11075,6 +11082,21 @@ public sealed partial class ConversacionesService(
             if (idMensaje == -1)
                 return null;
 
+            // Etiqueta "Bot" (configurable): para filtrar en Tickets los que abrió el asistente. Si no se
+            // puede preparar, el ticket se crea igual sin etiqueta.
+            var idEtiquetas = new List<int>();
+            var nombreEtiqueta = string.IsNullOrWhiteSpace(etiqueta) ? "Bot" : etiqueta.Trim();
+            try
+            {
+                idEtiquetas.Add(await ticketsService.AsegurarEtiquetaAsync(nombreEtiqueta, ct).ConfigureAwait(false));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                await _appEvents.LogErrorAsync("Conversaciones", "BotTicketEtiqueta", ex,
+                    "No se pudo preparar la etiqueta de los tickets del asistente; el ticket se creó sin etiqueta.",
+                    new { idConversacion, nombreEtiqueta }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            }
+
             var idTicket = await ticketsService.CreateAsync(new TicketCreateRequest
             {
                 Titulo = $"Consulta sin resolver: {Truncar(texto, 80)}",
@@ -11082,6 +11104,7 @@ public sealed partial class ConversacionesService(
                 Prioridad = 1,
                 IdConversacion = idConversacion,
                 IdMensajes = idMensaje is long id && id > 0 ? [id] : [],
+                IdEtiquetas = idEtiquetas,
                 UsuarioAccion = "AlfaCore"
             }, ct).ConfigureAwait(false);
 
@@ -11120,6 +11143,45 @@ public sealed partial class ConversacionesService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// El asistente ya derivó (nota de contención) en las últimas 24 h y desde entonces no respondió nadie
+    /// del equipo. Se compara el texto exacto de la nota: con emojis, un LIKE por prefijo no es confiable
+    /// en las intercalaciones viejas de las bases de clientes.
+    /// </summary>
+    private async Task<bool> DerivacionPendienteAsync(long idConversacion, CancellationToken ct)
+    {
+        var sql = $"""
+            SELECT TOP (1) 1
+            FROM dbo.CONV_MENSAJES n
+            WHERE n.IdConversacion = @Id
+              AND n.Direction = N'NOTA_INTERNA'
+              AND CAST(n.Texto AS nvarchar(max)) IN (@Nota, @NotaFuera)
+              AND n.FechaHora >= DATEADD(hour, -24, GETDATE())
+              AND n.IdMensaje > ISNULL((SELECT MAX(h.IdMensaje) FROM dbo.CONV_MENSAJES h
+                                        WHERE h.IdConversacion = @Id AND h.Direction = N'SALIENTE'
+                                          AND {AutorMensajeSql("h")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0);
+            """;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await EnsureMensajeOrigenColumnAsync(cn, ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            cmd.Parameters.AddWithValue("@Nota", NotaBotDerivo);
+            cmd.Parameters.AddWithValue("@NotaFuera", NotaBotDerivoFueraDeHorario);
+            return await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Sin el dato se sigue como antes (manda la contención): nunca deja al cliente sin respuesta.
+            await _appEvents.LogErrorAsync("Conversaciones", "BotDerivacionPendiente", ex,
+                "No se pudo revisar si el asistente ya había derivado; se respondió igual.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
             return false;
         }
     }
@@ -12036,6 +12098,10 @@ public sealed partial class ConversacionesService(
     private static readonly string AutomatedOutgoingSistemaAutorSqlList =
         string.Join(", ", AutomatedOutgoingSistemaAutores.Select(a => $"N'{a}'"));
 
+    /// <summary>SQL: el mensaje <paramref name="alias"/> es una respuesta escrita por una persona (no una automatización).</summary>
+    internal static string SalienteHumanoSql(string alias)
+        => $"{alias}.Direction = N'SALIENTE' AND {AutorMensajeSql(alias)} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})";
+
     /// <summary>
     /// Fragmento SQL para usar en el WHERE del filtro de bandeja "sin_asignar" (GetInboxAsync /
     /// GetAuditMessagesAsync): además de no tener Técnico, la conversación no debe tener un SALIENTE
@@ -12474,30 +12540,7 @@ public sealed partial class ConversacionesService(
     }
 
     private static bool IsOutsideBusinessHours(ConversacionAutomatizacionesConfigDto config, DateTime now)
-    {
-        var atiendeHoy = now.DayOfWeek switch
-        {
-            DayOfWeek.Monday => config.Lunes,
-            DayOfWeek.Tuesday => config.Martes,
-            DayOfWeek.Wednesday => config.Miercoles,
-            DayOfWeek.Thursday => config.Jueves,
-            DayOfWeek.Friday => config.Viernes,
-            DayOfWeek.Saturday => config.Sabado,
-            DayOfWeek.Sunday => config.Domingo,
-            _ => false
-        };
-
-        if (!atiendeHoy)
-            return true;
-
-        if (!TimeSpan.TryParse(config.HoraDesde, out var desde) || !TimeSpan.TryParse(config.HoraHasta, out var hasta))
-            return false;
-
-        var horaActual = now.TimeOfDay;
-        return desde <= hasta
-            ? horaActual < desde || horaActual > hasta
-            : horaActual < desde && horaActual > hasta;
-    }
+        => !HorarioLaboral.Desde(config).EsHabil(now);
 
     /// <summary>
     /// Si ya se mandó el aviso fijo de "fuera de horario" (SistemaAutor='AUTOMATIZACION') en la

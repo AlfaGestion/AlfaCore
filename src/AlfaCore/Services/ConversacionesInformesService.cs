@@ -48,7 +48,7 @@ public sealed class ConversacionesInformesService(
     // Agregación del período: una fila por cliente (agrupando sus contactos) o por contacto sin
     // cliente. Incluye clientes con abono activo aunque no tengan actividad; excluye no-abonados sin
     // movimientos y el Chat interno. @Desde/@Hasta se pasan desde C# (evita DATEFROMPARTS por compat).
-    private const string AggregateSql = """
+    private static readonly string AggregateSql = $"""
         WITH ConvMes AS (
             SELECT c.IdConversacion, m.FechaHora, m.Direction,
                 CASE WHEN LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N''))) <> N'' THEN N'C:' + LTRIM(RTRIM(c.ClienteCodigo))
@@ -126,15 +126,7 @@ public sealed class ConversacionesInformesService(
         LEFT JOIN dbo.TA_CLASIFICACIONES clsd ON clsd.Codigo COLLATE DATABASE_DEFAULT = cli.Clasificacion COLLATE DATABASE_DEFAULT
         LEFT JOIN dbo.v_ta_categoria catd ON catd.IdCategoria = cli.IDCategoria
         LEFT JOIN dbo.MA_CONTACTOS con ON con.id = k.IdContacto
-        OUTER APPLY (
-            SELECT TOP (1) CASE
-                    WHEN ISNULL(auto.Activo, 0) = 0 THEN N'Suspendido'
-                    WHEN auto.FechaUltMov IS NULL OR auto.FechaUltMov < DATEADD(MONTH, -3, GETDATE()) THEN N'Suspendido'
-                    ELSE N'Abonado' END AS Estado
-            FROM dbo.MA_CUENTAS_AUTOCPTES auto
-            WHERE k.ClienteCodigo <> N'' AND UPPER(LTRIM(RTRIM(auto.Cuenta))) = UPPER(k.ClienteCodigo)
-            ORDER BY auto.FechaUltMov DESC
-        ) ab
+        {ClienteAtencionSql.AbonoApply("k.ClienteCodigo", "ab")}
         WHERE ISNULL(ab.Estado, N'SinAbono') = N'Abonado'
            OR ISNULL(ma.CantMensajes, 0) > 0
            OR ISNULL(pa.MinutosTotales, 0) > 0
