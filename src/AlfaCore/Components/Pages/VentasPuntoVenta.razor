@@ -6,6 +6,7 @@
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPuntoVentaCartStateService CartState
 @inject AlfaCore.Services.IPuntoVentaPedidoService PedidoSvc
+@inject AlfaCore.Services.IPuntoVentaAnticiposService AnticiposSvc
 @inject AlfaCore.Services.IPuntoVentaSalonService SalonSvc
 @inject AlfaCore.Services.IPuntoVentaConfigService PosConfigSvc
 @inject AlfaCore.Services.IPuntoVentaTurnoService TurnoSvc
@@ -5438,6 +5439,13 @@
                                 <i class="bi bi-printer"></i>
                                 Reimprimir comprobantes
                             </button>
+                            @if (EsMostradorProduccion)
+                            {
+                                <button type="button" class="pos-topbar__menu-item" @onclick="OpenNpAnticiposModalAsync">
+                                    <i class="bi bi-receipt"></i>
+                                    Gestionar encargos
+                                </button>
+                            }
                             <button type="button" class="pos-topbar__menu-item" @onclick="InstallPwaFromPosAsync" title="Instalar Punto de Venta como aplicación">
                                 <i class="bi bi-download"></i>
                                 Instalar Punto de Venta
@@ -6539,6 +6547,155 @@
     </section>
 }
 
+@if (_showNpAnticiposModal && EsMostradorProduccion)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar consulta de anticipos" @onclick="CloseNpAnticiposModal"></button>
+    <section class="pos-settings-modal pos-reprint-modal" aria-label="Gestionar encargos">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Gestionar encargos</h3>
+                <p>Consultá y revisá tus últimos encargos. Esta pantalla es solo de lectura.</p>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseNpAnticiposModal">X</button>
+        </div>
+
+        <div class="pos-reprint-filters">
+            <label>
+                <span>Buscar NP, cliente o nombre</span>
+                <input class="pos-settings-modal__input" type="text" value="@_npAnticiposIdComprobante"
+                       @oninput="OnNpAnticiposIdChanged" @onkeydown="HandleNpAnticiposKeyDown"
+                       placeholder="Ej.: 0001-00000001" autocomplete="off" />
+            </label>
+            <label>
+                <span>Cuenta del cliente (opcional)</span>
+                <input class="pos-settings-modal__input" type="text" value="@_npAnticiposCuenta"
+                       @oninput="OnNpAnticiposCuentaChanged" @onkeydown="HandleNpAnticiposKeyDown"
+                       autocomplete="off" />
+            </label>
+            <button type="button" class="btn btn--primary" @onclick="BuscarEncargosAsync" disabled="@_npAnticiposLoading">Buscar</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_npAnticiposError))
+        {
+            <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">@_npAnticiposError</div>
+        }
+        else if (_npAnticiposLoading)
+        {
+            <div class="pos-grid-status">Consultando la nota de pedido...</div>
+        }
+        else if (_npAnticiposResultado is null)
+        {
+            <div class="pos-reprint-list">
+                @if (_npAnticiposListado?.Items.Count is not > 0)
+                {
+                    <div class="pos-grid-status">No se encontraron encargos con los filtros indicados.</div>
+                }
+                else
+                {
+                    @foreach (var encargo in _npAnticiposListado!.Items)
+                    {
+                        <div class="pos-reprint-item">
+                            <div class="pos-reprint-item__header"><strong>@encargo.IdComprobante</strong><span class="pos-receipt-modal__flag">@encargo.EstadoComprobante</span></div>
+                            <div class="pos-reprint-item__meta">
+                                <span>@(encargo.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
+                                <span>@DisplayValueOrDash(encargo.Cliente)</span>
+                                <span>Total: @FmtMoney(encargo.ImporteComercial)</span>
+                                <span>Señas: @(encargo.TotalAnticiposVerificado ? FmtMoney(encargo.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</span>
+                            </div>
+                            <div class="pos-reprint-item__footer">
+                                <span>Saldo: @(encargo.TotalAnticiposVerificado ? FmtMoney(Math.Max(encargo.ImporteComercial - (encargo.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</span>
+                                <button type="button" class="btn btn--secondary" @onclick="() => AbrirDetalleEncargoAsync(encargo)">Detalle</button>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+            @if (_npAnticiposListado is { TotalPaginas: > 1 })
+            {
+                <div class="pos-reprint-item__footer">
+                    <button type="button" class="btn btn--secondary" @onclick="() => CambiarPaginaEncargosAsync(-1)" disabled="@(_npAnticiposPagina <= 1)">Anterior</button>
+                    <span>Página @_npAnticiposPagina de @_npAnticiposListado.TotalPaginas</span>
+                    <button type="button" class="btn btn--secondary" @onclick="() => CambiarPaginaEncargosAsync(1)" disabled="@(_npAnticiposPagina >= _npAnticiposListado.TotalPaginas)">Siguiente</button>
+                </div>
+            }
+        }
+        else
+        {
+            var np = _npAnticiposResultado;
+            <div class="pos-settings-modal__grid">
+                <div class="pos-settings-modal__field"><span>Cliente</span><strong>@DisplayValueOrDash(np.Cliente)</strong></div>
+                <div class="pos-settings-modal__field"><span>Fecha</span><strong>@(np.Fecha?.ToString("dd/MM/yyyy") ?? "-")</strong></div>
+                <div class="pos-settings-modal__field"><span>Estado</span><strong>@np.EstadoComprobante</strong></div>
+                <div class="pos-settings-modal__field"><span>Importe comercial</span><strong>@FmtMoney(np.ImporteComercial)</strong></div>
+                <div class="pos-settings-modal__field"><span>Estado de anticipos</span><strong>@np.EstadoAnticipos</strong></div>
+                <div class="pos-settings-modal__field"><span>Anticipos vigentes</span><strong>@(np.TotalAnticiposVerificado ? FmtMoney(np.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
+                <div class="pos-settings-modal__field"><span>Saldo pendiente</span><strong>@(np.TotalAnticiposVerificado ? FmtMoney(Math.Max(np.ImporteComercial - (np.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
+            </div>
+
+            @if (!np.TotalAnticiposVerificado)
+            {
+                <div class="pos-settings-modal__feedback pos-settings-modal__feedback--error">
+                    No se puede determinar de forma verificada el saldo pendiente. Los importes disponibles no deben utilizarse para cobrar.
+                </div>
+            }
+
+            <h4>Cobranzas relacionadas</h4>
+            @if (np.Cobranzas.Count == 0)
+            {
+                <div class="pos-grid-status">No se encontraron cobranzas relacionadas.</div>
+            }
+            else
+            {
+                <div class="pos-reprint-list">
+                    @foreach (var cobranza in np.Cobranzas)
+                    {
+                        <div class="pos-reprint-item">
+                            <div class="pos-reprint-item__header">
+                                <strong>@($"{cobranza.Tc} {cobranza.IdComprobante}")</strong>
+                                <span class="pos-receipt-modal__flag">@(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
+                            </div>
+                            <div class="pos-reprint-item__meta">
+                                <span>Original: @FmtMoney(cobranza.ImporteOriginal)</span>
+                                <span>Aplicado: @(cobranza.ImporteAplicado.HasValue ? FmtMoney(cobranza.ImporteAplicado.Value) : PuntoVentaAnticiposEstados.NoVerificado)</span>
+                                <strong>Disponible: @(cobranza.PuedeUsarseComoAnticipo && cobranza.ImporteDisponible.HasValue ? FmtMoney(cobranza.ImporteDisponible.Value) : PuntoVentaAnticiposEstados.NoVerificado)</strong>
+                            </div>
+                            <div class="pos-reprint-item__footer">
+                                <span>@(cobranza.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
+                                <span>Relación: @cobranza.TipoRelacion</span>
+                                <span>Finanzas: @(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
+                            </div>
+                            @if (!cobranza.RelacionVerificada)
+                            {
+                                <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">
+                                    @DisplayValueOrDash(cobranza.AdvertenciaRelacion)
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <h4>Historial de acciones</h4>
+            @if (np.Acciones.Count == 0)
+            {
+                <div class="pos-grid-status">No hay acciones registradas.</div>
+            }
+            else
+            {
+                <div class="pos-reprint-list">
+                    @foreach (var accion in np.Acciones)
+                    {
+                        <div class="pos-reprint-item">
+                            <div class="pos-reprint-item__header"><strong>@DisplayValueOrDash(accion.TipoAccion)</strong><span>@(accion.FechaHora?.ToString("dd/MM/yyyy HH:mm") ?? "-")</span></div>
+                            <div class="pos-reprint-item__meta"><span>@DisplayValueOrDash(accion.Usuario)</span><span>@DisplayValueOrDash(accion.Comentario)</span></div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </section>
+}
+
 @if (_showSettingsModal)
 {
     <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar configuración" @onclick="CloseSettingsModal"></button>
@@ -7551,6 +7708,16 @@
     private string? _pedidoSucursalOverride;
     private string? _puntoVentaSucursal;
     private string? _puntoVentaNombre;
+    private string _puntoVentaModo = PuntoVentaModoKeys.Mostrador;
+
+    private bool _showNpAnticiposModal;
+    private bool _npAnticiposLoading;
+    private string _npAnticiposIdComprobante = string.Empty;
+    private string _npAnticiposCuenta = string.Empty;
+    private string? _npAnticiposError;
+    private PuntoVentaNpAnticiposDto? _npAnticiposResultado;
+    private PuntoVentaNpPaginaDto? _npAnticiposListado;
+    private int _npAnticiposPagina = 1;
 
     private int _idPuntoVentaActual;
     private string _idCajaActual = string.Empty;
@@ -7560,6 +7727,9 @@
     private bool _showSaldosPorCajaModal;
     private IReadOnlyList<PuntoVentaCajaSaldoDto> _saldosPorCaja = [];
     private string? _saldosPorCajaError;
+
+    private bool EsMostradorProduccion
+        => string.Equals(_puntoVentaModo, PuntoVentaModoKeys.MostradorProduccion, StringComparison.OrdinalIgnoreCase);
 
     private bool _showCorteXModal;
     private decimal? _corteXSaldoContado;
@@ -7690,6 +7860,9 @@
             if (IdPuntoVentaQuery is > 0)
             {
                 var puntoVenta = await PosConfigSvc.GetPuntoVentaByIdAsync(IdPuntoVentaQuery.Value);
+                _puntoVentaModo = string.IsNullOrWhiteSpace(puntoVenta?.Modo)
+                    ? PuntoVentaModoKeys.Mostrador
+                    : puntoVenta!.Modo.Trim().ToUpperInvariant();
                 _puntoVentaNombre = string.IsNullOrWhiteSpace(puntoVenta?.Nombre)
                     ? null
                     : puntoVenta!.Nombre.Trim();
@@ -7760,6 +7933,9 @@
                     }
 
                     var puntoVentaPedido = await PosConfigSvc.GetPuntoVentaByIdAsync(_pedidoContexto.IdPuntoVenta);
+                    _puntoVentaModo = string.IsNullOrWhiteSpace(puntoVentaPedido?.Modo)
+                        ? PuntoVentaModoKeys.Mostrador
+                        : puntoVentaPedido!.Modo.Trim().ToUpperInvariant();
                     _puntoVentaNombre = string.IsNullOrWhiteSpace(puntoVentaPedido?.Nombre)
                         ? null
                         : puntoVentaPedido!.Nombre.Trim();
@@ -9075,6 +9251,120 @@
 
     private void OnReprintDateHastaChanged(ChangeEventArgs args)
         => _reprintDateHastaText = args.Value?.ToString() ?? string.Empty;
+
+    private async Task OpenNpAnticiposModalAsync()
+    {
+        if (!EsMostradorProduccion)
+            return;
+
+        _showPosMenu = false;
+        _showNpAnticiposModal = true;
+        _npAnticiposError = null;
+        _npAnticiposResultado = null;
+        _npAnticiposIdComprobante = string.Empty;
+        _npAnticiposPagina = 1;
+        await BuscarEncargosAsync();
+    }
+
+    private void CloseNpAnticiposModal()
+    {
+        _showNpAnticiposModal = false;
+        _npAnticiposLoading = false;
+        _npAnticiposError = null;
+    }
+
+    private void OnNpAnticiposIdChanged(ChangeEventArgs args)
+        => _npAnticiposIdComprobante = args.Value?.ToString() ?? string.Empty;
+
+    private void OnNpAnticiposCuentaChanged(ChangeEventArgs args)
+        => _npAnticiposCuenta = args.Value?.ToString() ?? string.Empty;
+
+    private async Task HandleNpAnticiposKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await BuscarEncargosAsync();
+    }
+
+    private async Task BuscarEncargosAsync()
+    {
+        if (!EsMostradorProduccion || _npAnticiposLoading)
+            return;
+
+        try
+        {
+            _npAnticiposLoading = true;
+            _npAnticiposError = null;
+            _npAnticiposResultado = null;
+            _npAnticiposListado = await AnticiposSvc.BuscarNotasPedidoAsync(new PuntoVentaNpListadoFiltro
+            {
+                Buscar = _npAnticiposIdComprobante,
+                Pagina = _npAnticiposPagina,
+                TamanoPagina = 20,
+                // El listado inicial abarca las NP del alcance autorizado, no solo la sucursal operativa del POS.
+                Sucursal = string.Empty
+            });
+        }
+        catch (Exception ex)
+        {
+            _npAnticiposListado = null;
+            _npAnticiposError = ex.Message;
+        }
+        finally
+        {
+            _npAnticiposLoading = false;
+        }
+    }
+
+    private async Task CambiarPaginaEncargosAsync(int delta)
+    {
+        if (_npAnticiposListado is null)
+            return;
+
+        _npAnticiposPagina = Math.Clamp(_npAnticiposPagina + delta, 1, Math.Max(1, _npAnticiposListado.TotalPaginas));
+        await BuscarEncargosAsync();
+    }
+
+    private async Task AbrirDetalleEncargoAsync(PuntoVentaNpResumenDto encargo)
+    {
+        if (_npAnticiposLoading)
+            return;
+
+        _npAnticiposIdComprobante = encargo.IdComprobante;
+        _npAnticiposCuenta = encargo.Cuenta;
+        await ConsultarNpAnticiposAsync();
+    }
+
+    private async Task ConsultarNpAnticiposAsync()
+    {
+        if (!EsMostradorProduccion || _npAnticiposLoading)
+            return;
+
+        var comprobante = _npAnticiposIdComprobante.Trim();
+        if (comprobante.Length == 0)
+        {
+            _npAnticiposResultado = null;
+            _npAnticiposError = "Ingresá el número completo de la nota de pedido.";
+            return;
+        }
+
+        try
+        {
+            _npAnticiposLoading = true;
+            _npAnticiposError = null;
+            _npAnticiposResultado = await AnticiposSvc.GetNotaPedidoAsync(comprobante, _npAnticiposCuenta.Trim());
+            if (_npAnticiposResultado is null)
+                _npAnticiposError = "No se encontró una nota de pedido con esa identidad comercial.";
+        }
+        catch (Exception ex)
+        {
+            _npAnticiposResultado = null;
+            _npAnticiposError = ex.Message;
+        }
+        finally
+        {
+            _npAnticiposLoading = false;
+        }
+    }
 
     private Task OpenSettingsAsync()
     {

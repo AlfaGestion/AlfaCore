@@ -3,10 +3,11 @@ namespace AlfaCore.Models;
 public static class PuntoVentaModoKeys
 {
     public const string Mostrador = "MOSTRADOR";
+    public const string MostradorProduccion = "MOSTRADOR_PRODUCCION";
     public const string Salon = "SALON";
     public const string Delivery = "DELIVERY";
 
-    public static readonly string[] All = [Mostrador, Salon, Delivery];
+    public static readonly string[] All = [Mostrador, MostradorProduccion, Salon, Delivery];
 }
 
 public sealed class PuntoVentaCatalogoOpcionDto

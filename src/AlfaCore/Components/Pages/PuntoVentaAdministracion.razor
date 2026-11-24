@@ -132,6 +132,7 @@
                         <label>Modo</label>
                         <select @bind="_puntoVentaForm.Modo">
                             <option value="@PuntoVentaModoKeys.Mostrador">Mostrador</option>
+                            <option value="@PuntoVentaModoKeys.MostradorProduccion">Mostrador y Producción</option>
                             <option value="@PuntoVentaModoKeys.Salon">Salón</option>
                             <option value="@PuntoVentaModoKeys.Delivery">Delivery / Take Away</option>
                         </select>
@@ -665,6 +666,7 @@
 
     private static string GetModoTexto(string modo) => modo switch
     {
+        PuntoVentaModoKeys.MostradorProduccion => "Mostrador y Producción",
         PuntoVentaModoKeys.Salon => "Salón",
         PuntoVentaModoKeys.Delivery => "Delivery / Take Away",
         _ => "Mostrador"
