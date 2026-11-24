@@ -1524,6 +1524,238 @@
         gap: 1rem;
     }
 
+    .pos-encargo-detail {
+        display: grid;
+        gap: 1rem;
+        min-width: 0;
+        overflow: auto;
+        padding-right: 0.15rem;
+    }
+
+    .pos-encargo-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) repeat(2, minmax(150px, 0.7fr));
+        gap: 0.8rem;
+        padding: 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(15, 23, 42, 0.28));
+    }
+
+    .pos-encargo-summary__main,
+    .pos-encargo-summary__status,
+    .pos-encargo-summary__metric {
+        display: grid;
+        align-content: center;
+        gap: 0.3rem;
+        min-width: 0;
+        padding: 0.2rem 0.35rem;
+    }
+
+    .pos-encargo-summary__main {
+        grid-row: span 2;
+        align-content: center;
+        padding-right: 1rem;
+        border-right: 1px solid var(--color-border);
+    }
+
+    .pos-encargo-summary__main strong {
+        overflow: hidden;
+        color: var(--color-text);
+        font-size: 1.1rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-summary__label,
+    .pos-encargo-summary__account,
+    .pos-encargo-cobranza__values span,
+    .pos-encargo-cobranza__bottom,
+    .pos-encargo-section__heading p {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+    }
+
+    .pos-encargo-summary__account {
+        font-size: 0.75rem;
+    }
+
+    .pos-encargo-summary__metric strong {
+        color: var(--color-text);
+        font-size: 1rem;
+    }
+
+    .pos-encargo-summary__metric--total {
+        padding: 0.65rem 0.8rem;
+        border-radius: 12px;
+        background: rgba(34, 211, 238, 0.1);
+    }
+
+    .pos-encargo-status,
+    .pos-encargo-section__count {
+        width: fit-content;
+        padding: 0.25rem 0.55rem;
+        border: 1px solid rgba(34, 211, 238, 0.25);
+        border-radius: 999px;
+        background: rgba(34, 211, 238, 0.1);
+        color: #a5f3fc;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+    }
+
+    .pos-encargo-alert {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-radius: 12px;
+        background: rgba(245, 158, 11, 0.1);
+        color: #fde68a;
+        font-size: 0.82rem;
+    }
+
+    .pos-encargo-alert strong {
+        white-space: nowrap;
+    }
+
+    .pos-encargo-section {
+        display: grid;
+        gap: 0.7rem;
+        min-width: 0;
+    }
+
+    .pos-encargo-section__heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .pos-encargo-section__heading h4 {
+        margin: 0;
+        color: var(--color-text);
+        font-size: 1.05rem;
+    }
+
+    .pos-encargo-section__heading p {
+        margin: 0.15rem 0 0;
+    }
+
+    .pos-encargo-section__count {
+        flex: 0 0 auto;
+        color: var(--color-text);
+    }
+
+    .pos-encargo-cobranzas {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .pos-encargo-cobranza {
+        display: grid;
+        gap: 0.7rem;
+        padding: 0.85rem 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.42);
+    }
+
+    .pos-encargo-cobranza__top,
+    .pos-encargo-cobranza__bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    .pos-encargo-cobranza__top strong {
+        overflow: hidden;
+        color: var(--color-text);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-cobranza__values {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.8rem;
+    }
+
+    .pos-encargo-cobranza__values div {
+        display: grid;
+        gap: 0.2rem;
+    }
+
+    .pos-encargo-cobranza__values strong {
+        color: var(--color-text);
+        font-size: 0.95rem;
+    }
+
+    .pos-encargo-cobranza__values div:last-child {
+        text-align: right;
+    }
+
+    .pos-encargo-cobranza__bottom span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-action .pos-encargo-cobranza__bottom span:last-child {
+        flex: 1 1 auto;
+        text-align: right;
+    }
+
+    .pos-encargo-empty {
+        padding: 1rem;
+        border: 1px dashed var(--color-border);
+        border-radius: 12px;
+        color: var(--color-muted);
+        text-align: center;
+    }
+
+    @@media (max-width: 640px) {
+        .pos-encargo-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pos-encargo-summary__main {
+            grid-column: 1 / -1;
+            grid-row: auto;
+            padding-right: 0.35rem;
+            padding-bottom: 0.75rem;
+            border-right: 0;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .pos-encargo-cobranza__values {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pos-encargo-cobranza__values div:last-child {
+            text-align: left;
+        }
+
+        .pos-encargo-cobranza__bottom {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pos-encargo-action .pos-encargo-cobranza__bottom span:last-child {
+            text-align: left;
+        }
+
+        .pos-encargo-alert {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+    }
+
     .pos-settings-modal__section {
         display: grid;
         gap: 0.85rem;
@@ -6622,76 +6854,113 @@
         else
         {
             var np = _npAnticiposResultado;
-            <div class="pos-settings-modal__grid">
-                <div class="pos-settings-modal__field"><span>Cliente</span><strong>@DisplayValueOrDash(np.Cliente)</strong></div>
-                <div class="pos-settings-modal__field"><span>Fecha</span><strong>@(np.Fecha?.ToString("dd/MM/yyyy") ?? "-")</strong></div>
-                <div class="pos-settings-modal__field"><span>Estado</span><strong>@np.EstadoComprobante</strong></div>
-                <div class="pos-settings-modal__field"><span>Importe comercial</span><strong>@FmtMoney(np.ImporteComercial)</strong></div>
-                <div class="pos-settings-modal__field"><span>Estado de anticipos</span><strong>@np.EstadoAnticipos</strong></div>
-                <div class="pos-settings-modal__field"><span>Anticipos vigentes</span><strong>@(np.TotalAnticiposVerificado ? FmtMoney(np.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
-                <div class="pos-settings-modal__field"><span>Saldo pendiente</span><strong>@(np.TotalAnticiposVerificado ? FmtMoney(Math.Max(np.ImporteComercial - (np.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
-            </div>
-
-            @if (!np.TotalAnticiposVerificado)
-            {
-                <div class="pos-settings-modal__feedback pos-settings-modal__feedback--error">
-                    No se puede determinar de forma verificada el saldo pendiente. Los importes disponibles no deben utilizarse para cobrar.
+            <div class="pos-encargo-detail">
+                <div class="pos-encargo-summary">
+                    <div class="pos-encargo-summary__main">
+                        <span class="pos-encargo-summary__label">Cliente</span>
+                        <strong>@DisplayValueOrDash(np.Cliente)</strong>
+                        <span class="pos-encargo-summary__account">Cuenta @DisplayValueOrDash(np.Cuenta)</span>
+                    </div>
+                    <div class="pos-encargo-summary__status">
+                        <span class="pos-encargo-summary__label">Estado</span>
+                        <span class="pos-encargo-status">@np.EstadoComprobante</span>
+                    </div>
+                    <div class="pos-encargo-summary__metric">
+                        <span class="pos-encargo-summary__label">Fecha</span>
+                        <strong>@(np.Fecha?.ToString("dd/MM/yyyy") ?? "-")</strong>
+                    </div>
+                    <div class="pos-encargo-summary__metric">
+                        <span class="pos-encargo-summary__label">Importe comercial</span>
+                        <strong>@FmtMoney(np.ImporteComercial)</strong>
+                    </div>
+                    <div class="pos-encargo-summary__metric">
+                        <span class="pos-encargo-summary__label">Anticipos vigentes</span>
+                        <strong>@(np.TotalAnticiposVerificado ? FmtMoney(np.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</strong>
+                    </div>
+                    <div class="pos-encargo-summary__metric pos-encargo-summary__metric--total">
+                        <span class="pos-encargo-summary__label">Saldo pendiente</span>
+                        <strong>@(np.TotalAnticiposVerificado ? FmtMoney(Math.Max(np.ImporteComercial - (np.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</strong>
+                    </div>
                 </div>
-            }
 
-            <h4>Cobranzas relacionadas</h4>
-            @if (np.Cobranzas.Count == 0)
-            {
-                <div class="pos-grid-status">No se encontraron cobranzas relacionadas.</div>
-            }
-            else
-            {
-                <div class="pos-reprint-list">
-                    @foreach (var cobranza in np.Cobranzas)
+                @if (!np.TotalAnticiposVerificado)
+                {
+                    <div class="pos-encargo-alert">
+                        <strong>Saldo no verificado</strong>
+                        <span>No utilices estos importes para cobrar hasta revisar las cobranzas relacionadas.</span>
+                    </div>
+                }
+
+                <section class="pos-encargo-section">
+                    <div class="pos-encargo-section__heading">
+                        <div>
+                            <h4>Cobranzas relacionadas</h4>
+                            <p>Señas y pagos asociados a esta nota de pedido.</p>
+                        </div>
+                        <span class="pos-encargo-section__count">@np.Cobranzas.Count</span>
+                    </div>
+                    @if (np.Cobranzas.Count == 0)
                     {
-                        <div class="pos-reprint-item">
-                            <div class="pos-reprint-item__header">
-                                <strong>@($"{cobranza.Tc} {cobranza.IdComprobante}")</strong>
-                                <span class="pos-receipt-modal__flag">@(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
-                            </div>
-                            <div class="pos-reprint-item__meta">
-                                <span>Original: @FmtMoney(cobranza.ImporteOriginal)</span>
-                                <span>Aplicado: @(cobranza.ImporteAplicado.HasValue ? FmtMoney(cobranza.ImporteAplicado.Value) : PuntoVentaAnticiposEstados.NoVerificado)</span>
-                                <strong>Disponible: @(cobranza.PuedeUsarseComoAnticipo && cobranza.ImporteDisponible.HasValue ? FmtMoney(cobranza.ImporteDisponible.Value) : PuntoVentaAnticiposEstados.NoVerificado)</strong>
-                            </div>
-                            <div class="pos-reprint-item__footer">
-                                <span>@(cobranza.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
-                                <span>Relación: @cobranza.TipoRelacion</span>
-                                <span>Finanzas: @(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
-                            </div>
-                            @if (!cobranza.RelacionVerificada)
+                        <div class="pos-encargo-empty">No se encontraron cobranzas relacionadas.</div>
+                    }
+                    else
+                    {
+                        <div class="pos-encargo-cobranzas">
+                            @foreach (var cobranza in np.Cobranzas)
                             {
-                                <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">
-                                    @DisplayValueOrDash(cobranza.AdvertenciaRelacion)
-                                </div>
+                                <article class="pos-encargo-cobranza">
+                                    <div class="pos-encargo-cobranza__top">
+                                        <strong>@($"{cobranza.Tc} {cobranza.IdComprobante}")</strong>
+                                        <span class="pos-receipt-modal__flag">@(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
+                                    </div>
+                                    <div class="pos-encargo-cobranza__values">
+                                        <div><span>Original</span><strong>@FmtMoney(cobranza.ImporteOriginal)</strong></div>
+                                        <div><span>Aplicado</span><strong>@(cobranza.ImporteAplicado.HasValue ? FmtMoney(cobranza.ImporteAplicado.Value) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
+                                        <div><span>Disponible</span><strong>@(cobranza.PuedeUsarseComoAnticipo && cobranza.ImporteDisponible.HasValue ? FmtMoney(cobranza.ImporteDisponible.Value) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
+                                    </div>
+                                    <div class="pos-encargo-cobranza__bottom">
+                                        <span>@(cobranza.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
+                                        <span>Relación: @cobranza.TipoRelacion</span>
+                                        <span>Finanzas: @(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
+                                    </div>
+                                    @if (!cobranza.RelacionVerificada)
+                                    {
+                                        <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">
+                                            @DisplayValueOrDash(cobranza.AdvertenciaRelacion)
+                                        </div>
+                                    }
+                                </article>
                             }
                         </div>
                     }
-                </div>
-            }
+                </section>
 
-            <h4>Historial de acciones</h4>
-            @if (np.Acciones.Count == 0)
-            {
-                <div class="pos-grid-status">No hay acciones registradas.</div>
-            }
-            else
-            {
-                <div class="pos-reprint-list">
-                    @foreach (var accion in np.Acciones)
+                <section class="pos-encargo-section pos-encargo-section--history">
+                    <div class="pos-encargo-section__heading">
+                        <div>
+                            <h4>Historial de acciones</h4>
+                            <p>Registro de cambios realizados sobre la nota de pedido.</p>
+                        </div>
+                        <span class="pos-encargo-section__count">@np.Acciones.Count</span>
+                    </div>
+                    @if (np.Acciones.Count == 0)
                     {
-                        <div class="pos-reprint-item">
-                            <div class="pos-reprint-item__header"><strong>@DisplayValueOrDash(accion.TipoAccion)</strong><span>@(accion.FechaHora?.ToString("dd/MM/yyyy HH:mm") ?? "-")</span></div>
-                            <div class="pos-reprint-item__meta"><span>@DisplayValueOrDash(accion.Usuario)</span><span>@DisplayValueOrDash(accion.Comentario)</span></div>
+                        <div class="pos-encargo-empty">No hay acciones registradas.</div>
+                    }
+                    else
+                    {
+                        <div class="pos-encargo-cobranzas">
+                            @foreach (var accion in np.Acciones)
+                            {
+                                <article class="pos-encargo-cobranza pos-encargo-action">
+                                    <div class="pos-encargo-cobranza__top"><strong>@DisplayValueOrDash(accion.TipoAccion)</strong><span>@(accion.FechaHora?.ToString("dd/MM/yyyy HH:mm") ?? "-")</span></div>
+                                    <div class="pos-encargo-cobranza__bottom"><span>@DisplayValueOrDash(accion.Usuario)</span><span>@DisplayValueOrDash(accion.Comentario)</span></div>
+                                </article>
+                            }
                         </div>
                     }
-                </div>
-            }
+                </section>
+            </div>
         }
     </section>
 }

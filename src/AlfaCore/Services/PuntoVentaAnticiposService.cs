@@ -27,7 +27,7 @@ public sealed class PuntoVentaAnticiposService(
             await cn.OpenAsync(token);
 
             const string sql = """
-                WITH np AS
+                WITH np_base AS
                 (
                     SELECT c.ID,
                         LTRIM(RTRIM(c.IDCOMPROBANTE)) AS IdComprobante,
@@ -56,37 +56,23 @@ public sealed class PuntoVentaAnticiposService(
                             WHEN ISNULL(c.CERRADA, 0) = 1 THEN 'CERRADA'
                             ELSE 'PENDIENTE' END)
                 )
+                , np AS
+                (
+                    SELECT n.*,
+                        COUNT(*) OVER() AS Total
+                    FROM np_base n
+                    ORDER BY n.Fecha DESC, n.ID DESC
+                    OFFSET @Offset ROWS FETCH NEXT @Tamano ROWS ONLY
+                )
                 SELECT n.ID, n.IdComprobante, n.Cuenta, n.Cliente, n.Fecha, n.ImporteComercial,
-                    CONVERT(decimal(18,2), COALESCE(ant.Total, 0)) AS TotalAnticiposVigentes,
-                    CONVERT(bit, CASE WHEN COALESCE(ant.Inconsistente, 0) = 0 THEN 1 ELSE 0 END) AS TotalAnticiposVerificado,
-                    CONVERT(varchar(20), CASE WHEN COALESCE(ant.Inconsistente, 0) = 0 THEN 'VERIFICADO' ELSE 'NO_VERIFICADO' END) AS EstadoAnticipos,
+                    CAST(NULL AS decimal(18,2)) AS TotalAnticiposVigentes,
+                    CAST(0 AS bit) AS TotalAnticiposVerificado,
+                    CONVERT(varchar(20), 'NO_VERIFICADO') AS EstadoAnticipos,
                     CONVERT(varchar(20), CASE WHEN n.Anulada = 1 THEN 'ANULADA' WHEN n.Bloqueada = 1 THEN 'BLOQUEADA'
                         WHEN n.Finalizada = 1 THEN 'FINALIZADA' WHEN n.Cerrada = 1 THEN 'CERRADA' ELSE 'PENDIENTE' END) AS EstadoComprobante,
-                    COUNT(*) OVER() AS Total
+                    n.Total
                 FROM np n
-                OUTER APPLY
-                (
-                    SELECT SUM(CASE WHEN ISNULL(cob.ANULADA, 0) = 0
-                        AND COALESCE(ap.Aplicado, 0) <= CONVERT(decimal(18,2), ISNULL(cob.IMPORTE, 0))
-                        THEN CONVERT(decimal(18,2), ISNULL(cob.IMPORTE, 0)) - COALESCE(ap.Aplicado, 0) ELSE 0 END) AS Total,
-                        MAX(CASE WHEN ISNULL(cob.ANULADA, 0) = 0
-                            AND COALESCE(ap.Aplicado, 0) > CONVERT(decimal(18,2), ISNULL(cob.IMPORTE, 0)) THEN 1 ELSE 0 END) AS Inconsistente
-                    FROM dbo.V_MV_CPTE cob
-                    OUTER APPLY
-                    (
-                        SELECT SUM(CONVERT(decimal(18,2), ISNULL(a.IMPORTE, 0))) AS Aplicado
-                        FROM dbo.MV_APLICACION a
-                        WHERE LTRIM(RTRIM(a.CUENTA)) = n.Cuenta
-                          AND LTRIM(RTRIM(a.TC)) = LTRIM(RTRIM(cob.TC))
-                          AND LTRIM(RTRIM(a.IDCOMPROBANTE)) = LTRIM(RTRIM(cob.IDCOMPROBANTE))
-                    ) ap
-                    WHERE LTRIM(RTRIM(cob.CUENTA)) = n.Cuenta
-                      AND LTRIM(RTRIM(cob.TC)) IN ('CB', 'CBCT', 'CBFP')
-                      AND (LTRIM(RTRIM(ISNULL(cob.PRVENTA, ''))) = n.IdComprobante
-                           OR LTRIM(RTRIM(CONVERT(nvarchar(max), ISNULL(cob.OBSERVACIONES, N'')))) = N'Cob.NP ' + n.IdComprobante)
-                ) ant
-                ORDER BY n.Fecha DESC, n.ID DESC
-                OFFSET @Offset ROWS FETCH NEXT @Tamano ROWS ONLY;
+                ORDER BY n.Fecha DESC, n.ID DESC;
                 """;
 
             var items = (await cn.QueryAsync<PuntoVentaNpResumenRow>(new CommandDefinition(sql, new
