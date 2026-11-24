@@ -75,3 +75,21 @@
         display: none;
     }
 }
+
+/* Celular: sólo el punto (verde = hay alguien a cargo); el detalle está en el título y en Calendario. */
+@media (max-width: 640px) {
+    .tb-guardia {
+        width: 32px;
+        height: 32px;
+        min-height: 0;
+        padding: 0;
+        justify-content: center;
+        border: 0;
+        border-radius: 6px;
+        background: var(--alfa-bg-surface-raised);
+    }
+
+    .tb-guardia__text {
+        display: none;
+    }
+}

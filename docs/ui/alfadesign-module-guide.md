@@ -74,6 +74,29 @@ Aplicar solo si aporta valor. Requiere:
 
 Usar solo si hay tabla ancha con scroll horizontal y acciones por fila. Debe tener ancho fijo, background opaco, z-index, separador y estados zebra/hover/selected correctos.
 
+## Celular (hasta 640px)
+
+Revisado pantalla por pantalla el 2026-11-20 (ancho 390px). Lo que ya resuelve el shell y no hay que repetir en cada página:
+
+- **Barra global:** queda el logo (va a Inicio), un selector «Sección ⌄» con todas las `TopNavigationItems` (`alfa-topbar-nav.js`) y los íconos. Atrás/Adelante, Ayuda y el nombre de la base se ocultan (Ayuda está en el menú del usuario). Los paneles de Mensajes, Avisos y Configuración se abren a todo el ancho.
+- **Context Toolbar:** pasa a dos filas (acciones arriba, búsqueda abajo a todo el ancho). El buscador se achica aunque la página le fije ancho y el panel de filtros se abre a todo el ancho en una columna.
+- **Panel de filtros (`.smart-search__panel`):** una sola columna; las opciones de cada grupo se muestran como pastillas una al lado de la otra; Aplicar/Limpiar quedan fijos al pie, con Aplicar a la derecha. No poner `grid-column` fijos en las secciones del panel para celular.
+- **Barra superior:** los botones de la derecha miden 32px, sin borde y con el mismo fondo (la regla global de 42px para tocar no se aplica en la barra).
+- **`AlfaTabs`:** una sola línea que se desliza de costado (hasta 900px).
+- **Indicadores (`.gd .kpi-grid`):** de a dos por fila.
+- **Texto explicativo de la pantalla:** no va como párrafo debajo del título sino en la burbuja (i) `AlfaInfoTip`, dentro del `<h2>` (en computadora se abre también al pasar el mouse). Aplica a todas las pantallas, no solo en celular.
+- **Márgenes:** `.gd-page` usa 12px a los costados.
+- **Casillas:** las reglas globales de campos (alto 42px, ancho 100%) no se aplican a checkbox/radio. `AlfaCheckbox` alinea el texto a la izquierda.
+
+Al hacer una pantalla nueva:
+
+- No usar grillas con cantidad fija de columnas sin un corte para celular: `repeat(auto-fill, minmax(…))` o media queries (ver `CuentasComercialesKanbanView`).
+- Listas con alto máximo y scroll propio: las filas con `flex: 0 0 auto` (lista flex) o `grid-auto-rows: max-content` (lista grid); si no, se achican y el texto se encima.
+- Botones junto a un campo (ej. «Generar» al lado de un texto): `flex: 0 0 auto; white-space: nowrap` en el botón y `min-width: 0` en el campo.
+- Paneles desplegables anclados a un botón: en celular, `position: fixed` con `left/right: 8px`.
+- Los campos que vienen de componentes compartidos (`AlfaField`, etc.) tienen otro scope de CSS: para ubicarlos en la grilla de la página usar `::deep`.
+- Al cambiar `app.css` o `css/*.css`, subir el `?v=` correspondiente en `App.razor` (si no, los teléfonos siguen con la copia vieja guardada).
+
 ## Guardas De Dominio
 
 Una referencia visual no autoriza a inventar datos ni seguridad. En Usuarios, `EsGrupo` no es rol; en Técnicos, Usuario asociado es opcional y no transaccional; en Clientes/Proveedores, `CuentasComercialesPage` es compartido y el Browse y la ficha AlfaDesign aplican a ambos Tipo (desde 2026-10-08); lo propio de cada uno va gateado por `Tipo`: Cliente tiene ARCA, Portal Cliente e invitaciones; Proveedor tiene local/compartido y descuentos por condición de compra.

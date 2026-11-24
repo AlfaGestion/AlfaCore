@@ -1,0 +1,77 @@
+.alfa-info-tip {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    vertical-align: middle;
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.alfa-info-tip__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    padding: 0;
+    border: 1px solid var(--alfa-border-default, #3a3f4a);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.alfa-info-tip__btn:hover,
+.alfa-info-tip.is-open .alfa-info-tip__btn {
+    border-color: var(--alfa-accent, #4c8dff);
+    color: var(--alfa-accent, #4c8dff);
+}
+
+.alfa-info-tip__btn:focus-visible {
+    outline: 2px solid var(--alfa-accent, #4c8dff);
+    outline-offset: 2px;
+}
+
+/* Se ancla al título (position: relative en gestion-alfadesign.css), no al botón: así en un
+   celular la burbuja arranca en el margen y no se sale por la derecha. */
+.alfa-info-tip__bubble {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    width: max-content;
+    max-width: min(440px, calc(100vw - 32px));
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default, #3a3f4a);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface-raised, #1c1f26);
+    color: var(--alfa-text-secondary, #c3c7cf);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    white-space: normal;
+    text-align: left;
+}
+
+.alfa-info-tip.is-open .alfa-info-tip__bubble {
+    display: block;
+}
+
+@media (hover: hover) {
+    .alfa-info-tip:hover .alfa-info-tip__bubble {
+        display: block;
+    }
+}
+
+.alfa-info-tip__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: transparent;
+}

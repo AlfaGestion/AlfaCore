@@ -1151,6 +1151,14 @@
                 {
                     <div class="conversation-audit-results">
                         <div class="conversation-audit-results__head">
+                            @* En celular esta vista tapa la lista: el ← limpia la búsqueda y vuelve a las conversaciones. *@
+                            <button type="button"
+                                    class="btn btn--ghost btn--sm conversations-mobile-back conversation-audit-results__back mobile-only"
+                                    @onclick="ClearConversationFiltersAsync"
+                                    title="Volver a las conversaciones"
+                                    aria-label="Volver a las conversaciones">
+                                <i class="bi bi-arrow-left"></i>
+                            </button>
                             <div>
                                 <h3 class="panel-card__title">Mensajes encontrados</h3>
                                 <p class="panel-card__subtitle">@_auditMessages.Count coincidencia(s) para los filtros actuales.</p>
@@ -1459,11 +1467,44 @@
                                             <strong>Notas</strong>
                                         }
                                     </button>
+                                    @if (_alfaKnowledgeModuloActivo)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="() => RunMobileChatActionAsync(ToggleAiSuggestionPanel)">
+                                            <i class="bi bi-stars"></i>
+                                            <span>Sugerencia IA</span>
+                                        </button>
+                                    }
+                                    <button type="button" role="menuitem" @onclick="() => RunMobileChatActionAsync(ToggleMessageSearchAsync)">
+                                        <i class="bi bi-search"></i>
+                                        <span>Buscar en la conversación</span>
+                                    </button>
+                                    @if (_contextTicketMatches.Count > 0)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="() => RunMobileChatActionAsync(OpenPendingTicketsFromHeader)">
+                                            <i class="bi bi-life-preserver"></i>
+                                            <span>Tickets pendientes</span>
+                                            <strong>@_contextTicketMatches.Count</strong>
+                                        </button>
+                                    }
                                     @if (_ticketsModuloActivo)
                                     {
                                         <button type="button" role="menuitem" @onclick="StartMobileTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)">
-                                            <i class="bi bi-life-preserver"></i>
+                                            <i class="bi bi-plus-circle"></i>
                                             <span>Crear ticket</span>
+                                        </button>
+                                    }
+                                    @if (_crmModuloActivo)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="() => RunMobileChatActionAsync(() => { CrearOportunidadDesdeConversacion(); return Task.CompletedTask; })">
+                                            <i class="bi bi-graph-up-arrow"></i>
+                                            <span>Oportunidad de CRM</span>
+                                        </button>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                                    {
+                                        <button type="button" role="menuitem" @onclick="() => RunMobileChatActionAsync(PrepararInvitacionPortalAsync)" disabled="@(_preparandoInvitacionPortal || _busyAction)">
+                                            <i class="bi bi-person-badge"></i>
+                                            <span>Invitar al Portal Cliente</span>
                                         </button>
                                     }
                                     <button type="button" role="menuitem" @onclick="ToggleAnyDeskToolbarPrompt">
@@ -6584,11 +6625,13 @@
             _selectedMercadoLibreGroupItems = [];
         }
 
-        if (updateUrl && NavigateToConversationUrl(idConversacion))
-            return;
-
+        // Antes de cambiar la URL: si la conversación tocada ya era la seleccionada (la primera de la bandeja
+        // se elige sola al cargar), el cambio de URL no la vuelve a cargar y en celular el toque no abría el chat.
         if (showMobileChat)
             _mobileChatActive = true;
+
+        if (updateUrl && NavigateToConversationUrl(idConversacion))
+            return;
 
         await ClearTypingAsync();
         _showTemplatePanel = false;
@@ -10007,6 +10050,13 @@
     {
         _showStatusMenu = false;
         _showMobileChatActions = !_showMobileChatActions;
+    }
+
+    // Acciones del menú ⋮ del chat en celular: cierran el menú y ejecutan la misma acción que la barra de escritorio.
+    private async Task RunMobileChatActionAsync(Func<Task> action)
+    {
+        _showMobileChatActions = false;
+        await action();
     }
 
     private void OpenMobileContextPanel()
