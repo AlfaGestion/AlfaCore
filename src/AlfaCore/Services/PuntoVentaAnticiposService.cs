@@ -30,10 +30,13 @@ public sealed class PuntoVentaAnticiposService(
                 WITH np_base AS
                 (
                     SELECT c.ID,
+                        CONVERT(int, ISNULL(c.IDCOMPLEMENTO, 0)) AS IdComplemento,
                         LTRIM(RTRIM(c.IDCOMPROBANTE)) AS IdComprobante,
                         LTRIM(RTRIM(ISNULL(c.CUENTA, ''))) AS Cuenta,
                         LTRIM(RTRIM(ISNULL(c.NOMBRE, ''))) AS Cliente,
+                        LTRIM(RTRIM(ISNULL(c.TELEFONO, ''))) AS Telefono,
                         c.FECHA AS Fecha,
+                        c.FECHAENTREGA AS FechaEntrega,
                         CONVERT(decimal(18,2), ISNULL(c.IMPORTE, 0)) AS ImporteComercial,
                         CONVERT(bit, ISNULL(c.ANULADA, 0)) AS Anulada,
                         CONVERT(bit, ISNULL(c.BLOQUEADA, 0)) AS Bloqueada,
@@ -44,7 +47,8 @@ public sealed class PuntoVentaAnticiposService(
                       AND (@IncluirAnuladas = 1 OR ISNULL(c.ANULADA, 0) = 0)
                       AND (@Buscar = '' OR LTRIM(RTRIM(c.IDCOMPROBANTE)) LIKE @BuscarLike
                            OR LTRIM(RTRIM(ISNULL(c.CUENTA, ''))) LIKE @BuscarLike
-                           OR LTRIM(RTRIM(ISNULL(c.NOMBRE, ''))) LIKE @BuscarLike)
+                           OR LTRIM(RTRIM(ISNULL(c.NOMBRE, ''))) LIKE @BuscarLike
+                           OR LTRIM(RTRIM(ISNULL(c.TELEFONO, ''))) LIKE @BuscarLike)
                       AND (@Desde IS NULL OR c.FECHA >= @Desde)
                       AND (@Hasta IS NULL OR c.FECHA < DATEADD(day, 1, @Hasta))
                       AND (@Sucursal = '' OR LTRIM(RTRIM(ISNULL(c.SUCURSAL, ''))) = @Sucursal)
@@ -64,14 +68,29 @@ public sealed class PuntoVentaAnticiposService(
                     ORDER BY n.Fecha DESC, n.ID DESC
                     OFFSET @Offset ROWS FETCH NEXT @Tamano ROWS ONLY
                 )
-                SELECT n.ID, n.IdComprobante, n.Cuenta, n.Cliente, n.Fecha, n.ImporteComercial,
+                SELECT n.ID, n.IdComprobante, n.Cuenta, n.Cliente, n.Telefono, n.Fecha, n.FechaEntrega, n.ImporteComercial,
                     CAST(NULL AS decimal(18,2)) AS TotalAnticiposVigentes,
                     CAST(0 AS bit) AS TotalAnticiposVerificado,
                     CONVERT(varchar(20), 'NO_VERIFICADO') AS EstadoAnticipos,
                     CONVERT(varchar(20), CASE WHEN n.Anulada = 1 THEN 'ANULADA' WHEN n.Bloqueada = 1 THEN 'BLOQUEADA'
                         WHEN n.Finalizada = 1 THEN 'FINALIZADA' WHEN n.Cerrada = 1 THEN 'CERRADA' ELSE 'PENDIENTE' END) AS EstadoComprobante,
+                    CONVERT(varchar(20), CASE
+                        WHEN n.Finalizada = 1
+                             OR (ISNULL(preparacion.Cantidad, 0) > 0
+                                 AND ISNULL(preparacion.CantidadPreparada, 0) >= ISNULL(preparacion.Cantidad, 0)) THEN 'LISTO'
+                        WHEN ISNULL(preparacion.CantidadPreparada, 0) > 0 THEN 'EN_PREPARACION'
+                        ELSE 'PENDIENTE' END) AS EstadoProduccion,
                     n.Total
                 FROM np n
+                OUTER APPLY
+                (
+                    SELECT SUM(CONVERT(decimal(18,4), ISNULL(i.CANTIDAD, 0))) AS Cantidad,
+                           SUM(CONVERT(decimal(18,4), ISNULL(i.CANTIDADPREPARADA, 0))) AS CantidadPreparada
+                    FROM dbo.V_MV_CPTEINSUMOS i
+                    WHERE LTRIM(RTRIM(i.TC)) = 'NP'
+                      AND LTRIM(RTRIM(i.IDCOMPROBANTE)) = n.IdComprobante
+                      AND ISNULL(i.IDCOMPLEMENTO, 0) = n.IdComplemento
+                ) preparacion
                 ORDER BY n.Fecha DESC, n.ID DESC;
                 """;
 
@@ -94,10 +113,11 @@ public sealed class PuntoVentaAnticiposService(
                 Items = items.Select(x => new PuntoVentaNpResumenDto
                 {
                     Id = x.Id, IdComprobante = x.IdComprobante, Cuenta = x.Cuenta, Cliente = x.Cliente,
-                    Fecha = x.Fecha, ImporteComercial = x.ImporteComercial,
+                    Fecha = x.Fecha, FechaEntrega = x.FechaEntrega, Telefono = x.Telefono, ImporteComercial = x.ImporteComercial,
                     TotalAnticiposVigentes = x.TotalAnticiposVigentes,
                     TotalAnticiposVerificado = x.TotalAnticiposVerificado,
-                    EstadoAnticipos = x.EstadoAnticipos, EstadoComprobante = x.EstadoComprobante
+                    EstadoAnticipos = x.EstadoAnticipos, EstadoComprobante = x.EstadoComprobante,
+                    EstadoProduccion = x.EstadoProduccion
                 }).ToList(),
                 Total = items.FirstOrDefault()?.Total ?? 0,
                 Pagina = pagina, TamanoPagina = tamano
@@ -123,11 +143,16 @@ public sealed class PuntoVentaAnticiposService(
             const string cabeceraSql = """
                 SELECT TOP (1)
                     c.ID,
+                    CONVERT(int, ISNULL(c.IDCOMPLEMENTO, 0)) AS IdComplemento,
                     LTRIM(RTRIM(c.TC)) AS Tc,
                     LTRIM(RTRIM(c.IDCOMPROBANTE)) AS IdComprobante,
                     LTRIM(RTRIM(ISNULL(c.CUENTA, ''))) AS Cuenta,
                     LTRIM(RTRIM(ISNULL(c.NOMBRE, ''))) AS Cliente,
+                    LTRIM(RTRIM(ISNULL(c.TELEFONO, ''))) AS Telefono,
+                    LTRIM(RTRIM(CONVERT(nvarchar(max), ISNULL(c.OBSERVACIONES, N'')))) AS Observaciones,
                     c.FECHA AS Fecha,
+                    c.FECHAENTREGA AS FechaEntrega,
+                    c.FECHAPREPARACION AS FechaPreparacion,
                     CONVERT(decimal(18,2), ISNULL(c.IMPORTE, 0)) AS ImporteComercial,
                     CONVERT(bit, ISNULL(c.ANULADA, 0)) AS Anulada,
                     CONVERT(bit, ISNULL(c.BLOQUEADA, 0)) AS Bloqueada,
@@ -146,6 +171,23 @@ public sealed class PuntoVentaAnticiposService(
                 cancellationToken: token));
             if (cabecera is null)
                 return null;
+
+            var items = (await cn.QueryAsync<PuntoVentaNpItemDto>(new CommandDefinition("""
+                SELECT
+                    LTRIM(RTRIM(ISNULL(i.IDARTICULO, ''))) AS IdArticulo,
+                    LTRIM(RTRIM(ISNULL(i.DESCRIPCION, ''))) AS Descripcion,
+                    CONVERT(decimal(18,4), ISNULL(i.CANTIDAD, 0)) AS Cantidad,
+                    CONVERT(decimal(18,2), ISNULL(i.IMPORTE_UD, i.COSTO)) AS Precio,
+                    CONVERT(decimal(18,2), ISNULL(i.TOTAL, i.IMPORTE)) AS Importe,
+                    CONVERT(decimal(18,4), ISNULL(i.CANTIDADPREPARADA, 0)) AS CantidadPreparada,
+                    LTRIM(RTRIM(ISNULL(i.PRESENTACION, ''))) AS Presentacion,
+                    LTRIM(RTRIM(ISNULL(i.OBSERVACIONES, ''))) AS Observaciones
+                FROM dbo.V_MV_CPTEINSUMOS i
+                WHERE LTRIM(RTRIM(i.TC)) = 'NP'
+                  AND LTRIM(RTRIM(i.IDCOMPROBANTE)) = @Comprobante
+                  AND ISNULL(i.IDCOMPLEMENTO, 0) = @IdComplemento
+                ORDER BY i.SECUENCIA, i.ID;
+                """, new { Comprobante = cabecera.IdComprobante, IdComplemento = cabecera.IdComplemento }, cancellationToken: token))).AsList();
 
             const string cobranzasSql = """
                 SELECT
@@ -282,13 +324,19 @@ public sealed class PuntoVentaAnticiposService(
                 Cuenta = cabecera.Cuenta,
                 Cliente = cabecera.Cliente,
                 Fecha = cabecera.Fecha,
+                FechaEntrega = cabecera.FechaEntrega,
+                FechaPreparacion = cabecera.FechaPreparacion,
+                Telefono = cabecera.Telefono,
+                Observaciones = cabecera.Observaciones,
                 ImporteComercial = cabecera.ImporteComercial,
                 EstadoComprobante = Estado(cabecera),
                 Cobranzas = resultadoCobranzas,
                 TotalAnticiposVigentes = total.Total,
                 TotalAnticiposVerificado = total.Verificado,
                 EstadoAnticipos = total.Estado,
-                Acciones = acciones
+                EstadoProduccion = EstadoProduccion(cabecera, items),
+                Acciones = acciones,
+                Items = items
             };
         }, "No se pudieron consultar los anticipos de la nota de pedido.", ct);
 
@@ -302,15 +350,19 @@ public sealed class PuntoVentaAnticiposService(
     private sealed class PuntoVentaNpResumenRow
     {
         public int Id { get; init; }
+        public int IdComplemento { get; init; }
         public string IdComprobante { get; init; } = string.Empty;
         public string Cuenta { get; init; } = string.Empty;
         public string Cliente { get; init; } = string.Empty;
+        public string Telefono { get; init; } = string.Empty;
         public DateTime? Fecha { get; init; }
+        public DateTime? FechaEntrega { get; init; }
         public decimal ImporteComercial { get; init; }
         public decimal? TotalAnticiposVigentes { get; init; }
         public bool TotalAnticiposVerificado { get; init; }
         public string EstadoAnticipos { get; init; } = string.Empty;
         public string EstadoComprobante { get; init; } = string.Empty;
+        public string EstadoProduccion { get; init; } = string.Empty;
         public int Total { get; init; }
     }
 
@@ -343,16 +395,33 @@ public sealed class PuntoVentaAnticiposService(
     private sealed class NpCabecera
     {
         public int Id { get; init; }
+        public int IdComplemento { get; init; }
         public string Tc { get; init; } = string.Empty;
         public string IdComprobante { get; init; } = string.Empty;
         public string Cuenta { get; init; } = string.Empty;
         public string Cliente { get; init; } = string.Empty;
+        public string Telefono { get; init; } = string.Empty;
         public DateTime? Fecha { get; init; }
+        public DateTime? FechaEntrega { get; init; }
+        public DateTime? FechaPreparacion { get; init; }
+        public string Observaciones { get; init; } = string.Empty;
         public decimal ImporteComercial { get; init; }
         public bool Anulada { get; init; }
         public bool Bloqueada { get; init; }
         public bool Finalizada { get; init; }
         public bool Cerrada { get; init; }
+    }
+
+    private static string EstadoProduccion(NpCabecera cabecera, IReadOnlyList<PuntoVentaNpItemDto> items)
+    {
+        if (cabecera.Anulada || cabecera.Bloqueada || items.Count == 0)
+            return "PENDIENTE";
+
+        var cantidadTotal = items.Sum(x => x.Cantidad);
+        var cantidadPreparada = items.Sum(x => Math.Max(x.CantidadPreparada, 0m));
+        if (cabecera.Finalizada || cantidadTotal > 0m && cantidadPreparada >= cantidadTotal)
+            return "LISTO";
+        return cantidadPreparada > 0m ? "EN_PREPARACION" : "PENDIENTE";
     }
 
     private sealed class NpCobranza

@@ -597,7 +597,10 @@ public sealed class PuntoVentaService(
                     () => RefreshReceiptCustomerDataAsync(cn, comprobante.IdComprobanteTexto, comprobante.Tc, cliente, token));
 
             if (tc.Equals("NP", StringComparison.OrdinalIgnoreCase))
+            {
                 await MarkNotaPedidoPendienteAsync(cn, comprobante.IdComprobante, token);
+                await UpdateNotaPedidoEntregaAsync(cn, comprobante.IdComprobante, request.FechaEntrega, token);
+            }
 
             // Un cliente eventual usa la cuenta de consumidor final para la
             // imputación, pero sus datos deben quedar en la cabecera del
@@ -1884,6 +1887,18 @@ public sealed class PuntoVentaService(
             CommandTimeout = SaleCommandTimeoutSeconds
         };
         cmd.Parameters.AddWithValue("@IdComprobante", idComprobante);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task UpdateNotaPedidoEntregaAsync(SqlConnection cn, int idComprobante, DateTime? fechaEntrega, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.V_MV_CPTE SET FECHAENTREGA = @FechaEntrega WHERE ID = @IdComprobante AND UPPER(LTRIM(RTRIM(TC))) = 'NP';", cn)
+        {
+            CommandTimeout = SaleCommandTimeoutSeconds
+        };
+        cmd.Parameters.AddWithValue("@IdComprobante", idComprobante);
+        cmd.Parameters.AddWithValue("@FechaEntrega", fechaEntrega.HasValue ? fechaEntrega.Value : DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

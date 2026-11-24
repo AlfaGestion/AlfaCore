@@ -1591,6 +1591,83 @@
         background: rgba(34, 211, 238, 0.1);
     }
 
+    .pos-encargo-delivery {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.7rem;
+    }
+
+    .pos-encargo-delivery div {
+        display: grid;
+        gap: 0.25rem;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: rgba(148, 163, 184, 0.06);
+    }
+
+    .pos-encargo-delivery span,
+    .pos-encargo-item__description span,
+    .pos-encargo-item__description small,
+    .pos-encargo-item__numbers span,
+    .pos-encargo-item__progress span {
+        color: var(--color-muted);
+        font-size: 0.76rem;
+    }
+
+    .pos-encargo-delivery strong {
+        color: var(--color-text);
+        font-size: 0.86rem;
+    }
+
+    .pos-encargo-observations {
+        display: grid;
+        gap: 0.25rem;
+        padding: 0.75rem 0.8rem;
+        border-left: 3px solid var(--color-primary);
+        border-radius: 0 10px 10px 0;
+        background: rgba(14, 165, 233, 0.08);
+    }
+
+    .pos-encargo-observations span {
+        color: var(--color-muted);
+        font-size: 0.76rem;
+    }
+
+    .pos-encargo-observations strong {
+        color: var(--color-text);
+        font-size: 0.86rem;
+        font-weight: 600;
+        white-space: pre-wrap;
+    }
+
+    .pos-charge-modal__field {
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .pos-charge-modal__field span {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .pos-charge-modal__field input,
+    .pos-charge-modal__field textarea {
+        width: 100%;
+        min-height: 2.7rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 0.65rem 0.75rem;
+        background: var(--color-panel);
+        color: var(--color-text);
+    }
+
+    .pos-charge-modal__field textarea {
+        min-height: 4.5rem;
+        resize: vertical;
+    }
+
     .pos-encargo-status,
     .pos-encargo-section__count {
         width: fit-content;
@@ -1651,6 +1728,68 @@
     .pos-encargo-cobranzas {
         display: grid;
         gap: 0.65rem;
+    }
+
+    .pos-encargo-items {
+        display: grid;
+        gap: 0.55rem;
+    }
+
+    .pos-encargo-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.7rem 1rem;
+        padding: 0.8rem 0.9rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.32);
+    }
+
+    .pos-encargo-item__description,
+    .pos-encargo-item__numbers {
+        display: grid;
+        align-content: center;
+        gap: 0.2rem;
+        min-width: 0;
+    }
+
+    .pos-encargo-item__description strong,
+    .pos-encargo-item__numbers strong {
+        color: var(--color-text);
+    }
+
+    .pos-encargo-item__description span,
+    .pos-encargo-item__description small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-item__numbers {
+        grid-template-columns: auto auto auto;
+        align-items: center;
+        gap: 0.8rem;
+        text-align: right;
+    }
+
+    .pos-encargo-item__progress {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 0.25rem;
+    }
+
+    .pos-encargo-item__progress > div {
+        height: 0.35rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.16);
+    }
+
+    .pos-encargo-item__progress i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--color-primary), #22d3ee);
     }
 
     .pos-encargo-cobranza {
@@ -1733,6 +1872,19 @@
 
         .pos-encargo-cobranza__values {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pos-encargo-delivery {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-encargo-item {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-encargo-item__numbers {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            text-align: left;
         }
 
         .pos-encargo-cobranza__values div:last-child {
@@ -6373,6 +6525,17 @@
         {
             <div class="pos-charge-modal__body">
                 <section class="pos-charge-modal__section">
+                    <h4>Datos del encargo</h4>
+                    <label class="pos-charge-modal__field">
+                        <span>Fecha y hora de entrega (opcional)</span>
+                        <input type="datetime-local" @bind="_npFechaEntregaInput" />
+                    </label>
+                    <label class="pos-charge-modal__field">
+                        <span>Observaciones del pedido</span>
+                        <textarea @bind="_npObservacionesInput" maxlength="500" placeholder="Indicaciones para preparación o entrega"></textarea>
+                    </label>
+                </section>
+                <section class="pos-charge-modal__section">
                     <div class="pos-grid-status">
                         Este documento queda pendiente de facturar -- no pide medio de pago, no genera
                         cobranza ni asiento contable. La factura real se hace después, por ahora desde
@@ -6805,6 +6968,9 @@
                        autocomplete="off" />
             </label>
             <button type="button" class="btn btn--primary" @onclick="BuscarEncargosAsync" disabled="@_npAnticiposLoading">Buscar</button>
+            <button type="button" class="btn btn--secondary" @onclick="ActualizarEncargosAsync" disabled="@_npAnticiposLoading" title="Actualizar listado">
+                <i class="bi bi-arrow-clockwise"></i> Actualizar
+            </button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_npAnticiposError))
@@ -6831,8 +6997,14 @@
                             <div class="pos-reprint-item__meta">
                                 <span>@(encargo.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
                                 <span>@DisplayValueOrDash(encargo.Cliente)</span>
+                                @if (!string.IsNullOrWhiteSpace(encargo.Telefono))
+                                {
+                                    <span>@encargo.Telefono</span>
+                                }
+                                <span>Entrega: @(encargo.FechaEntrega?.ToString("dd/MM HH:mm") ?? "A coordinar")</span>
                                 <span>Total: @FmtMoney(encargo.ImporteComercial)</span>
                                 <span>Señas: @(encargo.TotalAnticiposVerificado ? FmtMoney(encargo.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</span>
+                                <span>Producción: @encargo.EstadoProduccion</span>
                             </div>
                             <div class="pos-reprint-item__footer">
                                 <span>Saldo: @(encargo.TotalAnticiposVerificado ? FmtMoney(Math.Max(encargo.ImporteComercial - (encargo.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</span>
@@ -6883,6 +7055,17 @@
                     </div>
                 </div>
 
+                <div class="pos-encargo-delivery">
+                    <div><span>Entrega</span><strong>@(np.FechaEntrega?.ToString("dd/MM/yyyy HH:mm") ?? "A coordinar")</strong></div>
+                    <div><span>Teléfono</span><strong>@(string.IsNullOrWhiteSpace(np.Telefono) ? "No informado" : np.Telefono)</strong></div>
+                    <div><span>Preparación</span><strong>@(np.FechaPreparacion?.ToString("dd/MM/yyyy HH:mm") ?? "Pendiente de producción")</strong></div>
+                    <div><span>Estado producción</span><strong>@np.EstadoProduccion</strong></div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(np.Observaciones))
+                {
+                    <div class="pos-encargo-observations"><span>Observaciones</span><strong>@np.Observaciones</strong></div>
+                }
+
                 @if (!np.TotalAnticiposVerificado)
                 {
                     <div class="pos-encargo-alert">
@@ -6929,6 +7112,48 @@
                                             @DisplayValueOrDash(cobranza.AdvertenciaRelacion)
                                         </div>
                                     }
+                                </article>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="pos-encargo-section">
+                    <div class="pos-encargo-section__heading">
+                        <div>
+                            <h4>Artículos del encargo</h4>
+                            <p>Detalle comercial y avance de preparación.</p>
+                        </div>
+                        <span class="pos-encargo-section__count">@np.Items.Count</span>
+                    </div>
+                    @if (np.Items.Count == 0)
+                    {
+                        <div class="pos-encargo-empty">No se encontraron artículos para esta nota.</div>
+                    }
+                    else
+                    {
+                        <div class="pos-encargo-items">
+                            @foreach (var item in np.Items)
+                            {
+                                var progreso = item.Cantidad <= 0 ? 0 : Math.Clamp(item.CantidadPreparada / item.Cantidad * 100m, 0m, 100m);
+                                <article class="pos-encargo-item">
+                                    <div class="pos-encargo-item__description">
+                                        <strong>@item.Descripcion</strong>
+                                        <span>@item.IdArticulo@(string.IsNullOrWhiteSpace(item.Presentacion) ? string.Empty : $" · {item.Presentacion}")</span>
+                                        @if (!string.IsNullOrWhiteSpace(item.Observaciones))
+                                        {
+                                            <small>@item.Observaciones</small>
+                                        }
+                                    </div>
+                                    <div class="pos-encargo-item__numbers">
+                                        <span>@item.Cantidad.ToString("0.####")</span>
+                                        <span>@FmtMoney(item.Precio)</span>
+                                        <strong>@FmtMoney(item.Importe)</strong>
+                                    </div>
+                                    <div class="pos-encargo-item__progress">
+                                        <span>Preparado @item.CantidadPreparada.ToString("0.####") / @item.Cantidad.ToString("0.####")</span>
+                                        <div><i style="@($"width:{progreso:0.##}%")"></i></div>
+                                    </div>
                                 </article>
                             }
                         </div>
@@ -7983,6 +8208,8 @@
     private bool _npAnticiposLoading;
     private string _npAnticiposIdComprobante = string.Empty;
     private string _npAnticiposCuenta = string.Empty;
+    private DateTime? _npFechaEntregaInput;
+    private string _npObservacionesInput = string.Empty;
     private string? _npAnticiposError;
     private PuntoVentaNpAnticiposDto? _npAnticiposResultado;
     private PuntoVentaNpPaginaDto? _npAnticiposListado;
@@ -9531,6 +9758,7 @@
         _npAnticiposError = null;
         _npAnticiposResultado = null;
         _npAnticiposIdComprobante = string.Empty;
+        _npAnticiposCuenta = string.Empty;
         _npAnticiposPagina = 1;
         await BuscarEncargosAsync();
     }
@@ -9590,6 +9818,13 @@
             return;
 
         _npAnticiposPagina = Math.Clamp(_npAnticiposPagina + delta, 1, Math.Max(1, _npAnticiposListado.TotalPaginas));
+        await BuscarEncargosAsync();
+    }
+
+    private async Task ActualizarEncargosAsync()
+    {
+        if (_npAnticiposListado is null)
+            _npAnticiposPagina = 1;
         await BuscarEncargosAsync();
     }
 
@@ -9847,6 +10082,11 @@
         _selectedPaymentCode = string.Empty;
         _paymentMethodCodeFilter = string.Empty;
         _chargeAmountInput = PendingAmountInput();
+        if (EsRemitoONotaPedido)
+        {
+            _npFechaEntregaInput = null;
+            _npObservacionesInput = string.Empty;
+        }
         // Cada cobranza debe iniciar con la simulación Point limpia. Si no se
         // reinicia, una selección anterior de tarjeta/cuotas queda visible al
         // volver a abrir el modal aunque el medio seleccionado sea MP QR.
@@ -10674,14 +10914,17 @@
                         CondicionIva = _clienteEventual.IvaCodigo
                     },
                 Fecha = DateTime.Today,
+                FechaEntrega = EsRemitoONotaPedido ? ParseNpFechaEntrega(_npFechaEntregaInput) : null,
                 TipoComprobante = _tipoComprobanteSeleccionado,
                 // La sucursal del punto seleccionado tiene prioridad. La configuración
                 // general se usa dentro del servicio únicamente si el punto no tiene una.
                 Sucursal = _pedidoSucursalOverride ?? _puntoVentaSucursal ?? string.Empty,
                 Items = soldItems,
-                Observaciones = string.Join(" | ", soldPayments
-                    .Where(x => x.Recargo > 0)
-                    .Select(x => $"Recargo Point: {FmtMoney(x.Recargo)}")),
+                Observaciones = string.Join(" | ", new[]
+                {
+                    EsRemitoONotaPedido ? _npObservacionesInput.Trim() : string.Empty,
+                    string.Join(" | ", soldPayments.Where(x => x.Recargo > 0).Select(x => $"Recargo Point: {FmtMoney(x.Recargo)}"))
+                }.Where(x => !string.IsNullOrWhiteSpace(x))),
                 Pagos = soldPayments,
                 Progreso = ActualizarProgresoGrabacion
             });
@@ -10781,6 +11024,9 @@
 
     private bool EsComprobanteFiscalSeleccionado()
         => _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "FC" or "NC";
+
+    private static DateTime? ParseNpFechaEntrega(DateTime? fecha)
+        => fecha;
 
 
     private string MensajeErrorGrabacionVenta(Exception ex)

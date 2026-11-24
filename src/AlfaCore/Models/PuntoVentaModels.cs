@@ -142,6 +142,7 @@ public sealed class PuntoVentaSaleRequestDto
     public PuntoVentaClienteEventualDto? ClienteEventual { get; set; }
     public string Vendedor { get; set; } = string.Empty;
     public DateTime Fecha { get; set; } = DateTime.Today;
+    public DateTime? FechaEntrega { get; set; }
     public string Observaciones { get; set; } = string.Empty;
     public string TipoComprobante { get; set; } = "FC";
     public string Sucursal { get; set; } = "0001";

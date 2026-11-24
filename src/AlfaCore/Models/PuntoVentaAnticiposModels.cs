@@ -20,11 +20,14 @@ public sealed class PuntoVentaNpResumenDto
     public string Cuenta { get; init; } = string.Empty;
     public string Cliente { get; init; } = string.Empty;
     public DateTime? Fecha { get; init; }
+    public DateTime? FechaEntrega { get; init; }
+    public string Telefono { get; init; } = string.Empty;
     public decimal ImporteComercial { get; init; }
     public decimal? TotalAnticiposVigentes { get; init; }
     public bool TotalAnticiposVerificado { get; init; }
     public string EstadoAnticipos { get; init; } = PuntoVentaAnticiposEstados.Verificado;
     public string EstadoComprobante { get; init; } = string.Empty;
+    public string EstadoProduccion { get; init; } = string.Empty;
 }
 
 public sealed class PuntoVentaNpPaginaDto
@@ -44,13 +47,31 @@ public sealed class PuntoVentaNpAnticiposDto
     public string Cuenta { get; init; } = string.Empty;
     public string Cliente { get; init; } = string.Empty;
     public DateTime? Fecha { get; init; }
+    public DateTime? FechaEntrega { get; init; }
+    public DateTime? FechaPreparacion { get; init; }
+    public string Telefono { get; init; } = string.Empty;
+    public string Observaciones { get; init; } = string.Empty;
     public decimal ImporteComercial { get; init; }
     public string EstadoComprobante { get; init; } = string.Empty;
     public IReadOnlyList<PuntoVentaNpCobranzaDto> Cobranzas { get; init; } = [];
     public decimal? TotalAnticiposVigentes { get; init; }
     public bool TotalAnticiposVerificado { get; init; }
     public string EstadoAnticipos { get; init; } = PuntoVentaAnticiposEstados.Verificado;
+    public string EstadoProduccion { get; init; } = string.Empty;
     public IReadOnlyList<ComprobanteAccionDto> Acciones { get; init; } = [];
+    public IReadOnlyList<PuntoVentaNpItemDto> Items { get; init; } = [];
+}
+
+public sealed class PuntoVentaNpItemDto
+{
+    public string IdArticulo { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
+    public decimal Cantidad { get; init; }
+    public decimal Precio { get; init; }
+    public decimal Importe { get; init; }
+    public decimal CantidadPreparada { get; init; }
+    public string Presentacion { get; init; } = string.Empty;
+    public string Observaciones { get; init; } = string.Empty;
 }
 
 public sealed class PuntoVentaNpCobranzaDto

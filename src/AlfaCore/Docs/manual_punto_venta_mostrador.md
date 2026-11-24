@@ -109,6 +109,18 @@ En **Comprobante:**, arriba, elegís qué vas a emitir. Arranca con el comproban
 
 Para una nota de crédito cargá los artículos que se devuelven y cobrá como siempre. No hace falta indicar la factura original.
 
+## Gestionar encargos y notas de pedido
+
+En el modo **Mostrador / Producción**, abrí **☰ → Gestionar encargos** para consultar las notas de pedido comerciales pendientes. La pantalla carga primero el listado; las cobranzas y el detalle de artículos se consultan recién al abrir una nota, para que la consulta sea más rápida.
+
+- Buscá por número de nota, cuenta, nombre o teléfono del cliente.
+- Cada nota muestra cliente, fecha, importe y fecha de entrega cuando fue informada.
+- Al abrirla podés revisar artículos, cantidades preparadas, teléfono, observaciones, cobranzas relacionadas y el historial de acciones.
+- El avance se calcula desde las cantidades preparadas de las líneas: **Pendiente**, **En preparación** o **Listo**. Es un estado operativo separado del estado contable de la NP.
+- Al generar una **NP**, podés informar fecha y hora de entrega y observaciones. La nota queda pendiente de facturar y no genera cobranza ni asiento.
+
+Los anticipos se muestran como **verificados** únicamente cuando la relación con la nota y el importe disponible fueron confirmados. Si aparece **No verificado**, no uses ese importe como seña hasta validarlo en el circuito contable.
+
 ## Cobrar
 
 Tocá **Cobrar** (o **Ctrl+G**). Se abre la **Cobranza** con el total arriba y, a medida que cargás pagos, el **vuelto** o lo que **falta**.
