@@ -121,8 +121,14 @@ public static class ConfiguracionCatalogo
         if (modulos.Count == 0 && rutas.Count == 0)
             return Entradas;
 
+        // La configuración propia de un módulo (/{modulo}/configuracion) no está en el menú web: se ofrece
+        // si el usuario tiene alguna pantalla de ese módulo.
+        var modulosPorRutas = new HashSet<string>(rutas.Select(PrimerSegmento).Where(x => x.Length > 0), StringComparer.OrdinalIgnoreCase);
+
         return Entradas
-            .Where(e => rutas.Contains(NormalizarRuta(e.RutaBase)) || modulos.Contains(e.Modulo))
+            .Where(e => rutas.Contains(NormalizarRuta(e.RutaBase))
+                        || modulos.Contains(e.Modulo)
+                        || (EsConfiguracionDeModulo(e) && modulosPorRutas.Contains(e.Modulo)))
             .ToList();
     }
 
@@ -162,6 +168,12 @@ public static class ConfiguracionCatalogo
             .ThenByDescending(x => x.Entrada.Principal)
             .Select(x => x.Entrada)
             .ToList();
+    }
+
+    private static bool EsConfiguracionDeModulo(ConfiguracionEntrada e)
+    {
+        var partes = NormalizarRuta(e.RutaBase).Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return partes.Length == 2 && partes[1] == "configuracion";
     }
 
     public static string PrimerSegmento(string? ruta)
