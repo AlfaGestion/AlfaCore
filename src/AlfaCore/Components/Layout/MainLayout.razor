@@ -814,7 +814,8 @@ else
                     </nav>
                     <div class="alfa-app-topbar__more" data-topnav-more hidden>
                         <button type="button" class="alfa-app-topbar__nav-item alfa-app-topbar__more-toggle" aria-haspopup="menu" aria-expanded="false" data-topnav-more-toggle>
-                            <span>Más</span><i class="bi bi-chevron-down" aria-hidden="true"></i>
+                            @* En celular el botón muestra la sección actual y abre todas (ver alfa-topbar-nav.js). *@
+                            <span class="alfa-app-topbar__more-label">Más</span><span class="alfa-app-topbar__more-current">@(PageHeader.Current.TopNavigationItems.Where(TopNavItemVisible).FirstOrDefault(i => i.Active)?.Label ?? "Secciones")</span><i class="bi bi-chevron-down" aria-hidden="true"></i>
                         </button>
                         <div class="alfa-app-topbar__more-menu" role="menu" aria-label="Más secciones" hidden data-topnav-more-menu>
                             @foreach (var item in PageHeader.Current.TopNavigationItems.Where(TopNavItemVisible))
@@ -842,7 +843,7 @@ else
                     }
                     @if (AppUserSession.IsAuthenticated)
                     {
-                        <button type="button" class="alfa-app-topbar__global-icon no-print" @onclick="AbrirAyudaGlobal" title="Ayuda y chat con IA" aria-label="Ayuda y chat con IA">
+                        <button type="button" class="alfa-app-topbar__global-icon alfa-app-topbar__global-icon--help no-print" @onclick="AbrirAyudaGlobal" title="Ayuda y chat con IA" aria-label="Ayuda y chat con IA">
                             <i class="bi bi-question-circle" aria-hidden="true"></i>
                         </button>
                     }
@@ -1628,6 +1629,7 @@ else
     private string _routeSessionLabel = string.Empty;
     private string? _sqlEngineOutdatedMessage;
     private bool _manualLoginOverlayOpen;
+    private int _ensuringActiveSessionFromRoute;
 
     protected override void OnInitialized()
     {
@@ -2114,6 +2116,25 @@ else
     }
 
     private async Task EnsureActiveSessionFromRouteAsync()
+    {
+        // SessionChanged puede dispararse mientras SwitchSession todavía está notificando
+        // suscriptores. Sin esta barrera, la restauración del token y la navegación a una ruta
+        // tenant pueden iniciar varias activaciones concurrentes y volver a entrar en este método
+        // hasta provocar un StackOverflow.
+        if (Interlocked.Exchange(ref _ensuringActiveSessionFromRoute, 1) != 0)
+            return;
+
+        try
+        {
+            await EnsureActiveSessionFromRouteCoreAsync();
+        }
+        finally
+        {
+            Volatile.Write(ref _ensuringActiveSessionFromRoute, 0);
+        }
+    }
+
+    private async Task EnsureActiveSessionFromRouteCoreAsync()
     {
         if (!AppMode.IsSaaSMode || !TryGetRouteBaseId(out var routeBaseId))
         {

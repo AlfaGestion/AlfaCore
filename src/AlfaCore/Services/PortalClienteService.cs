@@ -137,6 +137,7 @@ public sealed class PortalClienteService(
                     ISNULL(LTRIM(RTRIM(DESCRIPCION)), '') AS Descripcion,
                     ISNULL(CONVERT(decimal(15,2), CANTIDAD), 0) AS Cantidad,
                     ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS PrecioUnitario,
+                    ISNULL(CONVERT(decimal(15,2), IMPORTE_S_IVA), 0) AS PrecioUnitarioNeto,
                     ISNULL(CONVERT(decimal(15,2), TOTAL), 0) AS Subtotal
                 FROM dbo.V_MV_CpteInsumos
                 WHERE UPPER(LTRIM(RTRIM(IDCOMPROBANTE))) = UPPER(LTRIM(RTRIM(@IdComprobanteTexto)))
@@ -163,6 +164,44 @@ public sealed class PortalClienteService(
                 Lineas = lineas.ToList()
             };
         }, "No se pudo cargar el detalle del pedido.", ct);
+
+    public Task AnularPedidoClienteAsync(string codigoCliente, int idComprobante, CancellationToken ct = default)
+        => ExecuteLoggedAsync<bool>(ModuleName, "AnularPedidoCliente", async token =>
+        {
+            var codigo = (codigoCliente ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(codigo) || idComprobante <= 0)
+                throw new InvalidOperationException("No se pudo identificar el pedido.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var affected = await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.V_MV_Cpte
+                SET ANULADA = 1
+                WHERE ID = @IdComprobante
+                  AND UPPER(LTRIM(RTRIM(TC))) = @Tc
+                  AND LTRIM(RTRIM(SUCURSAL)) = @Sucursal
+                  AND UPPER(LTRIM(RTRIM(CUENTA))) = UPPER(LTRIM(RTRIM(@CodigoCliente)))
+                  AND ISNULL(ANULADA, 0) = 0;
+                """,
+                new { IdComprobante = idComprobante, Tc = TcPedidoWeb, Sucursal = SucursalPedidoWeb, CodigoCliente = codigo },
+                cancellationToken: token));
+
+            if (affected <= 0)
+                throw new InvalidOperationException("El pedido no está disponible para borrarlo. Puede haber sido anulado o procesado.");
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "AnularPedidoCliente",
+                "V_MV_Cpte",
+                idComprobante.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "Pedido web anulado desde el Portal Cliente.",
+                new { CodigoCliente = codigo, IdComprobante = idComprobante, Usuario = appUserSession.GetCurrentUserName("PORTAL") },
+                token);
+
+            return true;
+        }, "No se pudo borrar el pedido.", ct);
 
     // Cuenta corriente: se apoya en dbo.VE_CPTES_SALDOS_VENTAS (saldos pendientes de venta, ya con
     // el signo resuelto por DEBE/HABER contable — no se reinterpretan TC como FC/NC/ND) y

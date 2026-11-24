@@ -1001,6 +1001,7 @@ public sealed class ConversacionesConfigService(
                 BotEsperaMinutos = ReadIntValue(values, "CONV_BOT_ESPERA_MINUTOS", 0, 0),
                 BotCanales = ParseBotCanales(ReadValue(values, "CONV_BOT_CANALES", string.Empty)),
                 BotGeneraTicket = ReadValue(values, "CONV_BOT_GENERA_TICKET", string.Empty, "1") != "0",
+                BotTicketEtiqueta = ReadValue(values, "CONV_BOT_TICKET_ETIQUETA", string.Empty, "Bot"),
                 BotWebPideDatos = ReadValue(values, "CONV_BOT_WEB_PIDE_DATOS", string.Empty, "1") != "0",
                 AutoCierreActivo = ReadValue(values, "CONV_AUTOCIERRE_ACTIVO", string.Empty) == "1",
                 AutoCierreHorasAviso = ReadIntValue(values, "CONV_AUTOCIERRE_HORAS_AVISO", 0, 23),
@@ -1155,6 +1156,7 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_BOT_ESPERA_MINUTOS", Math.Max(0, config.BotEsperaMinutos).ToString(inv)));
             items.Add(("CONV_BOT_CANALES", FormatBotCanales(config.BotCanales)));
             items.Add(("CONV_BOT_GENERA_TICKET", config.BotGeneraTicket ? "1" : "0"));
+            items.Add(("CONV_BOT_TICKET_ETIQUETA", (config.BotTicketEtiqueta ?? string.Empty).Trim()));
             items.Add(("CONV_BOT_WEB_PIDE_DATOS", config.BotWebPideDatos ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()));
@@ -1457,6 +1459,29 @@ public sealed class ConversacionesConfigService(
                 Clasifica3 = ReadValue(values, "CLASIFICA3", string.Empty)
             };
         }, "No se pudo cargar la configuración de prioridad de atención.", ct);
+
+    public Task<bool> GetLlamarActivoAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetLlamarActivo", async token =>
+        {
+            var tenant = ResolveTenantConnection(null, "GetLlamarActivo");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
+            await cn.OpenAsync(token);
+            var cfg = await ConfiguracionSql.LeerAsync(cn, null, [ConversacionLlamadas.ClaveActivo], token);
+            return ConversacionLlamadas.EstaActivo(ConfiguracionSql.Valor(cfg, ConversacionLlamadas.ClaveActivo));
+        }, "No se pudo leer si el botón Llamar está activo.", ct);
+
+    public Task SaveLlamarActivoAsync(bool activo, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SaveLlamarActivo", async token =>
+        {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            await ConfiguracionSql.GrabarAsync(cn, tx, ConversacionLlamadas.ClaveActivo, activo ? "1" : "0",
+                ConversacionLlamadas.GrupoConfiguracion, "Botón Llamar en Conversaciones", token);
+            await tx.CommitAsync(token);
+            return true;
+        }, "No se pudo guardar la configuración del botón Llamar.", ct);
 
     public Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default)
     {

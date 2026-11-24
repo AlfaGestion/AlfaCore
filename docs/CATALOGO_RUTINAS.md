@@ -599,7 +599,63 @@ Criterio aplicado:
 - Datos que usa: `CONV_ADJUNTOS`, `CONV_MENSAJES`, `TA_CONFIGURACION` (`CONVERSACIONES-ADJUNTOS-*`), disco de `App_Data/uploads/conversaciones/<base>`.
 - Observaciones: un lote por base por pasada (cada minuto mientras haya trabajo, cada hora después). Nunca borra un archivo sin haber actualizado antes la fila; los huérfanos se borran solo con `CONVERSACIONES-ADJUNTOS-BORRAR-HUERFANOS = SI`.
 
+### ConversacionLlamadas
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionLlamadas.cs` (lectura/grabación del interruptor en `ConversacionesConfigService.GetLlamarActivoAsync` / `SaveLlamarActivoAsync`)
+- Propósito: botón **Llamar** de Conversaciones: arma el enlace `wa.me` del cliente y el texto de la nota interna que registra la llamada (hecha o recibida, resultado, minutos, nota).
+- Datos que usa: `TA_CONFIGURACION` (`CONV_WHATSAPP_LLAMAR_ACTIVO`, grupo `CONVERSACIONES`; vacío = prendido, `0` = apagado), `CONV_MENSAJES` (vía `AddInternalNoteAsync`).
+- Observaciones: con coexistence Meta no deja llamar por la API, así que la llamada se hace en la app WhatsApp Business y AlfaCore solo la anota. El enlace tiene que ser un `<a target="_blank">` (abrirlo desde el servidor lo bloquea el navegador). Ver `Docs/manual_conversaciones.md`, sección Llamadas.
+
 ## Gestión operativa y financiera
+
+### TicketsAtencionCalculo
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/TicketsAtencionCalculo.cs`
+- Propósito: orden «Atender primero» de Tickets: a quién le toca (nosotros, cliente o seguimiento), prioridad efectiva, plazo en horas hábiles (frenado mientras se espera al cliente), puntaje, motivos visibles y bandejas.
+- Datos que usa: `TicketAtencionDatos` (lo arma `TicketsService.Atencion.cs` con `TICK_TICKETS`, `TICK_ESTADOS_HIST`, `TICK_PLAZOS`, `CONV_MENSAJES`, `TICK_INFORMES`), `TicketsAtencionConfigDto` (`TA_CONFIGURACION` grupo `TICKETS`).
+- Observaciones: funciones puras con pruebas en `TicketsAtencionCalculoTests`; la configuración se edita en `/tickets/configuracion`.
+
+### HorarioLaboral
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/HorarioLaboral.cs`
+- Propósito: única implementación de «¿es horario laboral?» y de horas hábiles entre fechas / vencimiento a N horas hábiles.
+- Datos que usa: horario de Conversaciones → Automatizaciones (`ConversacionAutomatizacionesConfigDto`: días y franja).
+- Observaciones: lo usan el bot de Conversaciones (fuera de horario) y los plazos de Tickets; soporta franja nocturna.
+
+### ClienteAtencionSql
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ClienteAtencionSql.cs`
+- Propósito: fragmento SQL compartido del estado del abono al mantenimiento (Abonado / Suspendido / sin abono).
+- Datos que usa: `MA_CUENTAS_AUTOCPTES`.
+- Observaciones: lo usan Conversaciones, el informe mensual de Conversaciones y Tickets; no duplicar la regla en otras consultas.
+
+### TicketsAvisosCalculo
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/TicketsAvisosCalculo.cs` (envío en `TicketsService.Avisos.cs`, proceso automático `TicketsAvisosHostedService`)
+- Propósito: decide los avisos de Tickets: plazo por vencer o vencido, seguimiento vencido, cliente prioritario esperando y resumen diario por técnico. Cada aviso tiene una clave para mandarse una sola vez.
+- Datos que usa: tickets abiertos ya calculados por `TicketsAtencionCalculo`, `TicketsAvisosConfigDto` (`TA_CONFIGURACION` grupo `TICKETS`, `TICKETS-AVISO*`, `TICKETS-RESUMEN-DIARIO-HORA`), `TICK_AVISOS` (registro de lo enviado).
+- Observaciones: funciones puras con pruebas en `TicketsAvisosCalculoTests`. El envío reutiliza `IAvisosPushNotifier` (técnico) y `INotificacionesPushService` (usuarios que coordinan). El proceso automático solo manda en horario hábil; el botón «Revisar avisos ahora» de `/tickets/configuracion` corre siempre.
+
+### TicketsIaPrioridad
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/TicketsIaPrioridad.cs` (llamada en `TicketsService.SugerirPrioridadAsync` y para los tickets del bot en `ProcesarAvisosAsync`)
+- Propósito: prioridad y resumen sugeridos por IA para un ticket: instrucciones, contexto (título, descripción en texto, cliente, últimos 20 mensajes) y lectura de la respuesta.
+- Datos que usa: `TICK_TICKETS`, `CONV_MENSAJES`; IA vía `IConversacionAnalisisService.GenerarTextoAsync` (consumo `TICKET_PRIORIDAD` con `IIaUsoRecorder`, respeta el tope de créditos).
+- Observaciones: la IA decide con el contexto, sin palabras clave. A un ticket del bot la prioridad se le aplica solo si ninguna persona lo trabajó todavía; si no, queda anotada en la actividad.
+
+### WebChatContextoSoporte
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/WebChatContextoSoporte.cs`
+- Propósito: lee los campos (`CLI:`, `USR:`, `BASE:`) del contexto que manda Alfa Gestión al abrir el chat de soporte.
+- Datos que usa: `CONV_CONVERSACIONES.OrigenContexto`.
+- Observaciones: viene de la URL; sirve para completar el cliente/contacto de un ticket, nunca para identificar al visitante ante el asistente.
 
 ### Stock
 

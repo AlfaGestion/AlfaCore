@@ -3,10 +3,11 @@ namespace AlfaCore.Models;
 public static class PuntoVentaModoKeys
 {
     public const string Mostrador = "MOSTRADOR";
+    public const string MostradorProduccion = "MOSTRADOR_PRODUCCION";
     public const string Salon = "SALON";
     public const string Delivery = "DELIVERY";
 
-    public static readonly string[] All = [Mostrador, Salon, Delivery];
+    public static readonly string[] All = [Mostrador, MostradorProduccion, Salon, Delivery];
 }
 
 public sealed class PuntoVentaCatalogoOpcionDto
@@ -97,6 +98,7 @@ public sealed class PuntoVentaMesaDto
     public double? PosY { get; set; }
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public string Formato { get; set; } = PuntoVentaMesaFormatoKeys.Cuadrada;
     public string Icono { get; set; } = string.Empty;
     public string Imagen { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
@@ -113,8 +115,23 @@ public sealed class PuntoVentaMesaSaveRequest
     public double? PosY { get; set; }
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public string Formato { get; set; } = PuntoVentaMesaFormatoKeys.Cuadrada;
     public string Icono { get; set; } = string.Empty;
     public string Imagen { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
     public string? UsuarioAccion { get; set; }
+}
+
+public static class PuntoVentaMesaFormatoKeys
+{
+    public const string Cuadrada = "CUADRADA";
+    public const string Circular = "CIRCULAR";
+    public const string Triangular = "TRIANGULAR";
+
+    public static string Normalizar(string? formato) => formato?.Trim().ToUpperInvariant() switch
+    {
+        Circular => Circular,
+        Triangular => Triangular,
+        _ => Cuadrada
+    };
 }

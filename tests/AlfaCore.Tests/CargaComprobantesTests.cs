@@ -120,7 +120,7 @@ public sealed class CargaComprobantesTests
                     DispatchProxy.Create<IWsaaClient, CargaComprobantesUiTests.EventOnlyProxy>(), DispatchProxy.Create<IWsfev1Client, CargaComprobantesUiTests.EventOnlyProxy>(), events),
                 DispatchProxy.Create<IArcaConfigService, CargaComprobantesUiTests.EventOnlyProxy>(), events),
             DispatchProxy.Create<IFacturaDocumentService, CargaComprobantesUiTests.EventOnlyProxy>(),
-            DispatchProxy.Create<IDocumentPdfService, CargaComprobantesUiTests.EventOnlyProxy>());
+            DispatchProxy.Create<IDocumentPdfService, CargaComprobantesUiTests.EventOnlyProxy>(), null, null!);
         var serviceContext = await service.GetContextoAsync();
         Assert.Equal(session.Id, serviceContext.SesionId);
         var talonario = serviceContext.Talonarios.First(x => x.UnidadNegocio.Length == 0 || x.UnidadNegocio == origen.UnidadNegocio);

@@ -19,14 +19,8 @@ public sealed class LegacyPythonApiProxy(
 
     private static readonly string[] HopByHopHeaders =
     [
-        "Connection",
-        "Keep-Alive",
-        "Proxy-Authenticate",
-        "Proxy-Authorization",
-        "TE",
-        "Trailer",
-        "Transfer-Encoding",
-        "Upgrade"
+        "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+        "TE", "Trailer", "Transfer-Encoding", "Upgrade"
     ];
 
     public async Task ForwardAsync(HttpContext context, CancellationToken ct)
@@ -46,54 +40,80 @@ public sealed class LegacyPythonApiProxy(
             return;
         }
 
-        var targetText = settings.BaseUrl.TrimEnd('/') + context.Request.Path + context.Request.QueryString;
-        if (!Uri.TryCreate(targetText, UriKind.Absolute, out var targetUri))
+        var baseUrls = settings.GetBaseUrls()
+            .Where(value => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            .ToArray();
+        if (baseUrls.Length == 0)
         {
             await WriteErrorAsync(context, StatusCodes.Status503ServiceUnavailable,
                 "La URL de la API Python no es válida.");
             return;
         }
 
-        using var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), targetUri);
-        CopyRequestHeaders(context.Request, request);
-
+        byte[]? requestBody = null;
         if (RequestCanHaveBody(context.Request.Method))
         {
-            request.Content = new StreamContent(context.Request.Body);
-            if (!string.IsNullOrWhiteSpace(context.Request.ContentType))
-                request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(context.Request.ContentType);
-            if (context.Request.ContentLength is long contentLength)
-                request.Content.Headers.ContentLength = contentLength;
-
-            // wsAlfa corre detrás de IIS/wfastcgi y algunas rutas POST no aceptan el cuerpo
-            // enviado como chunked ni la negociación Expect: 100-continue.
-            request.Headers.ExpectContinue = false;
+            // El cuerpo debe poder repetirse si falla el primer endpoint.
+            await using var bodyBuffer = new MemoryStream();
+            await context.Request.Body.CopyToAsync(bodyBuffer, ct);
+            requestBody = bodyBuffer.ToArray();
         }
 
-        try
+        Exception? lastException = null;
+        var hadTimeout = false;
+        foreach (var baseUrl in baseUrls)
         {
-            var client = httpClientFactory.CreateClient(HttpClientName);
-            using var response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
+            var targetText = baseUrl + context.Request.Path + context.Request.QueryString;
+            if (!Uri.TryCreate(targetText, UriKind.Absolute, out var targetUri))
+                continue;
 
-            context.Response.StatusCode = (int)response.StatusCode;
-            CopyResponseHeaders(response, context.Response);
-            await response.Content.CopyToAsync(context.Response.Body, ct);
+            try
+            {
+                using var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), targetUri);
+                CopyRequestHeaders(context.Request, request);
+
+                if (requestBody is not null)
+                {
+                    request.Content = new ByteArrayContent(requestBody);
+                    if (!string.IsNullOrWhiteSpace(context.Request.ContentType))
+                        request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(context.Request.ContentType);
+
+                    request.Headers.ExpectContinue = false;
+                }
+
+                var client = httpClientFactory.CreateClient(HttpClientName);
+                using var response = await client.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    ct);
+
+                context.Response.StatusCode = (int)response.StatusCode;
+                CopyResponseHeaders(response, context.Response);
+                await response.Content.CopyToAsync(context.Response.Body, ct);
+                return;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                hadTimeout = true;
+                lastException = new TimeoutException(
+                    $"Se agotó el tiempo de espera al comunicarse con la API Python en {baseUrl}.");
+            }
+            catch (HttpRequestException ex)
+            {
+                lastException = ex;
+            }
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+
+        if (lastException is not null)
         {
-            var exception = new TimeoutException("Se agotó el tiempo de espera al comunicarse con la API Python.");
-            await LogProxyErrorAsync(context, exception, "La API Python no respondió a tiempo.", ct);
-            await WriteErrorAsync(context, StatusCodes.Status504GatewayTimeout,
-                "La API no respondió a tiempo.");
-        }
-        catch (HttpRequestException ex)
-        {
-            await LogProxyErrorAsync(context, ex, "No se pudo conectar con la API Python.", ct);
-            await WriteErrorAsync(context, StatusCodes.Status502BadGateway,
-                "No se pudo conectar con la API central de servicios.");
+            var technicalMessage = hadTimeout
+                ? "La API Python no respondió a tiempo."
+                : "No se pudo conectar con la API Python.";
+            await LogProxyErrorAsync(context, lastException, technicalMessage, ct);
+            await WriteErrorAsync(context,
+                hadTimeout ? StatusCodes.Status504GatewayTimeout : StatusCodes.Status502BadGateway,
+                hadTimeout ? "La API no respondió a tiempo." : "No se pudo conectar con la API central de servicios.");
         }
     }
 
@@ -103,10 +123,7 @@ public sealed class LegacyPythonApiProxy(
             context.Request.Method, context.Request.Path);
 
         await appEvents.LogErrorAsync(
-            "Api",
-            "PythonLegacyProxy",
-            exception,
-            message,
+            "Api", "PythonLegacyProxy", exception, message,
             new
             {
                 context.Request.Method,
@@ -164,10 +181,7 @@ public sealed class LegacyPythonApiProxy(
         context.Response.ContentType = "application/json; charset=utf-8";
         await JsonSerializer.SerializeAsync(context.Response.Body, new
         {
-            status = "error",
-            message,
-            error = true,
-            traceId = context.TraceIdentifier
+            status = "error", message, error = true, traceId = context.TraceIdentifier
         });
     }
 }

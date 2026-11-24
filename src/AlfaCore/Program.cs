@@ -467,6 +467,8 @@ public class Program
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
         builder.Services.AddScoped<CobranzasService>();
+        builder.Services.AddScoped<IPuntoVentaAnticiposService, PuntoVentaAnticiposService>();
+        builder.Services.AddScoped<IPuntoVentaAnticipoRegistroService, PuntoVentaAnticipoRegistroService>();
         builder.Services.AddScoped<ReclamoSaldosService>();
         builder.Services.AddScoped<OrdenPagoService>();
         builder.Services.AddScoped<CargaComprobantesRepository>();
@@ -599,6 +601,7 @@ public class Program
             builder.Services.AddHostedService<CalendarioRecordatoriosHostedService>();
             builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
             builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+            builder.Services.AddHostedService<TicketsAvisosHostedService>();
             builder.Services.AddHostedService<ConversacionesAdjuntosCompactacionHostedService>();
             builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();

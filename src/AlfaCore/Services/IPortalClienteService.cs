@@ -6,6 +6,7 @@ public interface IPortalClienteService
 {
     Task<PagedResult<PortalClientePedidoResumenDto>> GetPedidosClienteAsync(PortalClientePedidosFiltroDto filtro, CancellationToken ct = default);
     Task<PortalClientePedidoDetalleDto?> GetPedidoClienteDetalleAsync(string codigoCliente, int idComprobante, CancellationToken ct = default);
+    Task AnularPedidoClienteAsync(string codigoCliente, int idComprobante, CancellationToken ct = default);
     Task<PortalClienteCuentaCorrienteResumenDto> GetResumenCuentaCorrienteAsync(string codigoCliente, CancellationToken ct = default);
     Task<PortalClienteCuentaCorrienteDto> GetCuentaCorrienteAsync(PortalClienteCuentaCorrienteFiltroDto filtro, CancellationToken ct = default);
     Task<PortalClienteEstadoCuentaDto> GetEstadoCuentaAsync(PortalClienteEstadoCuentaFiltroDto filtro, CancellationToken ct = default);

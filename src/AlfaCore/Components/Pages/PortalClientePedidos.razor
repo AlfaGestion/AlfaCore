@@ -6,6 +6,7 @@
 @using AlfaCore.Components.Shared
 @using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
+@inject AlfaCore.Services.IAppUiDialogService DialogSvc
 
 <PageTitle>Pedidos | Portal Cliente</PageTitle>
 
@@ -17,6 +18,7 @@
             <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL. Probá nuevamente desde el enlace correcto.</p>
         </section>
     </section>
+
 }
 else if (!IsAuthenticated)
 {
@@ -63,6 +65,9 @@ else
                     <h3 class="portal-cliente__section-title">Pedidos</h3>
                     <p class="portal-cliente__section-subtitle">Consultá tus pedidos registrados.</p>
                 </div>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" OnClick="NuevoPedido">
+                    Nuevo pedido
+                </AlfaButton>
             </header>
 
             <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
@@ -134,7 +139,19 @@ else
                                     <td data-label="Vencimiento">—</td>
                                     <td data-label="Importe" class="text-end">@Money(pedido.Total)</td>
                                     <td data-label="Estado"><AlfaTag Tone="@(pedido.Anulada ? AlfaTagTone.Danger : AlfaTagTone.Success)">@(pedido.Anulada ? "Anulado" : "Registrado")</AlfaTag></td>
-                                    <td data-label="Acciones"><a class="btn btn--ghost btn--sm" href="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")"><i class="bi bi-eye"></i> Ver comprobante</a></td>
+                                    <td data-label="Acciones">
+                                        <div class="portal-cliente__pedido-actions">
+                                            <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")"><i class="bi bi-eye"></i> Ver comprobante</a>
+                                            @if (!pedido.Anulada)
+                                            {
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="() => EditarPedidoAsync(pedido)">Editar</AlfaButton>
+                                            }
+                                            @if (!pedido.Anulada)
+                                            {
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-trash3" OnClick="() => BorrarPedidoAsync(pedido)">Borrar</AlfaButton>
+                                            }
+                                        </div>
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -158,6 +175,30 @@ else
     </section>
 }
 
+@if (_pedidoEditorAbierto)
+{
+    <div class="portal-cliente__pedido-editor-backdrop" role="presentation" @onclick="CerrarEditorAsync">
+        <section class="portal-cliente__pedido-editor" role="dialog" aria-modal="true" aria-labelledby="portal-pedido-editor-title" @onclick:stopPropagation="true">
+            <header class="portal-cliente__pedido-editor-header">
+                <div>
+                    <span class="portal-cliente__pedido-editor-eyebrow">Portal Cliente</span>
+                    <h2 id="portal-pedido-editor-title">@_pedidoEditorTitulo</h2>
+                </div>
+                <button type="button" class="portal-cliente__pedido-editor-close" @onclick="CerrarEditorAsync" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="portal-cliente__pedido-editor-body">
+                <VentasCargaDirecta idweb="@idweb"
+                                    idbase="@idbase"
+                                    EditarPedidoId="@_pedidoEditorId"
+                                    PortalModeOverride="true"
+                                    OnPortalClosed="CerrarEditorAsync" />
+            </div>
+        </section>
+    </div>
+}
+
 @code {
     protected override string? RequiredSectionKey => "pedidos";
 
@@ -171,6 +212,9 @@ else
     private string _rango = "ultimos-30-dias";
     private PagedResult<PortalClientePedidoResumenDto> _pedidos = new();
     private AppUiMessage? _feedback;
+    private bool _pedidoEditorAbierto;
+    private int? _pedidoEditorId;
+    private string _pedidoEditorTitulo = "Nuevo pedido";
 
     private static readonly IReadOnlyList<AlfaSelectOption> RangoOptions =
     [
@@ -297,6 +341,55 @@ else
     {
         Nav.NavigateTo(BuildExportUrl(), forceLoad: true);
         return Task.CompletedTask;
+    }
+
+    private void NuevoPedido()
+    {
+        _pedidoEditorTitulo = "Nuevo pedido";
+        _pedidoEditorId = null;
+        _pedidoEditorAbierto = true;
+    }
+
+    private Task EditarPedidoAsync(PortalClientePedidoResumenDto pedido)
+    {
+        if (pedido.Anulada)
+            return Task.CompletedTask;
+
+        _pedidoEditorTitulo = $"Editar pedido {pedido.Tc} {pedido.IdComprobanteTexto}";
+        _pedidoEditorId = pedido.IdComprobante;
+        _pedidoEditorAbierto = true;
+        return Task.CompletedTask;
+    }
+
+    private async Task CerrarEditorAsync()
+    {
+        _pedidoEditorAbierto = false;
+        _pedidoEditorId = null;
+        await CargarPedidosAsync();
+    }
+
+    private async Task BorrarPedidoAsync(PortalClientePedidoResumenDto pedido)
+    {
+        if (pedido.Anulada)
+            return;
+
+        var confirmado = await DialogSvc.ConfirmAsync(
+            "Borrar pedido",
+            $"El pedido {pedido.Tc} {pedido.IdComprobanteTexto} quedará anulado y dejará de estar disponible para editarlo. ¿Querés continuar?",
+            "Borrar",
+            "Cancelar");
+        if (!confirmado)
+            return;
+
+        var result = await UiOps.RunAsync(
+            () => PortalClienteSvc.AnularPedidoClienteAsync(GetCurrentCodigoCliente(), pedido.IdComprobante),
+            "No se pudo borrar el pedido.");
+        _feedback = result.Success
+            ? new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Message = "El pedido se borró correctamente." }
+            : result.Feedback;
+
+        if (result.Success)
+            await CargarPedidosAsync();
     }
 
     private static string Money(decimal value)

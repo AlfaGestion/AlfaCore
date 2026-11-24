@@ -21,13 +21,15 @@ AlfaCore puede exponer las mismas rutas y derivarlas al servicio Python mediante
 ```text
 Api__PythonLegacy__Enabled=true
 Api__PythonLegacy__BaseUrl=https://alfacentral.ddns.net/
+Api__PythonLegacy__BaseUrls__0=https://alfacentral.ddns.net/
 Api__PythonLegacy__TimeoutSeconds=120
 ```
 
 Mientras `Enabled` sea `false`, esas rutas no se habilitan. La URL debe configurarse en el
 servidor o mediante variables de entorno; no se deben guardar credenciales en este repositorio.
-En el entorno actual, `wsAlfa` se publica mediante `https://alfacentral.ddns.net/`.
-Si el binding o la infraestructura cambia, ajustar esta variable de entorno en el servidor.
+En el entorno actual, AlfaCore conserva como único endpoint activo
+`https://alfacentral.ddns.net/`, que es el endpoint público usado por los clientes existentes.
+`alfanetac.ddns.net` queda reservado para el servidor legacy separado.
 
 ## Exclusiones intencionales
 

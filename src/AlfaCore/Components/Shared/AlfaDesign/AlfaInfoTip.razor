@@ -1,0 +1,33 @@
+@* Burbuja (i) para el texto explicativo de una pantalla: el texto queda escondido y se ve al tocar
+   el botón (o al pasar el mouse en computadora). Va dentro del título, después del texto. *@
+<span class="alfa-info-tip @(_abierto ? "is-open" : null) @Class">
+    <button type="button"
+            class="alfa-info-tip__btn"
+            aria-label="@AriaLabel"
+            aria-expanded="@(_abierto ? "true" : "false")"
+            @onclick="Alternar"
+            @onkeydown="TeclaAsync"><i class="bi bi-info-lg" aria-hidden="true"></i></button>
+    @if (_abierto)
+    {
+        <span class="alfa-info-tip__backdrop" aria-hidden="true" @onclick="Cerrar"></span>
+    }
+    <span class="alfa-info-tip__bubble" role="note">@ChildContent</span>
+</span>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Más información";
+    [Parameter] public string? Class { get; set; }
+
+    private bool _abierto;
+
+    private void Alternar() => _abierto = !_abierto;
+
+    private void Cerrar() => _abierto = false;
+
+    private Task TeclaAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") _abierto = false;
+        return Task.CompletedTask;
+    }
+}

@@ -10,12 +10,14 @@ public static class PedidoWebOrigenHelper
 {
     private static readonly Regex PedidoWebRegex = new(
         @"^Pedido web - Catálogo #(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex PedidoWebPortalRegex = new(
+        @"^Pedido web - Portal Cliente$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static (bool EsWeb, int? IdCatalogo) Parse(string? comentarios)
     {
         var match = PedidoWebRegex.Match((comentarios ?? string.Empty).Trim());
         if (!match.Success)
-            return (false, null);
+            return (PedidoWebPortalRegex.IsMatch((comentarios ?? string.Empty).Trim()), null);
 
         return int.TryParse(match.Groups[1].Value, out var idCatalogo)
             ? (true, idCatalogo)

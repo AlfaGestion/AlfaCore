@@ -1,0 +1,262 @@
+@page "/tickets/configuracion"
+@page "/{idweb}/{idbase:int}/tickets/configuracion"
+@using AlfaCore.Models
+@inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Configuración de tickets | Alfa Gestión</PageTitle>
+
+<div class="gd-page gd gd-legacy tkcfg-page">
+    <header class="gd-header">
+        <div>
+            <h2>Configuración de tickets<AlfaInfoTip>Plazos de atención por prioridad y cómo se arma el orden «Atender primero». Los plazos se cuentan en horario laboral (el de Conversaciones → Automatizaciones) y se frenan mientras se espera al cliente.</AlfaInfoTip></h2>
+        </div>
+    </header>
+
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_config is null)
+    {
+        <AlfaEmptyState Title="Cargando configuración" Message="Esperá un momento." />
+    }
+    else
+    {
+        <section class="panel-card">
+            <h3 class="panel-card__title">Plazos por prioridad</h3>
+            <p class="panel-card__subtitle">
+                Horas hábiles para la primera respuesta y para resolver el ticket. La prioridad es la del ticket (estrellas)
+                y sube un nivel si el cliente es prioritario (clasificación marcada en Conversaciones o abono al mantenimiento).
+            </p>
+            <div class="tkcfg-tabla" role="table" aria-label="Plazos por prioridad">
+                <div class="tkcfg-fila tkcfg-fila--cabecera" role="row">
+                    <span role="columnheader">Prioridad</span>
+                    <span role="columnheader">Primera respuesta (h)</span>
+                    <span role="columnheader">Resolución (h)</span>
+                </div>
+                @foreach (var plazo in _config.Plazos.OrderByDescending(p => p.Prioridad))
+                {
+                    var actual = plazo;
+                    <div class="tkcfg-fila" role="row">
+                        <span role="cell" class="tkcfg-prioridad">@NombrePrioridad(actual.Prioridad)</span>
+                        <AlfaInput Type="number" Step="1" Value="@actual.HorasRespuesta.ToString()"
+                                   ValueChanged="v => actual.HorasRespuesta = Numero(v, actual.HorasRespuesta)" Disabled="@_saving" />
+                        <AlfaInput Type="number" Step="1" Value="@actual.HorasResolucion.ToString()"
+                                   ValueChanged="v => actual.HorasResolucion = Numero(v, actual.HorasResolucion)" Disabled="@_saving" />
+                    </div>
+                }
+            </div>
+            <div class="tkcfg-grid">
+                <AlfaInput Label="«Por vencer» desde (% del plazo usado)" Type="number" Step="5" Value="@_config.PorVencerPorcentaje.ToString()"
+                           ValueChanged="v => _config.PorVencerPorcentaje = Numero(v, _config.PorVencerPorcentaje)" Disabled="@_saving" />
+                <AlfaInput Label="Estados en los que se espera al cliente" Value="@_config.EstadosEsperaCliente"
+                           ValueChanged="v => _config.EstadosEsperaCliente = v ?? string.Empty" Disabled="@_saving"
+                           HelpText="Códigos de etapa separados por coma (ej. EN_ESPERA). En esas etapas el plazo se frena." />
+            </div>
+        </section>
+
+        <section class="panel-card">
+            <h3 class="panel-card__title">Orden «Atender primero»</h3>
+            <p class="panel-card__subtitle">
+                Cada ticket que espera respuesta nuestra suma puntos por lo que tiene. Más puntos, más arriba.
+                Los que esperan al cliente o tienen un seguimiento programado van después.
+            </p>
+            <div class="tkcfg-grid">
+                <AlfaInput Label="Plazo vencido" Type="number" Step="5" Value="@_config.PesoVencido.ToString()"
+                           ValueChanged="v => _config.PesoVencido = Numero(v, _config.PesoVencido)" Disabled="@_saving" />
+                <AlfaInput Label="Plazo por vencer" Type="number" Step="5" Value="@_config.PesoPorVencer.ToString()"
+                           ValueChanged="v => _config.PesoPorVencer = Numero(v, _config.PesoPorVencer)" Disabled="@_saving" />
+                <AlfaInput Label="Por cada nivel de prioridad" Type="number" Step="1" Value="@_config.PesoPrioridad.ToString()"
+                           ValueChanged="v => _config.PesoPrioridad = Numero(v, _config.PesoPrioridad)" Disabled="@_saving" />
+                <AlfaInput Label="Cliente prioritario" Type="number" Step="5" Value="@_config.PesoClientePrioritario.ToString()"
+                           ValueChanged="v => _config.PesoClientePrioritario = Numero(v, _config.PesoClientePrioritario)" Disabled="@_saving" />
+                <AlfaInput Label="Cliente con varios casos abiertos" Type="number" Step="5" Value="@_config.PesoVariosCasos.ToString()"
+                           ValueChanged="v => _config.PesoVariosCasos = Numero(v, _config.PesoVariosCasos)" Disabled="@_saving" />
+                <AlfaInput Label="Varios casos = desde (cantidad)" Type="number" Step="1" Value="@_config.VariosCasosDesde.ToString()"
+                           ValueChanged="v => _config.VariosCasosDesde = Numero(v, _config.VariosCasosDesde)" Disabled="@_saving" />
+                <AlfaInput Label="Por cada hora hábil esperando" Type="number" Step="1" Value="@_config.PesoHoraEspera.ToString()"
+                           ValueChanged="v => _config.PesoHoraEspera = Numero(v, _config.PesoHoraEspera)" Disabled="@_saving" />
+                <AlfaInput Label="Tope de puntos por espera" Type="number" Step="5" Value="@_config.PesoHoraEsperaTope.ToString()"
+                           ValueChanged="v => _config.PesoHoraEsperaTope = Numero(v, _config.PesoHoraEsperaTope)" Disabled="@_saving" />
+                <AlfaInput Label="Seguimiento vencido" Type="number" Step="5" Value="@_config.PesoSeguimientoVencido.ToString()"
+                           ValueChanged="v => _config.PesoSeguimientoVencido = Numero(v, _config.PesoSeguimientoVencido)" Disabled="@_saving" />
+            </div>
+        </section>
+
+        @if (_avisos is not null)
+        {
+            <section class="panel-card tkcfg-avisos">
+                <h3 class="panel-card__title">Avisos automáticos<AlfaInfoTip>Llegan como notificación al celular o la computadora (las mismas de la campana). Cada aviso sale una sola vez por ticket y solo en horario de atención. Lo que no tiene técnico asignado va a los usuarios que coordinan.</AlfaInfoTip></h3>
+                <p class="panel-card__subtitle">Qué avisar, a quién y cuándo.</p>
+                <div class="tkcfg-checks">
+                    <AlfaCheckbox Value="@_avisos.Activo" ValueChanged="v => _avisos.Activo = v == true" Disabled="@_saving">Mandar avisos automáticos</AlfaCheckbox>
+                    <AlfaCheckbox Value="@_avisos.AvisarPorVencer" ValueChanged="v => _avisos.AvisarPorVencer = v == true" Disabled="@(_saving || !_avisos.Activo)">Al técnico, cuando el plazo está por vencer</AlfaCheckbox>
+                    <AlfaCheckbox Value="@_avisos.AvisarVencido" ValueChanged="v => _avisos.AvisarVencido = v == true" Disabled="@(_saving || !_avisos.Activo)">Al técnico, cuando el plazo venció</AlfaCheckbox>
+                    <AlfaCheckbox Value="@_avisos.AvisarSeguimiento" ValueChanged="v => _avisos.AvisarSeguimiento = v == true" Disabled="@(_saving || !_avisos.Activo)">Al técnico, el día del seguimiento («Recordarme…»)</AlfaCheckbox>
+                    <AlfaCheckbox Value="@_avisos.IaPrioridadBot" ValueChanged="v => _avisos.IaPrioridadBot = v == true" Disabled="@(_saving || !_avisos.Activo)">La IA sugiere la prioridad de los tickets que crea el bot</AlfaCheckbox>
+                </div>
+                <div class="tkcfg-grid">
+                    <AlfaInput Label="Usuarios que coordinan" Value="@_avisos.Coordinadores" ValueChanged="v => _avisos.Coordinadores = v ?? string.Empty"
+                               Disabled="@(_saving || !_avisos.Activo)" Placeholder="Ej.: alberto, soporte"
+                               HelpText="Usuarios del sistema separados por coma. Reciben lo que no tiene técnico y los clientes prioritarios que esperan." />
+                    <AlfaInput Label="Cliente prioritario esperando: avisar a las (horas hábiles)" Type="number" Step="1" Value="@_avisos.PrioritarioHoras.ToString()"
+                               ValueChanged="v => _avisos.PrioritarioHoras = Numero(v, _avisos.PrioritarioHoras)" Disabled="@(_saving || !_avisos.Activo)"
+                               HelpText="0 = no avisar." />
+                    <AlfaSelect Label="Resumen diario a cada técnico" Options="HorasResumen" Value="@(_avisos.ResumenHora?.ToString() ?? string.Empty)"
+                                ValueChanged="v => _avisos.ResumenHora = int.TryParse(v, out var h) ? h : null" Disabled="@(_saving || !_avisos.Activo)" />
+                </div>
+                <div class="tkcfg-avisos__acciones">
+                    <button type="button" class="btn btn--ghost btn--sm" disabled="@(_saving || _revisando)" @onclick="RevisarAvisosAsync">
+                        <i class="bi bi-bell"></i> @(_revisando ? "Revisando…" : "Revisar avisos ahora")
+                    </button>
+                    <span>Manda ahora lo que esté pendiente, aunque sea fuera de horario. Antes guardá los cambios.</span>
+                </div>
+
+                <h4 class="tkcfg-avisos__titulo">Últimos avisos enviados</h4>
+                @if (_ultimos.Count == 0)
+                {
+                    <p class="tkcfg-avisos__vacio">Todavía no se mandó ningún aviso.</p>
+                }
+                else
+                {
+                    <ul class="tkcfg-avisos__lista">
+                        @foreach (var aviso in _ultimos)
+                        {
+                            <li>
+                                <span class="tkcfg-avisos__fecha">@aviso.FechaHora.ToString("dd/MM HH:mm")</span>
+                                @if (aviso.IdTicket > 0)
+                                {
+                                    <a href="@UrlTicket(aviso.IdTicket)">#@aviso.Numero</a>
+                                }
+                                <span>@aviso.Detalle</span>
+                                <small>→ @aviso.Destino</small>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private TicketsAtencionConfigDto? _config;
+    private TicketsAvisosConfigDto? _avisos;
+    private IReadOnlyList<TicketAvisoEnviadoDto> _ultimos = [];
+    private bool _revisando;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> HorasResumen =
+        [new(string.Empty, "No mandar"), .. Enumerable.Range(6, 15).Select(h => new AlfaSelectOption(h.ToString(), $"A las {h}:00"))];
+    private AppUiMessage? _feedback;
+    private bool _saving;
+    private bool _headerSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetAtencionConfigAsync(), "No se pudo cargar la configuración de tickets.");
+        if (result.Success && result.Value is not null)
+            _config = result.Value;
+        else
+            _feedback = result.Feedback;
+
+        var avisos = await UiOps.RunAsync(() => TicketsSvc.GetAvisosConfigAsync(), "No se pudo cargar la configuración de avisos.");
+        if (avisos.Success && avisos.Value is not null)
+            _avisos = avisos.Value;
+        else
+            _feedback ??= avisos.Feedback;
+        await CargarUltimosAsync();
+    }
+
+    private async Task CargarUltimosAsync()
+    {
+        var ultimos = await UiOps.RunAsync(() => TicketsSvc.GetUltimosAvisosAsync(15), "No se pudieron leer los últimos avisos.");
+        if (ultimos.Success && ultimos.Value is not null)
+            _ultimos = ultimos.Value;
+    }
+
+    private async Task RevisarAvisosAsync()
+    {
+        _revisando = true;
+        var result = await UiOps.RunAsync(() => TicketsSvc.ProcesarAvisosAsync(manual: true), "No se pudieron revisar los avisos.");
+        _revisando = false;
+        _feedback = result.Success && result.Value is not null
+            ? (result.Value.Ejecutado ? AppUiMessage.Success("Avisos revisados", result.Value.Mensaje) : AppUiMessage.Warning("Avisos", result.Value.Mensaje))
+            : result.Feedback;
+        await CargarUltimosAsync();
+    }
+
+    private string UrlTicket(long idTicket) => RouteContext.BuildRoute(AlfaCore.Services.TicketsAvisosCalculo.UrlTicket(idTicket));
+
+    private bool _headerCargado;
+
+    // El header se republica cuando cambia algo que muestra: guardando, o la configuración terminó de cargar
+    // (si no, «Guardar configuración» quedaba deshabilitado al abrir la página directo).
+    protected override void OnAfterRender(bool firstRender)
+    {
+        var cargado = _config is not null;
+        if (firstRender || _headerSaving != _saving || _headerCargado != cargado)
+        {
+            _headerSaving = _saving;
+            _headerCargado = cargado;
+            UpdatePageHeader();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        Title = "Configuración",
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildTickets(RouteContext, Nav, "configuracion"),
+        Actions =
+        [
+            new PageHeaderAction
+            {
+                Key = "guardar",
+                Label = "Guardar configuración",
+                Icon = "bi-floppy",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Busy = _saving,
+                Disabled = _saving || _config is null,
+                OnClick = () => InvokeAsync(async () => { await GuardarAsync(); StateHasChanged(); })
+            }
+        ]
+    });
+
+    private async Task GuardarAsync()
+    {
+        if (_config is null)
+            return;
+        _saving = true;
+        var result = await UiOps.RunAsync(async () =>
+            {
+                await TicketsSvc.SaveAtencionConfigAsync(_config);
+                if (_avisos is not null)
+                    await TicketsSvc.SaveAvisosConfigAsync(_avisos);
+                return true;
+            },
+            "No se pudo guardar la configuración de tickets.");
+        _saving = false;
+        _feedback = result.Success
+            ? AppUiMessage.Success("Configuración guardada", "Los plazos y el orden se aplican la próxima vez que se cargue la lista de tickets; los avisos, en la próxima revisión.")
+            : result.Feedback;
+    }
+
+    private static int Numero(string? valor, int actual)
+        => int.TryParse(valor, out var n) && n >= 0 ? n : actual;
+
+    private static string NombrePrioridad(int prioridad)
+        => prioridad <= 0
+            ? AlfaCore.Services.TicketsService.NombrePrioridad(prioridad)
+            : $"{AlfaCore.Services.TicketsService.NombrePrioridad(prioridad)} ({prioridad} {(prioridad == 1 ? "estrella" : "estrellas")})";
+}

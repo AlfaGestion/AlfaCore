@@ -173,3 +173,13 @@
         grid-row: 1 / -1;
     }
 }
+
+/* El botón «Generar» no se achica: en celular el texto se partía en tres renglones. */
+.cotiz-ia-input ::deep .alfa-button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.cotiz-ia-input input {
+    min-width: 0;
+}

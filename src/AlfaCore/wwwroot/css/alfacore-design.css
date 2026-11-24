@@ -1344,6 +1344,10 @@
     cursor: pointer;
 }
 
+.alfa-app-topbar__more-current {
+    display: none;
+}
+
 .alfa-app-topbar__more-toggle .bi {
     font-size: 11px;
 }
@@ -1399,4 +1403,316 @@
 .alfa-app-topbar__more-item.is-disabled {
     color: var(--alfa-text-disabled);
     cursor: default;
+}
+
+/* Celular: la barra global no entraba (logo + nombre + Inicio/Atrás/Adelante + indicador + 6 íconos) y los
+   textos se pisaban. Queda el logo (lleva a Inicio), las secciones del módulo (con «Más») y los íconos.
+   Atrás/Adelante los da el teléfono; Ayuda sigue en el menú del usuario; la base se ve al tocar el ícono. */
+@media (max-width: 640px) {
+    .alfa-app-topbar {
+        gap: var(--alfa-space-4);
+        padding-inline: var(--alfa-space-8);
+    }
+
+    .alfa-app-topbar__brand {
+        gap: var(--alfa-space-8);
+    }
+
+    .alfa-app-topbar__brand-copy,
+    .alfa-app-topbar__history,
+    .alfa-app-topbar__global-icon--help {
+        display: none;
+    }
+
+    .alfa-app-topbar__global-actions {
+        gap: 2px;
+    }
+
+    .alfa-app-topbar__chip--base {
+        padding-inline: 6px;
+        gap: 2px;
+    }
+
+    .alfa-app-topbar__chip--base span,
+    .alfa-app-topbar__chip--base .bi-chevron-down {
+        display: none;
+    }
+
+    .alfa-app-topbar__brand {
+        min-width: 0;
+    }
+
+    .alfa-app-topbar__more {
+        flex: 0 1 auto;
+        margin-left: 0;
+        min-width: 0;
+    }
+
+    /* Selector de sección: «Clientes ⌄» abre todas las secciones del módulo (las solapas no entran). */
+    .alfa-app-topbar .alfa-app-topbar__more-toggle {
+        max-width: 100%;
+        min-width: 0;
+        overflow: hidden;
+        padding: 0 4px;
+        color: var(--alfa-text-primary);
+        font-weight: 600;
+    }
+
+    .alfa-app-topbar .alfa-app-topbar__more-toggle .alfa-app-topbar__more-current {
+        display: inline;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .alfa-app-topbar .alfa-app-topbar__more-toggle .bi {
+        flex: 0 0 auto;
+    }
+
+    .alfa-app-topbar .alfa-app-topbar__more-toggle .alfa-app-topbar__more-label {
+        display: none;
+    }
+
+    .alfa-app-topbar__more-menu {
+        left: 0;
+        right: auto;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100dvh - 72px);
+        overflow-y: auto;
+    }
+
+    /* En celular la búsqueda va sola en su renglón: el filtro activo ("Mes actual") puede mostrarse entero. */
+    .shell.shell--alfa-design .smart-search__active-filters {
+        flex-shrink: 0;
+        max-width: 55%;
+    }
+
+    .shell.shell--alfa-design .smart-search__active-filter {
+        max-width: 150px;
+    }
+
+    /* Panel de filtros del buscador: a todo el ancho y en una columna (algunas pantallas lo dejaban en 2/3). */
+    .shell.shell--alfa-design .main-page-header .main-page-header__search .smart-search__panel {
+        left: 0 !important;
+        right: auto !important;
+        width: calc(100vw - 16px) !important;
+        max-width: none !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    /* Buscadores con ancho propio (ej. Tickets: flex 620px sin achicarse) se salían por los dos costados. */
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__search .smart-search {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+    }
+}
+
+/* Celular: los botones de la derecha de la barra superior, todos iguales (32px, mismo fondo, sin
+   borde) y centrados. La regla global de campos táctiles (alto mínimo 42px) los hacía más altos que
+   la barra y quedaban con los bordes cortados. */
+@media (max-width: 640px) {
+    .alfa-app-topbar button,
+    .alfa-app-topbar a {
+        min-height: 0;
+    }
+
+    .alfa-app-topbar__global-actions {
+        align-items: center;
+        gap: 4px;
+    }
+
+    .alfa-app-topbar .alfa-app-topbar__global-icon,
+    .alfa-app-topbar .alfa-app-topbar__chip--base {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        justify-content: center;
+        border: 0;
+        border-radius: 6px;
+    }
+
+    .alfa-app-topbar .alfa-app-topbar__chip.tb-usr__trigger {
+        height: 32px;
+        padding: 0 4px 0 4px;
+        gap: 2px;
+        border: 0;
+        border-radius: 999px;
+    }
+
+    .alfa-app-topbar .tb-usr__trigger .bi-chevron-down {
+        font-size: 11px;
+    }
+}
+
+/* Celular: panel de filtros del buscador (todos los módulos).
+   - Una sola columna: los Aplicar/Limpiar de la regla de 1100px tenían grid-column: 2 y obligaban
+     a una segunda columna aunque el panel dijera 1fr.
+   - Las opciones de cada grupo van como pastillas una al lado de la otra (como los filtros de las
+     apps), no en lista: el panel ocupa la mitad.
+   - Aplicar / Limpiar quedan fijos abajo, siempre a mano aunque el panel tenga scroll. */
+@media (max-width: 640px) {
+    .shell.shell--alfa-design .smart-search__panel {
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 0 !important;
+        max-height: calc(100dvh - 190px) !important;
+        padding: 12px 12px 0 !important;
+    }
+
+    .shell.shell--alfa-design .smart-search__panel > * {
+        grid-column: 1 / -1 !important;
+        grid-row: auto !important;
+    }
+
+    .shell.shell--alfa-design .smart-search__column,
+    .shell.shell--alfa-design .smart-search__column:first-child,
+    .shell.shell--alfa-design .smart-search__column:nth-child(3),
+    .shell.shell--alfa-design .smart-search__column:last-child {
+        flex-direction: row !important;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px !important;
+        padding: 10px 0 !important;
+    }
+
+    .shell.shell--alfa-design .smart-search__column + .smart-search__column {
+        padding-top: 10px !important;
+        border-left: 0 !important;
+        border-top: 1px solid var(--alfa-border-default);
+    }
+
+    .shell.shell--alfa-design .smart-search__column:first-child {
+        padding-top: 0 !important;
+    }
+
+    /* Todo lo que no es una opción (título, desplegables, fechas) ocupa el renglón entero. */
+    .shell.shell--alfa-design .smart-search__column > :not(.smart-option) {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .shell.shell--alfa-design .smart-search__column > h4 {
+        min-height: 0;
+        margin: 0 0 2px;
+    }
+
+    .shell.shell--alfa-design .smart-search__column > .smart-option {
+        flex: 0 0 auto;
+        width: auto;
+        max-width: 100%;
+        min-height: 30px;
+        padding: 5px 12px;
+        border: 1px solid var(--alfa-border-default);
+        border-radius: 999px;
+        text-align: left;
+        white-space: normal;
+    }
+
+    .shell.shell--alfa-design .smart-search__column > .smart-option.is-active {
+        border-color: var(--alfa-accent);
+    }
+
+    /* Acciones: sin título, botones a la derecha, pegados al pie del panel. */
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__section--actions,
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__actions,
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__column > .smart-search__actions:only-of-type {
+        order: 99;
+    }
+
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__section--actions {
+        display: block !important;
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        padding: 0 !important;
+        border-top: 1px solid var(--alfa-border-default);
+        background: var(--alfa-bg-surface-raised);
+    }
+
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__section--actions > h4 {
+        display: none !important;
+    }
+
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__actions,
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__section--actions > .smart-search__actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        display: flex !important;
+        flex-direction: row;
+        justify-content: flex-end;
+        gap: 8px;
+        margin: 0 -12px !important;
+        padding: 10px 12px !important;
+        border-top: 1px solid var(--alfa-border-default);
+        background: var(--alfa-bg-surface-raised);
+    }
+
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__section--actions > .smart-search__actions {
+        border-top: 0;
+    }
+
+    /* Accesos sueltos dentro de una columna (ej. Favoritos de Tickets/Contactos) también como pastillas. */
+    .shell.shell--alfa-design .smart-search__column > button:not(.smart-option) {
+        flex: 0 0 auto;
+        width: auto;
+        min-height: 30px;
+        padding: 5px 12px;
+        border: 1px solid var(--alfa-border-default);
+        border-radius: 999px;
+        text-align: left;
+    }
+
+    /* Rangos rápidos de Período (FiltroPeriodo) también como pastillas. */
+    .shell.shell--alfa-design .smart-search__panel .filtro-periodo__rangos {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .shell.shell--alfa-design .smart-search__panel .filtro-periodo__rangos > .smart-option {
+        flex: 0 0 auto;
+        width: auto;
+        min-height: 30px;
+        padding: 5px 12px;
+        border: 1px solid var(--alfa-border-default);
+        border-radius: 999px;
+    }
+
+    .shell.shell--alfa-design .smart-search__panel .filtro-periodo__rangos > .smart-option.is-active {
+        border-color: var(--alfa-accent);
+    }
+
+    /* Columna «Acciones» armada a mano en la página (título + .actions): igual que la compartida,
+       sin título y pegada al pie. */
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__column:has(> .actions, > .smart-search__actions):not(:has(> button, > .smart-option, > .smart-search__inline, > select)) {
+        order: 99;
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        margin: 0 -12px;
+        padding: 10px 12px !important;
+        border-top: 1px solid var(--alfa-border-default);
+        background: var(--alfa-bg-surface-raised);
+    }
+
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__column:has(> .actions, > .smart-search__actions):not(:has(> button, > .smart-option, > .smart-search__inline, > select)) > h4 {
+        display: none !important;
+    }
+
+    .shell.shell--alfa-design .smart-search__panel > .smart-search__column > .actions {
+        display: flex;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    /* El botón principal (Aplicar) siempre a la derecha, venga primero o último en el markup. */
+    .shell.shell--alfa-design .smart-search__panel .smart-search__actions > .alfa-button--primary,
+    .shell.shell--alfa-design .smart-search__panel .smart-search__actions > .btn--primary,
+    .shell.shell--alfa-design .smart-search__panel .smart-search__column > .actions > .alfa-button--primary,
+    .shell.shell--alfa-design .smart-search__panel .smart-search__column > .actions > .btn--primary {
+        order: 2;
+    }
 }

@@ -34,6 +34,17 @@ Escribí **::** en la caja de respuesta para ver tus respuestas rápidas y eleg�
 
 Debajo de la respuesta está **Escribí una nota interna**: solo la ve el equipo, nunca el cliente. Pulsá **Guardar nota interna**. También podés marcar un mensaje como **pendiente** o **completado** (interno, el cliente no lo ve).
 
+## Llamadas
+
+Las llamadas de WhatsApp se hacen y se atienden desde la app **WhatsApp Business** (en el celular o en la computadora): Meta no permite llamar desde el sistema con los números conectados a la app. Lo que sí hace Conversaciones es abrir el chat y dejar anotada la llamada para que todo el equipo sepa qué pasó.
+
+En una conversación de WhatsApp, tocá el teléfono que está al lado del nombre del cliente:
+
+- **Llamar por WhatsApp**: se abre el chat de ese cliente en WhatsApp. Tocá el teléfono del chat para llamar. Al volver, completá **¿Cómo fue la llamada?**: el resultado (**Atendió**, **No atendió** u **Ocupado o cortó**), la duración en minutos y una nota si hace falta. **Guardar en la conversación** la deja como nota interna, por ejemplo: «📞 Llamada hecha · Atendió · 5 min · Pasa mañana a buscar el pedido».
+- **Anotar llamada recibida**: para registrar una llamada que el cliente hizo al celular de la empresa.
+
+Para que se abra WhatsApp tenés que tener abierta la cuenta de WhatsApp Business de la empresa en esa computadora o en tu celular. Si tocás **Descartar**, la llamada no queda anotada. El botón se puede apagar en **Configuración → Canales → WhatsApp**, opción **Mostrar el botón Llamar en las conversaciones**.
+
 ## Estado y cierre
 
 El selector **Estado** cambia el estado de la conversación (abierta, esperando respuesta, cerrada…). **Cerrar conversación** la cierra; si el cliente vuelve a escribir, se reabre sola.
@@ -74,7 +85,7 @@ Para entrar hace falta el permiso **Plantillas de WhatsApp**.
 
 En **Conversaciones → Configuración** (permiso **Configurar Conversaciones** o administrador):
 
-- **Canales**: conectar números de WhatsApp, Instagram, Facebook, Mercado Libre y el chat web.
+- **Canales**: conectar números de WhatsApp, Instagram, Facebook, Mercado Libre y el chat web. En WhatsApp, **Mostrar el botón Llamar en las conversaciones** prende o apaga el botón **Llamar** (ver **Llamadas**).
 - **Asistente IA**: personalidad, información del negocio y archivos que usa el asistente para responder.
 - **Automatización**: horario de atención y mensaje fuera de horario, reglas por palabras clave y **Prioridades de atención**.
 - **Respuestas rápidas**: los textos que se usan con **::**. Con el permiso **Respuestas rápidas** solo se ve esta sección.

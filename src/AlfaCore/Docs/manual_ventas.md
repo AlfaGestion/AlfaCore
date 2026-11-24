@@ -73,6 +73,22 @@ Opciones de la carga de comprobantes: precios, IVA, descuentos, proforma y fecha
 
 Qué ve el cliente en el portal de autogestión (cuenta corriente, comprobantes, pedidos) y cómo ingresa.
 
+## Pedidos del Portal Cliente
+
+El cliente puede consultar sus pedidos registrados y usar **Nuevo pedido** para cargar una Nota de pedido con la pantalla de Carga directa.
+
+### Nuevo pedido
+
+El cliente autenticado queda seleccionado automáticamente. No puede cambiar cliente, tipo de comprobante, unidad, depósito, talonario, lista, clase de precio, fecha ni vendedor. Solo puede agregar artículos, modificar cantidades y escribir observaciones. **Validar** revisa la carga y **Grabar** registra el pedido.
+
+### Editar un pedido
+
+En un pedido web con estado **Registrado**, **Editar** abre la misma pantalla con sus artículos y cantidades. Al confirmar, se registra el nuevo pedido y se anula el anterior.
+
+### Borrar un pedido
+
+En un pedido no anulado, **Borrar** solicita confirmación y realiza una anulación lógica auditada. Los pedidos anulados no muestran acciones de edición ni borrado.
+
 ### Punto de Venta
 
 Operación del punto de venta: comprobantes que emite, mostrador, medios de pago y proforma. Los puntos de venta, cajas y comprobantes habilitados se administran en **Ventas → Puntos de venta**.

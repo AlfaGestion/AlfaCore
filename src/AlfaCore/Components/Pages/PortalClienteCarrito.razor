@@ -47,6 +47,7 @@ else if (IsAuthenticated)
         <CatalogoCarrito idweb="@idweb"
                          idbase="@idbase"
                          IdInsert="@_carritoLogicalId"
+                         ReemplazarPedidoId="@_editarPedidoId"
                          Embedded="true"
                          VolverUrl="@BuildPortalRoute("catalogos")"
                          VolverTexto="Volver a catálogos" />
@@ -57,6 +58,7 @@ else
     <CatalogoCarrito idweb="@idweb"
                      idbase="@idbase"
                      IdInsert="@_carritoLogicalId"
+                     ReemplazarPedidoId="@_editarPedidoId"
                      Embedded="true"
                      VolverUrl="@BuildPortalRoute("catalogos")"
                      VolverTexto="Volver a catálogos" />
@@ -67,6 +69,9 @@ else
 
     private bool _resolviendo = true;
     private int _carritoLogicalId;
+    [SupplyParameterFromQuery(Name = "catalogo")] public int? CatalogoQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "editar")] public int? EditarPedidoQuery { get; set; }
+    private int? _editarPedidoId;
 
     protected override async Task OnAfterClientSessionRestoredAsync()
         => await ResolverYAbrirCarritoAsync();
@@ -81,6 +86,13 @@ else
 
         try
         {
+            _editarPedidoId = EditarPedidoQuery is > 0 ? EditarPedidoQuery : null;
+            if (CatalogoQuery is > 0)
+            {
+                _carritoLogicalId = CatalogoQuery.Value;
+                return;
+            }
+
             var item = await UiOps.RunAsync(() => CarritoComprasSvc.ResolvePortalCarritoAsync(idweb),
                 "No pudimos resolver tu carrito disponible.");
 

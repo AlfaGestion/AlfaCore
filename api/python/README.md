@@ -4,7 +4,8 @@ Copia controlada del servicio Python que actualmente se ejecuta en:
 
 `\\10.8.0.6\c\inetpub\wwwroot\wsAlfa`
 
-En el entorno actual, AlfaCore consume `wsAlfa` mediante `https://alfacentral.ddns.net/`.
+En el entorno actual, AlfaCore consume la API pública mediante `https://alfacentral.ddns.net/`.
+`alfanetac.ddns.net` queda reservado para el servidor legacy separado.
 
 ## Versiones
 

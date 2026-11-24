@@ -10,7 +10,7 @@ namespace AlfaCore.Services;
 /// </summary>
 public interface IPuntoVentaSalonService
 {
-    Task<PuntoVentaSalonDto> GetSalonAsync(int idPuntoVenta, CancellationToken ct = default);
+    Task<PuntoVentaSalonDto> GetSalonAsync(int idPuntoVenta, bool incluirInactivas = false, CancellationToken ct = default);
     Task<PuntoVentaSalonMesaDetalleDto?> GetMesaDetalleAsync(int idPedido, CancellationToken ct = default);
     Task<PuntoVentaSalonAbrirMesaResult> AbrirMesaAsync(PuntoVentaSalonAbrirMesaRequest request, CancellationToken ct = default);
     Task ActualizarMesaAsync(int idPedido, string mozo, int? cubiertos, string observaciones, string? usuarioAccion = null, CancellationToken ct = default);

@@ -71,6 +71,9 @@
 }
 
 .templates-v1 .conversation-row {
+    /* No se achica para entrar en el alto de la lista (en celular las filas quedaban de 45px y el texto
+       se encimaba con la siguiente): la lista ya tiene su propio scroll. */
+    flex: 0 0 auto;
     border-radius: var(--alfa-radius-sm);
     border-color: var(--alfa-border-subtle);
     background: var(--alfa-bg-surface);

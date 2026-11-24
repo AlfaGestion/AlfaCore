@@ -12,10 +12,27 @@ public sealed class LegacyPythonApiOptions
     // Una instalación puede desactivarla explícitamente con Api__PythonLegacy__Enabled=false.
     public bool Enabled { get; set; } = true;
 
-    public string BaseUrl { get; set; } = "https://alfacentral.ddns.net/";
+    public string BaseUrl { get; set; } = "http://alfanetac.ddns.net/";
+
+    // Se conserva como lista para permitir una transición futura, pero la instalación actual
+    // usa únicamente BaseUrl para no alterar el endpoint público que ya consumen los clientes.
+    public List<string> BaseUrls { get; set; } = [];
 
     public int TimeoutSeconds { get; set; } = 120;
 
-    public bool IsConfigured => Enabled && Uri.TryCreate(BaseUrl.Trim(), UriKind.Absolute, out var uri)
-        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    public bool IsConfigured => Enabled && GetBaseUrls().Any(IsHttpUrl);
+
+    public IReadOnlyList<string> GetBaseUrls()
+    {
+        return BaseUrls
+            .Append(BaseUrl)
+            .Select(value => value?.Trim().TrimEnd('/') ?? string.Empty)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsHttpUrl(string value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 }

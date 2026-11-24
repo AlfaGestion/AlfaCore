@@ -139,7 +139,9 @@ public static class ModuleTopNavPresets
     public static IReadOnlyList<PageHeaderTopNavItem> BuildTickets(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [
-            ("mesadeayuda", "Mesa de ayuda", "/tickets")
+            ("mesadeayuda", "Mesa de ayuda", "/tickets"),
+            ("seguimiento", "Seguimiento", "/tickets/seguimiento"),
+            ("configuracion", "Configuración", "/tickets/configuracion")
         ]);
 
     // Mismas entradas que tenía el sidebar legacy de Auditoría (incluye Usuarios y Autorización).
