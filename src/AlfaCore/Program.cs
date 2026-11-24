@@ -466,6 +466,8 @@ public class Program
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
         builder.Services.AddScoped<CobranzasService>();
+        builder.Services.AddScoped<IPuntoVentaAnticiposService, PuntoVentaAnticiposService>();
+        builder.Services.AddScoped<IPuntoVentaAnticipoRegistroService, PuntoVentaAnticipoRegistroService>();
         builder.Services.AddScoped<ReclamoSaldosService>();
         builder.Services.AddScoped<OrdenPagoService>();
         builder.Services.AddScoped<CargaComprobantesRepository>();

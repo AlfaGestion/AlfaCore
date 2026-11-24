@@ -176,7 +176,7 @@
     }
 
     private static bool EstaDisponible(string modo)
-        => modo is PuntoVentaModoKeys.Mostrador or PuntoVentaModoKeys.Delivery or PuntoVentaModoKeys.Salon;
+        => modo is PuntoVentaModoKeys.Mostrador or PuntoVentaModoKeys.MostradorProduccion or PuntoVentaModoKeys.Delivery or PuntoVentaModoKeys.Salon;
 
     private async Task AbrirAsync(PuntoVentaEntidadDto pv)
     {
@@ -199,6 +199,7 @@
         {
             PuntoVentaModoKeys.Delivery => $"/ventas/delivery?idPuntoVenta={pv.Id}",
             PuntoVentaModoKeys.Salon => $"/ventas/punto-venta/salon?idPuntoVenta={pv.Id}",
+            PuntoVentaModoKeys.Mostrador or PuntoVentaModoKeys.MostradorProduccion => $"/ventas/punto-venta/mostrador?idPuntoVenta={pv.Id}",
             _ => $"/ventas/punto-venta/mostrador?idPuntoVenta={pv.Id}"
         };
 
@@ -207,6 +208,7 @@
 
     private static string GetModoTexto(string modo) => modo switch
     {
+        PuntoVentaModoKeys.MostradorProduccion => "Mostrador y Producción",
         PuntoVentaModoKeys.Salon => "Salón",
         PuntoVentaModoKeys.Delivery => "Delivery / Take Away",
         _ => "Mostrador"
