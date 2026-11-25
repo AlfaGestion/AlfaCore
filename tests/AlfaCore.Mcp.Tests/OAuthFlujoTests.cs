@@ -46,7 +46,7 @@ public sealed class OAuthApp : WebApplicationFactory<Program>
     public static bool BaseCaida { get; set; }
     public static McpRuntimeSettings Base() => new(true, 500, 100, 60, true, true, true, 5m,
         AccessTokenMin: 60, RefreshDias: 30, CodigoSeg: 60, MaxIntentosLogin: 3, BloqueoMin: 15, MaxClientesOauth: 500,
-        RedirectsPermitidos: [Redirect, "http://localhost:*/callback"]);
+        RedirectsPermitidos: [Redirect, "http://localhost:*/callback"], RequiereTotp: false);
 
     private sealed class ConfigFalsa : IMcpConfigProvider
     {
@@ -97,7 +97,7 @@ public class OAuthFlujoTests : IClassFixture<OAuthApp>
     private static string UrlAutorizar(string clientId, string challenge, string redirect = OAuthApp.Redirect, string? extra = null) =>
         $"/oauth/authorize?response_type=code&client_id={clientId}&redirect_uri={Uri.EscapeDataString(redirect)}&code_challenge={challenge}&code_challenge_method=S256&state=xyz&scope=mcp:read&resource={Uri.EscapeDataString(OAuthApp.Issuer + "/mcp")}{extra}";
 
-    private async Task<(HttpResponseMessage Respuesta, string Html)> Login(HttpClient c, string urlAutorizar, string usuario, string clave, string accion = "autorizar")
+    private async Task<(HttpResponseMessage Respuesta, string Html)> Login(HttpClient c, string urlAutorizar, string usuario, string clave, string accion = "autorizar", string? codigo = null)
     {
         var get = await c.GetAsync(urlAutorizar);
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
@@ -110,6 +110,7 @@ public class OAuthFlujoTests : IClassFixture<OAuthApp>
         campos.Add(KeyValuePair.Create("usuario", usuario));
         campos.Add(KeyValuePair.Create("clave", clave));
         campos.Add(KeyValuePair.Create("accion", accion));
+        if (codigo is not null) campos.Add(KeyValuePair.Create("codigo", codigo));
         var post = await c.PostAsync("/oauth/authorize", new FormUrlEncodedContent(campos));
         return (post, await post.Content.ReadAsStringAsync());
     }
@@ -478,6 +479,101 @@ public class OAuthFlujoTests : IClassFixture<OAuthApp>
         finally { OAuthApp.BaseCaida = false; }
     }
 
+    // ---- segundo factor (TOTP) -----------------------------------------------------------------------------------------
+    private async Task<(string Usuario, string Secreto)> CrearUsuarioConTotp()
+    {
+        var store = _app.Services.GetRequiredService<IAuthStore>();
+        var protector = _app.Services.GetRequiredService<SecretProtector>();
+        var usuario = "totp_" + Guid.NewGuid().ToString("N")[..8];
+        var id = await store.CrearUsuarioAsync(usuario, usuario, PasswordHasher.Hash("clave-correcta-123"), null, CancellationToken.None);
+        var secreto = Totp.NuevoSecreto();
+        await store.SetTotpAsync(id, protector.Proteger(secreto), CancellationToken.None);
+        return (usuario, secreto);
+    }
+
+    private static string CodigoActual(string secreto) => Totp.Codigo(secreto, Totp.PasoDe(DateTime.UtcNow));
+
+    [Fact]
+    public async Task Con_segundo_factor_el_login_exige_clave_y_codigo_correctos()
+    {
+        var (usuario, secreto) = await CrearUsuarioConTotp();
+        var c = _app.Cliente();
+        var id = await RegistrarCliente(c);
+        var (_, ch) = Pkce();
+
+        var sinCodigo = await Login(c, UrlAutorizar(id, ch), usuario, "clave-correcta-123");
+        Assert.Null(sinCodigo.Respuesta.Headers.Location);
+        var codigoMalo = await Login(c, UrlAutorizar(id, ch), usuario, "clave-correcta-123", codigo: "000000");
+        Assert.Null(codigoMalo.Respuesta.Headers.Location);
+
+        var ok = await Login(c, UrlAutorizar(id, ch), usuario, "clave-correcta-123", codigo: CodigoActual(secreto));
+        Assert.Equal(HttpStatusCode.Redirect, ok.Respuesta.StatusCode);
+        Assert.Contains("code=", ok.Respuesta.Headers.Location!.Query);
+
+        // El codigo correcto pero con la clave equivocada tampoco entra.
+        var claveMala = await Login(c, UrlAutorizar(id, ch), usuario, "clave-equivocada-1", codigo: CodigoActual(secreto));
+        Assert.Null(claveMala.Respuesta.Headers.Location);
+    }
+
+    [Fact]
+    public async Task Un_codigo_TOTP_ya_usado_no_sirve_de_nuevo()
+    {
+        var (usuario, secreto) = await CrearUsuarioConTotp();
+        var c = _app.Cliente();
+        var id = await RegistrarCliente(c);
+        var (_, ch) = Pkce();
+        var codigo = CodigoActual(secreto);
+
+        var primero = await Login(c, UrlAutorizar(id, ch), usuario, "clave-correcta-123", codigo: codigo);
+        Assert.Equal(HttpStatusCode.Redirect, primero.Respuesta.StatusCode);
+        var repetido = await Login(c, UrlAutorizar(id, ch), usuario, "clave-correcta-123", codigo: codigo);   // alguien que espio el codigo
+        Assert.Null(repetido.Respuesta.Headers.Location);
+    }
+
+    [Fact]
+    public async Task Los_codigos_TOTP_erroneos_cuentan_para_el_bloqueo_aun_con_la_clave_correcta()
+    {
+        var (usuario, secreto) = await CrearUsuarioConTotp();
+        var c = _app.Cliente();
+        var id = await RegistrarCliente(c);
+        var (_, ch) = Pkce();
+
+        for (var i = 0; i < OAuthApp.Config.MaxIntentosLogin; i++)
+            await Login(c, UrlAutorizar(id, ch), usuario, "clave-correcta-123", codigo: "11111" + i);   // adivinar el codigo de 6 digitos
+
+        var despues = await Login(c, UrlAutorizar(id, ch), usuario, "clave-correcta-123", codigo: CodigoActual(secreto));
+        Assert.Null(despues.Respuesta.Headers.Location);   // bloqueado: ni el codigo correcto entra
+        Assert.Contains("bloqueada", despues.Html);
+    }
+
+    [Fact]
+    public async Task Si_se_exige_segundo_factor_un_usuario_sin_TOTP_no_puede_ingresar_ni_con_la_clave_correcta()
+    {
+        OAuthApp.Config = OAuthApp.Base() with { RequiereTotp = true };
+        try
+        {
+            var c = _app.Cliente();
+            var id = await RegistrarCliente(c);
+            var (_, ch) = Pkce();
+            var (r, html) = await Login(c, UrlAutorizar(id, ch), OAuthApp.Usuario, OAuthApp.Clave);
+            Assert.Null(r.Headers.Location);
+            Assert.Contains("segundo factor", html);   // mensaje generico que orienta sin revelar que la clave era correcta
+            Assert.Contains("required", html);          // el campo del codigo es obligatorio
+        }
+        finally { OAuthApp.Config = OAuthApp.Base(); }
+    }
+
+    [Fact]
+    public async Task El_secreto_TOTP_se_guarda_cifrado_y_nunca_en_claro()
+    {
+        var (usuario, secreto) = await CrearUsuarioConTotp();
+        var u = await _app.Services.GetRequiredService<IAuthStore>().GetUsuarioAsync(usuario, CancellationToken.None);
+        Assert.NotNull(u!.TotpSecreto);
+        Assert.StartsWith("v1.", u.TotpSecreto);
+        Assert.DoesNotContain(secreto, u.TotpSecreto);
+        Assert.Equal(secreto, _app.Services.GetRequiredService<SecretProtector>().Revelar(u.TotpSecreto));
+    }
+
     // ---- cabeceras de seguridad ------------------------------------------------------------------------------------
     [Fact]
     public async Task La_pantalla_de_login_no_se_puede_embeber_ni_cachear_y_escapa_el_nombre_del_cliente()
@@ -497,6 +593,62 @@ public class OAuthFlujoTests : IClassFixture<OAuthApp>
 
 public class PrimitivasOAuthTests
 {
+    [Theory]   // vectores oficiales de RFC 6238 (secreto ASCII "12345678901234567890", SHA-1), recortados a 6 digitos
+    [InlineData(59L, "287082")]
+    [InlineData(1111111109L, "081804")]
+    [InlineData(1111111111L, "050471")]
+    [InlineData(1234567890L, "005924")]
+    [InlineData(2000000000L, "279037")]
+    public void Totp_cumple_los_vectores_del_RFC_6238(long segundos, string esperado)
+    {
+        var secreto = Base32.Codificar(System.Text.Encoding.ASCII.GetBytes("12345678901234567890"));
+        Assert.Equal("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", secreto);
+        Assert.Equal(esperado, Totp.Codigo(secreto, segundos / Totp.PeriodoSeg));
+    }
+
+    [Fact]
+    public void Base32_ida_y_vuelta_y_rechazo_de_basura()
+    {
+        var datos = RandomNumberGenerator.GetBytes(20);
+        Assert.Equal(datos, Base32.Decodificar(Base32.Codificar(datos)));
+        Assert.Equal(datos, Base32.Decodificar(Base32.Codificar(datos).ToLowerInvariant()));
+        Assert.Throws<FormatException>(() => Base32.Decodificar("no es base32 !!"));
+    }
+
+    [Fact]
+    public void Totp_acepta_el_paso_actual_y_uno_de_margen_pero_no_dos_pasos_ni_basura()
+    {
+        var secreto = Totp.NuevoSecreto();
+        var ahora = new DateTime(2026, 11, 25, 12, 0, 10, DateTimeKind.Utc);
+        var paso = Totp.PasoDe(ahora);
+        Assert.Equal((true, paso), Totp.Verificar(secreto, Totp.Codigo(secreto, paso), ahora));
+        Assert.Equal((true, paso - 1), Totp.Verificar(secreto, Totp.Codigo(secreto, paso - 1), ahora));
+        Assert.Equal((true, paso + 1), Totp.Verificar(secreto, Totp.Codigo(secreto, paso + 1), ahora));
+        Assert.False(Totp.Verificar(secreto, Totp.Codigo(secreto, paso - 2), ahora).Ok);
+        Assert.False(Totp.Verificar(secreto, Totp.Codigo(secreto, paso + 2), ahora).Ok);
+        Assert.False(Totp.Verificar(secreto, "12345", ahora).Ok);
+        Assert.False(Totp.Verificar(secreto, "abcdef", ahora).Ok);
+        Assert.False(Totp.Verificar(secreto, null, ahora).Ok);
+        Assert.True(Totp.Verificar(secreto, Totp.Codigo(secreto, paso).Insert(3, " "), ahora).Ok);   // la app a veces muestra "123 456"
+    }
+
+    [Fact]
+    public void El_QR_de_inscripcion_es_un_PNG_valido()
+    {
+        var uri = Totp.UriOtpAuth(Totp.NuevoSecreto(), "ana", "AlfaCore MCP");
+        var png = new QRCoder.PngByteQRCode(new QRCoder.QRCodeGenerator().CreateQrCode(uri, QRCoder.QRCodeGenerator.ECCLevel.M)).GetGraphic(10);
+        Assert.True(png.Length > 500);
+        Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, png[..4]);   // firma PNG
+    }
+
+    [Fact]
+    public void La_URI_otpauth_lleva_los_parametros_que_esperan_las_apps()
+    {
+        var uri = Totp.UriOtpAuth("ABCDEFGH", "ana@x", "AlfaCore MCP");
+        Assert.StartsWith("otpauth://totp/AlfaCore%20MCP:ana%40x?secret=ABCDEFGH", uri);
+        Assert.Contains("algorithm=SHA1&digits=6&period=30", uri);
+    }
+
     [Fact]
     public void Hash_de_clave_es_verificable_distinto_por_sal_y_rechaza_basura()
     {

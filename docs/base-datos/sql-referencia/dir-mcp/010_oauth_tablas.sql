@@ -20,10 +20,19 @@ BEGIN
         BloqueadoHasta datetime NULL,                    -- UTC
         UltimoLogin    datetime NULL,                    -- UTC
         Base           nvarchar(100) NULL,               -- reservado: base/tenant a la que accede (multi-base)
-        Alta           datetime NOT NULL CONSTRAINT DF_MCP_USUARIO_Alta DEFAULT (GETUTCDATE())
+        Alta           datetime NOT NULL CONSTRAINT DF_MCP_USUARIO_Alta DEFAULT (GETUTCDATE()),
+        TotpSecreto    nvarchar(300) NULL,               -- segundo factor: secreto TOTP CIFRADO (AES-GCM); nunca en claro
+        TotpUltimoPaso bigint NOT NULL CONSTRAINT DF_MCP_USUARIO_TotpPaso DEFAULT (0)   -- ultimo paso de 30 s usado (anti-replay)
     );
     CREATE UNIQUE INDEX UX_MCP_USUARIO_Usuario ON dbo.MCP_USUARIO (Usuario);
 END
+GO
+-- Si la tabla ya existia de antes (sin segundo factor), se agregan las columnas sin tocar los datos.
+IF COL_LENGTH(N'dbo.MCP_USUARIO', N'TotpSecreto') IS NULL
+    ALTER TABLE dbo.MCP_USUARIO ADD TotpSecreto nvarchar(300) NULL;
+GO
+IF COL_LENGTH(N'dbo.MCP_USUARIO', N'TotpUltimoPaso') IS NULL
+    ALTER TABLE dbo.MCP_USUARIO ADD TotpUltimoPaso bigint NOT NULL CONSTRAINT DF_MCP_USUARIO_TotpPaso DEFAULT (0);
 GO
 IF OBJECT_ID(N'dbo.MCP_CLIENTE_OAUTH', N'U') IS NULL
     CREATE TABLE dbo.MCP_CLIENTE_OAUTH

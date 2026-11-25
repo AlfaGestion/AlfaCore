@@ -71,7 +71,9 @@ Con las mismas variables definidas en la sesión de PowerShell (`$env:ALFACORE_M
 cd C:\inetpub\AlfaCoreMcp
 dotnet AlfaCore.Mcp.dll crear-usuario alberto "Alberto"
 ```
-Pide la clave dos veces (mínimo 12 caracteres; usar una distinta por persona). Repetir por cada usuario. **Verificar:** `SELECT Usuario, Activo FROM dbo.MCP_USUARIO` en el almacén.
+Pide la clave dos veces (mínimo 12 caracteres; usar una distinta por persona) y muestra **una sola vez** la clave del segundo factor. Con `--qr C:\temp\alberto.png`
+genera además el código QR para escanear con Google/Microsoft Authenticator (**borrar el PNG después**). Hacerlo con cada persona delante, para que lo cargue en su teléfono en ese momento.
+Repetir por cada usuario. **Verificar:** `SELECT Usuario, Activo FROM dbo.MCP_USUARIO` en el almacén.
 
 ## 5. Verificar antes de conectar nada
 ```powershell
@@ -111,11 +113,13 @@ Si ChatGPT no encuentra los metadatos, avisar: hay un plan B (reglas de reescrit
 | Dar de baja a alguien | SQL del README del proyecto (`Activo = 0` + revocar sus refresh tokens) |
 | Renovar el certificado | Se renueva el del sitio de AlfaCore; el binding 8443 usa el mismo: volver a asociarlo (paso 2) |
 | Actualizar la aplicación | `Stop-Website AlfaCoreMcp` → copiar la publicación (sin tocar la carpeta de secretos) → `Start-Website AlfaCoreMcp` |
+| Un teléfono nuevo o perdido | `dotnet AlfaCore.Mcp.dll configurar-totp <usuario> --qr archivo.png` (corta sus sesiones activas) |
+| **Respaldo** | Incluir `C:\ProgramData\AlfaCoreMcp\` (clave de firma y `*.totp-key`) en el respaldo. Sin la clave de cifrado hay que reinscribir el segundo factor de todos |
 | Rotar la clave de firma | Detener el sitio, borrar `signing-key.pem`, iniciar (se genera una nueva). Todos los usuarios deben volver a iniciar sesión |
 | Marcha atrás completa | `Stop-Website AlfaCoreMcp`; cerrar el puerto 8443; opcional: `Remove-Website`/`Remove-WebAppPool`. AlfaCore no se ve afectado |
 
-## Antes de abrirlo al equipo (pendientes de seguridad)
-- **Segundo factor (TOTP):** recomendado antes de dar acceso a personas que no seas vos. Es la etapa 5d.
+## Antes de abrirlo al equipo
+- El segundo factor (TOTP) ya viene exigido (`IA_MCP_OAUTH_REQUIERE_TOTP = SI`): nadie entra sin su app autenticadora.
 - Usar claves únicas y largas por persona; no reutilizar la de otros sistemas.
 - Revisar `MCP_EVENTO` la primera semana (intentos fallidos, bloqueos).
 - Dar de baja a quien deje el equipo el mismo día.

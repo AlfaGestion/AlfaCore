@@ -45,6 +45,7 @@ if (authOpt.Enabled)
 
     builder.Services.AddSingleton<SigningKeyProvider>();
     builder.Services.AddSingleton<TokenService>();
+    builder.Services.AddSingleton<SecretProtector>();
     builder.Services.AddScoped<IMcpUserContext, HttpContextUserContext>();
 
     builder.Services.AddAntiforgery(o =>
@@ -113,12 +114,21 @@ builder.Services
 var app = builder.Build();
 
 // Comandos de administracion (no levantan el servidor): dotnet run --project src/AlfaCore.Mcp -- crear-usuario <usuario> "<Nombre>" [base]
-if (args.Length > 0 && args[0] == "crear-usuario")
-    return await AuthCommands.CrearUsuarioAsync(args, app.Services, authOpt);
+if (args.Length > 0 && args[0] is "crear-usuario" or "configurar-totp")
+    return await AuthCommands.EjecutarAsync(args, app.Services, authOpt);
 
 if (authOpt.Enabled && app.Services.GetRequiredService<IAuthStore>() is MemoryAuthStore memoria
     && !string.IsNullOrWhiteSpace(authOpt.DevUser) && !string.IsNullOrWhiteSpace(authOpt.DevPassword))
-    await memoria.CrearUsuarioAsync(authOpt.DevUser, authOpt.DevUser, PasswordHasher.Hash(authOpt.DevPassword), null, CancellationToken.None);
+{
+    var idDev = await memoria.CrearUsuarioAsync(authOpt.DevUser, authOpt.DevUser, PasswordHasher.Hash(authOpt.DevPassword), null, CancellationToken.None);
+    if (authOpt.DevTotp || !string.IsNullOrWhiteSpace(authOpt.DevTotpSecret))
+    {
+        // Solo Development: segundo factor de prueba. La clave se muestra por consola para cargarla a mano en la app autenticadora.
+        var secretoDev = string.IsNullOrWhiteSpace(authOpt.DevTotpSecret) ? Totp.NuevoSecreto() : authOpt.DevTotpSecret.Trim();
+        await memoria.SetTotpAsync(idDev, app.Services.GetRequiredService<SecretProtector>().Proteger(secretoDev), CancellationToken.None);
+        app.Logger.LogWarning("TOTP de PRUEBA para {Usuario}. Clave para la app autenticadora (ingreso manual, tipo 'basado en tiempo'): {Secreto}", authOpt.DevUser, secretoDev);
+    }
+}
 
 if (!app.Environment.IsDevelopment()) app.UseHsts();
 app.Use(async (ctx, next) =>

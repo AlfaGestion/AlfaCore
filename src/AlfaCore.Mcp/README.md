@@ -39,8 +39,13 @@ $env:Mcp__Auth__Store = "Memory"                       # solo permitido en Devel
 $env:Mcp__Auth__Issuer = "http://127.0.0.1:5290"
 $env:Mcp__Auth__DevUser = "alberto"
 $env:Mcp__Auth__DevPassword = "una-clave-larga-123"    # cualquiera de 12+ caracteres; no se guarda en ningún archivo
+$env:Mcp__Auth__DevTotp = "true"                       # segundo factor de prueba (ver abajo)
 dotnet run --project src/AlfaCore.Mcp
 ```
+Con `DevTotp` el servidor imprime al arrancar una línea `TOTP de PRUEBA ... Clave para la app autenticadora: XXXX...`. En el celular, en
+Google/Microsoft Authenticator: *Agregar cuenta → Ingresar clave de configuración* (tipo **basado en tiempo**), pegá esa clave. El login pedirá usuario, clave
+y el código de 6 dígitos de la app. (Sin `DevTotp`, y con `IA_MCP_OAUTH_REQUIERE_TOTP=SI` — lo que deja el script 012 — el usuario de prueba **no podría entrar**;
+para probar sin segundo factor poné esa clave en `NO` en `TA_CONFIGURACION`.)
 En otra ventana: `claude.cmd mcp remove alfacore-dir` y `claude.cmd mcp add --scope user --transport http alfacore-dir http://127.0.0.1:5290/mcp`.
 En `claude`: `/mcp` → `alfacore-dir` → **Authenticate**. Se abre el navegador con la pantalla de login; entrá con `alberto` y la clave de arriba.
 Al volver, debe decir *connected*. Para volver al modo simple, cerrá la ventana (las variables `$env:` mueren con ella).
@@ -55,14 +60,22 @@ Al volver, debe decir *connected*. Para volver al modo simple, cerrá la ventana
 | `POST /oauth/token` | canje del código y renovación; *refresh tokens* con rotación y detección de reuso |
 | `GET /oauth/jwks` | clave pública de firma (RS256) |
 
-Un solo permiso: `mcp:read`. Los *access tokens* son JWT RS256 con `audience` = URL del recurso, vida por defecto 60 min.
+Login con usuario + clave + código TOTP. Un solo permiso: `mcp:read`. Los *access tokens* son JWT RS256 con `audience` = URL del recurso, vida por defecto 60 min.
 
-### Administración de usuarios (por consola, nunca por HTTP)
+### Administración de usuarios y segundo factor (por consola, nunca por HTTP)
 ```
-dotnet AlfaCore.Mcp.dll crear-usuario <usuario> "Nombre a mostrar" [base]      # pide la clave 2 veces (mínimo 12 caracteres)
+dotnet AlfaCore.Mcp.dll crear-usuario <usuario> "Nombre a mostrar" [base] [--qr archivo.png]    # pide la clave 2 veces (mínimo 12 caracteres)
+dotnet AlfaCore.Mcp.dll configurar-totp <usuario> [--qr archivo.png]                             # teléfono nuevo o perdido; corta sus sesiones
 ```
-(en desarrollo: `dotnet run --project src/AlfaCore.Mcp -- crear-usuario ...`). La clave se guarda como hash PBKDF2-SHA256 (600.000 iteraciones). Para
-desactivar o desbloquear a alguien, en el almacén OAuth:
+(en desarrollo: `dotnet run --project src/AlfaCore.Mcp -- crear-usuario ...`). La clave se guarda como hash PBKDF2-SHA256 (600.000 iteraciones).
+
+**Segundo factor (TOTP, RFC 6238):** `crear-usuario` genera el secreto y lo muestra **una sola vez** (clave para tipear + URI `otpauth`; con `--qr` guarda un PNG para escanear
+con la app: borrarlo después). La inscripción la hace el administrador a propósito: si fuera por web, quien robe una clave podría inscribir su propio teléfono.
+El secreto se guarda **cifrado** (AES-256-GCM) con una clave que vive junto a la clave de firma (archivo `*.totp-key`, fuera de la base y del repo: **incluirla en el respaldo**,
+porque sin ella los secretos guardados no se pueden leer y hay que reinscribir a todos). Cada código sirve **una sola vez** (anti-replay) y los códigos erróneos cuentan para el bloqueo.
+Con `IA_MCP_OAUTH_REQUIERE_TOTP = SI` (por defecto) un usuario sin segundo factor no puede ingresar.
+
+Para desactivar o desbloquear a alguien, en el almacén OAuth:
 ```sql
 UPDATE dbo.MCP_USUARIO SET Activo = 0 WHERE Usuario = 'fulano';                 -- deja de poder renovar al vencer su token
 UPDATE dbo.MCP_USUARIO SET Intentos = 0, BloqueadoHasta = NULL WHERE Usuario = 'fulano';   -- desbloquear
@@ -72,7 +85,7 @@ UPDATE dbo.MCP_REFRESH_TOKEN SET Revocado = 1 WHERE UsuarioId = (SELECT Id FROM 
 ### Parámetros (TA_CONFIGURACION de la base de datos, grupo `IA_MCP`; se refrescan cada 30 s)
 Negocio: `IA_MCP_HABILITADO` (interruptor general, también corta el login), `IA_MCP_MAX_FILAS`, `IA_MCP_TOP_MAXIMO`, `IA_MCP_TIMEOUT_SEG`,
 `IA_MCP_TC_PROFORMA`, `IA_MCP_INCLUIR_PROFORMAS`, `IA_MCP_CONSULTAR_SQL_HABILITADO`, `IA_MCP_LOG_PARAMETROS`, `IA_MCP_ADVERTIR_SIN_COSTO_PCT`.
-OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_INTENTOS`, `_BLOQUEO_MIN`, `_MAX_CLIENTES` y
+OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_INTENTOS`, `_BLOQUEO_MIN`, `_MAX_CLIENTES`, `_REQUIERE_TOTP` y
 **`IA_MCP_OAUTH_REDIRECTS`** (lista blanca de aplicaciones que pueden conectarse). Si una clave falta, lo riesgoso queda apagado.
 
 ### Configuración de infraestructura (appsettings / variables de entorno; nunca en el repo)
@@ -105,7 +118,7 @@ Fechas siempre `AAAA-MM-DD`. Toda respuesta incluye `Criterio`, `Totales` del pe
 2. **Autenticación OAuth 2.1:** PKCE S256 obligatorio; redirect URIs en lista blanca y comparación exacta; clientes solo públicos; códigos de un solo uso
    (60 s); *refresh tokens* rotativos con revocación de toda la cadena si se reusa uno viejo; códigos y refresh tokens **solo se guardan como hash**;
    tokens con `issuer`/`audience`/firma/vencimiento/`scope` validados (se rechaza `alg=none` y firmas ajenas).
-3. **Login:** claves PBKDF2, mismo mensaje y tiempo para usuario inexistente o clave mala, bloqueo tras N intentos, protección CSRF (antiforgery),
+3. **Login:** claves PBKDF2 + segundo factor TOTP de un solo uso, mismo mensaje y tiempo para usuario inexistente o clave mala, bloqueo tras N intentos, protección CSRF (antiforgery),
    límite de pedidos por IP, pantalla con `X-Frame-Options: DENY`, CSP y nombre de cliente escapado.
 4. **Validador de `consultar_sql`** (ScriptDom): una sola sentencia SELECT, solo objetos `dir.*`, sin variables, `SELECT INTO`, funciones de tabla, `OPENROWSET`,
    servidores vinculados ni funciones con esquema. Secundario respecto del punto 1.
@@ -115,7 +128,7 @@ Fechas siempre `AAAA-MM-DD`. Toda respuesta incluye `Criterio`, `Totales` del pe
 7. Errores internos: al usuario solo un código de incidente; el detalle queda en el log y en `IA_LOG_CONSULTAS`.
 
 **Límites conocidos:** el acceso de un usuario desactivado cae al vencer su *access token* (60 min por defecto), salvo que revoques sus *refresh tokens* (SQL de arriba);
-todavía no hay segundo factor (TOTP, etapa 5d); una sola clave de firma (para rotarla: cambiar el PEM; las sesiones se renuevan al volver a iniciar sesión).
+no hay códigos de recuperación del segundo factor (si alguien pierde el teléfono: `configurar-totp`); una sola clave de firma (para rotarla: cambiar el PEM; las sesiones se renuevan al volver a iniciar sesión).
 
 ## Pruebas
 ```

@@ -11,6 +11,7 @@ INSERT INTO @k (Clave, Valor, Descripcion, Aux) VALUES
  (N'IA_MCP_OAUTH_MAX_INTENTOS',     N'5',   N'Intentos de login fallidos antes de bloquear el usuario (3-20).', NULL),
  (N'IA_MCP_OAUTH_BLOQUEO_MIN',      N'15',  N'Minutos de bloqueo del usuario tras superar los intentos (1-1440).', NULL),
  (N'IA_MCP_OAUTH_MAX_CLIENTES',     N'500', N'Maximo de clientes OAuth que se pueden registrar dinamicamente.', NULL),
+ (N'IA_MCP_OAUTH_REQUIERE_TOTP',    N'SI',  N'SI = el login exige segundo factor (codigo de la app autenticadora). Un usuario sin segundo factor configurado NO puede ingresar. NO solo para pruebas.', NULL),
  (N'IA_MCP_OAUTH_REDIRECTS',        N'',    N'Lista blanca de redirect URIs que un cliente puede registrar (una por linea o separadas por coma). http solo en loopback; puerto comodin solo en loopback (http://localhost:*/callback).',
   N'https://claude.ai/api/mcp/auth_callback
 https://claude.com/api/mcp/auth_callback

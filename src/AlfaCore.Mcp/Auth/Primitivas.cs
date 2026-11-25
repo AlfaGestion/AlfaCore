@@ -15,6 +15,8 @@ public sealed record AuthOptions(
     string SigningKeyPath,
     string? DevUser,
     string? DevPassword,
+    bool DevTotp,
+    string? DevTotpSecret,
     int LimiteLoginPorMin,
     int LimiteTokenPorMin,
     int LimiteRegistroPorMin)
@@ -50,7 +52,7 @@ public sealed record AuthOptions(
         return new AuthOptions(
             enabled, store, issuer, endpoint,
             s["SigningKeyPath"] ?? "App_Data/mcp-signing-key.pem",
-            s["DevUser"], s["DevPassword"],
+            s["DevUser"], s["DevPassword"], s.GetValue("DevTotp", false), s["DevTotpSecret"],
             s.GetValue("LimiteLoginPorMin", 10), s.GetValue("LimiteTokenPorMin", 60), s.GetValue("LimiteRegistroPorMin", 10));
     }
 }

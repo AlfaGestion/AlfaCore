@@ -55,7 +55,8 @@ public sealed record McpRuntimeSettings(
     int MaxIntentosLogin = 5,
     int BloqueoMin = 15,
     int MaxClientesOauth = 500,
-    IReadOnlyList<string>? RedirectsPermitidos = null)
+    IReadOnlyList<string>? RedirectsPermitidos = null,
+    bool RequiereTotp = true)
 {
     public static McpRuntimeSettings Desde(IReadOnlyDictionary<string, string> v) => new(
         Habilitado: Si(Get(v, "IA_MCP_HABILITADO"), false),
@@ -72,7 +73,8 @@ public sealed record McpRuntimeSettings(
         MaxIntentosLogin: Entero(Get(v, "IA_MCP_OAUTH_MAX_INTENTOS"), 5, 3, 20),
         BloqueoMin: Entero(Get(v, "IA_MCP_OAUTH_BLOQUEO_MIN"), 15, 1, 1440),
         MaxClientesOauth: Entero(Get(v, "IA_MCP_OAUTH_MAX_CLIENTES"), 500, 1, 10000),
-        RedirectsPermitidos: Lista(Get(v, "IA_MCP_OAUTH_REDIRECTS")));
+        RedirectsPermitidos: Lista(Get(v, "IA_MCP_OAUTH_REDIRECTS")),
+        RequiereTotp: Si(Get(v, "IA_MCP_OAUTH_REQUIERE_TOTP"), true));
 
     /// <summary>Lista de URIs separadas por salto de linea, espacio, coma o punto y coma. Vacia = no se permite ningun cliente.</summary>
     public static IReadOnlyList<string> Lista(string? valor) =>

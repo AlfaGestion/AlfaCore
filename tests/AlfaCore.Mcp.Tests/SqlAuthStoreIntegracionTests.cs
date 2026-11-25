@@ -94,6 +94,22 @@ public class SqlAuthStoreIntegracionTests
             var rot = await Task.WhenAll(Enumerable.Range(0, 8).Select(i => store.RotarRefreshAsync(a.Hash, a with { Hash = Secretos.Hash($"n{i}-" + sufijo) }, ahora, default)));
             Assert.Equal(1, rot.Count(x => x));
 
+            // Segundo factor: secreto cifrado, anti-replay atomico y revocacion por usuario
+            await store.SetTotpAsync(id, "v1.secreto-cifrado-de-prueba", default);
+            Assert.Equal("v1.secreto-cifrado-de-prueba", (await store.GetUsuarioPorIdAsync(id, default))!.TotpSecreto);
+            Assert.True(await store.UsarPasoTotpAsync(id, 1000, default));
+            Assert.False(await store.UsarPasoTotpAsync(id, 1000, default));   // mismo paso: replay
+            Assert.False(await store.UsarPasoTotpAsync(id, 999, default));    // paso anterior
+            Assert.True(await store.UsarPasoTotpAsync(id, 1001, default));
+            await store.SetTotpAsync(id, "v1.nuevo", default);                 // reinscripcion: reinicia el ultimo paso
+            Assert.True(await store.UsarPasoTotpAsync(id, 5, default));
+            var pasos = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => store.UsarPasoTotpAsync(id, 7000, default)));
+            Assert.Equal(1, pasos.Count(x => x));                              // simultaneos: gana uno solo
+            var f3 = Guid.NewGuid();
+            await store.AddRefreshAsync(new RefreshAuth(Secretos.Hash("u-" + sufijo), clientId, id, "mcp:read", "x", ahora.AddDays(30), f3), default);
+            await store.RevocarUsuarioAsync(id, default);
+            Assert.True((await store.GetRefreshAsync(Secretos.Hash("u-" + sufijo), default)).Invalido);
+
             // Evento y purga
             await store.EventoAsync("test", usuario, clientId, "127.0.0.1", "ok", default);
             await store.PurgarVencidosAsync(ahora, default);

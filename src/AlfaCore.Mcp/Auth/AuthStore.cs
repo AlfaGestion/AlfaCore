@@ -3,7 +3,8 @@ using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Mcp.Auth;
 
-public sealed record UsuarioAuth(int Id, string Usuario, string Nombre, string ClaveHash, bool Activo, int Intentos, DateTime? BloqueadoHasta, string? Base);
+public sealed record UsuarioAuth(int Id, string Usuario, string Nombre, string ClaveHash, bool Activo, int Intentos, DateTime? BloqueadoHasta, string? Base,
+    string? TotpSecreto = null, long TotpUltimoPaso = 0);
 public sealed record ClienteOAuth(string ClientId, string Nombre, IReadOnlyList<string> RedirectUris, DateTime AltaUtc);
 public sealed record CodigoAuth(string Hash, string ClientId, int UsuarioId, string RedirectUri, string CodeChallenge, string Scope, string Resource, DateTime ExpiraUtc);
 public sealed record RefreshAuth(string Hash, string ClientId, int UsuarioId, string Scope, string Resource, DateTime ExpiraUtc, Guid Familia);
@@ -18,6 +19,12 @@ public interface IAuthStore
     Task<UsuarioAuth?> GetUsuarioPorIdAsync(int id, CancellationToken ct);
     Task RegistrarLoginAsync(int id, bool ok, int intentos, DateTime? bloqueadoHastaUtc, CancellationToken ct);
     Task<int> CrearUsuarioAsync(string usuario, string nombre, string claveHash, string? baseId, CancellationToken ct);
+    /// <summary>Guarda (o borra con null) el secreto TOTP ya CIFRADO y reinicia el ultimo paso usado.</summary>
+    Task SetTotpAsync(int usuarioId, string? secretoCifrado, CancellationToken ct);
+    /// <summary>Anti-replay: acepta el paso solo si es mayor al ultimo usado; atomico. False = codigo ya utilizado.</summary>
+    Task<bool> UsarPasoTotpAsync(int usuarioId, long paso, CancellationToken ct);
+    /// <summary>Corta todas las sesiones renovables del usuario (cualquier cliente).</summary>
+    Task RevocarUsuarioAsync(int usuarioId, CancellationToken ct);
 
     Task<int> ContarClientesAsync(CancellationToken ct);
     Task AddClienteAsync(ClienteOAuth cliente, CancellationToken ct);
@@ -69,6 +76,25 @@ public sealed class MemoryAuthStore : IAuthStore
             _usuarios[id] = new UsuarioAuth(id, usuario, nombre, claveHash, true, 0, null, baseId);
             return Task.FromResult(id);
         }
+    }
+
+    public Task SetTotpAsync(int usuarioId, string? secretoCifrado, CancellationToken ct)
+    { lock (_l) if (_usuarios.TryGetValue(usuarioId, out var u)) _usuarios[usuarioId] = u with { TotpSecreto = secretoCifrado, TotpUltimoPaso = 0 }; return Task.CompletedTask; }
+
+    public Task<bool> UsarPasoTotpAsync(int usuarioId, long paso, CancellationToken ct)
+    {
+        lock (_l)
+        {
+            if (!_usuarios.TryGetValue(usuarioId, out var u) || paso <= u.TotpUltimoPaso) return Task.FromResult(false);
+            _usuarios[usuarioId] = u with { TotpUltimoPaso = paso };
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task RevocarUsuarioAsync(int usuarioId, CancellationToken ct)
+    {
+        lock (_l) foreach (var k in _refresh.Where(x => x.Value.T.UsuarioId == usuarioId).Select(x => x.Key).ToList()) _refresh[k] = (_refresh[k].T, true, _refresh[k].Reemplazado);
+        return Task.CompletedTask;
     }
 
     public Task<int> ContarClientesAsync(CancellationToken ct) { lock (_l) return Task.FromResult(_clientes.Count); }
@@ -158,10 +184,12 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
         public int Intentos { get; set; }
         public DateTime? BloqueadoHasta { get; set; }
         public string? Base { get; set; }
-        public UsuarioAuth ToModel() => new(Id, Usuario, Nombre, ClaveHash, Activo, Intentos, BloqueadoHasta, Base);
+        public string? TotpSecreto { get; set; }
+        public long TotpUltimoPaso { get; set; }
+        public UsuarioAuth ToModel() => new(Id, Usuario, Nombre, ClaveHash, Activo, Intentos, BloqueadoHasta, Base, TotpSecreto, TotpUltimoPaso);
     }
 
-    private const string SelUsuario = "SELECT Id, Usuario, Nombre, ClaveHash, Activo, Intentos, BloqueadoHasta, Base FROM dbo.MCP_USUARIO";
+    private const string SelUsuario = "SELECT Id, Usuario, Nombre, ClaveHash, Activo, Intentos, BloqueadoHasta, Base, TotpSecreto, TotpUltimoPaso FROM dbo.MCP_USUARIO";
 
     public async Task<UsuarioAuth?> GetUsuarioAsync(string usuario, CancellationToken ct)
     {
@@ -192,6 +220,25 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
         return await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             "INSERT INTO dbo.MCP_USUARIO (Usuario, Nombre, ClaveHash, Base) VALUES (@usuario, @nombre, @claveHash, @baseId); SELECT CAST(SCOPE_IDENTITY() AS int)",
             new { usuario, nombre, claveHash, baseId }, cancellationToken: ct));
+    }
+
+    public async Task SetTotpAsync(int usuarioId, string? secretoCifrado, CancellationToken ct)
+    {
+        await using var cn = await AbrirAsync(ct);
+        await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.MCP_USUARIO SET TotpSecreto = @secretoCifrado, TotpUltimoPaso = 0 WHERE Id = @usuarioId", new { usuarioId, secretoCifrado }, cancellationToken: ct));
+    }
+
+    public async Task<bool> UsarPasoTotpAsync(int usuarioId, long paso, CancellationToken ct)
+    {
+        await using var cn = await AbrirAsync(ct);
+        // UPDATE condicionado: dos intentos simultaneos con el mismo codigo => solo uno gana.
+        return await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.MCP_USUARIO SET TotpUltimoPaso = @paso WHERE Id = @usuarioId AND TotpUltimoPaso < @paso", new { usuarioId, paso }, cancellationToken: ct)) == 1;
+    }
+
+    public async Task RevocarUsuarioAsync(int usuarioId, CancellationToken ct)
+    {
+        await using var cn = await AbrirAsync(ct);
+        await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.MCP_REFRESH_TOKEN SET Revocado = 1 WHERE UsuarioId = @usuarioId", new { usuarioId }, cancellationToken: ct));
     }
 
     public async Task<int> ContarClientesAsync(CancellationToken ct)

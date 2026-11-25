@@ -135,15 +135,15 @@ public static class OAuthEndpoints
 
     private static async Task<IResult> AutorizarGet(HttpContext ctx, IAuthStore store, AuthOptions opt, IMcpConfigProvider config, IAntiforgery af, ILogger<TokenService> log, CancellationToken ct)
     {
-        if ((await Config(config, log, ct)) is not { Habilitado: true }) return PaginaError("El servicio no esta disponible por el momento. Proba de nuevo en unos minutos.");
+        if ((await Config(config, log, ct)) is not { Habilitado: true } cfg) return PaginaError("El servicio no esta disponible por el momento. Proba de nuevo en unos minutos.");
         var q = ctx.Request.Query;
         var (s, error) = await Validar(k => q[k].FirstOrDefault(), store, opt, ct);
         if (error is not null) return error;
         var tokens = af.GetAndStoreTokens(ctx);
-        return Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), Reenviar(k => q[k].FirstOrDefault()), tokens.RequestToken!, null));
+        return Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), Reenviar(k => q[k].FirstOrDefault()), tokens.RequestToken!, null, cfg.RequiereTotp));
     }
 
-    private static async Task<IResult> AutorizarPost(HttpContext ctx, IAuthStore store, AuthOptions opt, IMcpConfigProvider config, IAntiforgery af, ILogger<TokenService> log, CancellationToken ct)
+    private static async Task<IResult> AutorizarPost(HttpContext ctx, IAuthStore store, AuthOptions opt, IMcpConfigProvider config, IAntiforgery af, SecretProtector protector, ILogger<TokenService> log, CancellationToken ct)
     {
         var cfg = await Config(config, log, ct);
         if (cfg is not { Habilitado: true }) return PaginaError("El servicio no esta disponible por el momento. Proba de nuevo en unos minutos.");
@@ -160,10 +160,11 @@ public static class OAuthEndpoints
 
         var usuario = (V("usuario") ?? "").Trim();
         var clave = V("clave") ?? "";
-        const string generico = "Usuario o clave incorrectos, o cuenta bloqueada temporalmente.";
-        IResult Reintentar(string mensaje) => Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), Reenviar(V), af.GetAndStoreTokens(ctx).RequestToken!, mensaje));
+        var codigoTotp = (V("codigo") ?? "").Trim();
+        const string generico = "Usuario, clave o codigo incorrectos, o cuenta bloqueada temporalmente. Si es tu primer ingreso, pedile al administrador que configure tu segundo factor.";
+        IResult Reintentar(string mensaje) => Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), Reenviar(V), af.GetAndStoreTokens(ctx).RequestToken!, mensaje, cfg.RequiereTotp));
 
-        if (usuario.Length is 0 or > 100 || clave.Length is 0 or > 200) { PasswordHasher.IgualarTiempo(clave); return Reintentar(generico); }
+        if (usuario.Length is 0 or > 100 || clave.Length is 0 or > 200 || codigoTotp.Length > 20) { PasswordHasher.IgualarTiempo(clave); return Reintentar(generico); }
 
         var ahora = DateTime.UtcNow;
         var u = await store.GetUsuarioAsync(usuario, ct);
@@ -173,19 +174,45 @@ public static class OAuthEndpoints
             await store.EventoAsync(u is null ? "login_usuario_inexistente" : "login_rechazado", usuario, s!.Cliente.ClientId, Ip(ctx), u is null ? null : "inactivo o bloqueado", ct);
             return Reintentar(generico);
         }
-        if (!PasswordHasher.Verificar(clave, u.ClaveHash))
+
+        // Primer factor (clave) y, solo si la clave es correcta, segundo factor (TOTP de un solo uso).
+        var claveOk = PasswordHasher.Verificar(clave, u.ClaveHash);
+        var segundoOk = false;
+        if (claveOk)
+        {
+            if (u.TotpSecreto is not null)
+            {
+                try
+                {
+                    var (ok, paso) = Totp.Verificar(protector.Revelar(u.TotpSecreto), codigoTotp, ahora);
+                    segundoOk = ok && await store.UsarPasoTotpAsync(u.Id, paso, ct); // el mismo codigo no sirve dos veces
+                }
+                catch (System.Security.Cryptography.CryptographicException ex)
+                {
+                    log.LogError(ex, "No se pudo descifrar el secreto TOTP de {Usuario} (clave de cifrado cambiada?).", u.Usuario);
+                    await store.EventoAsync("totp_ilegible", u.Usuario, s!.Cliente.ClientId, Ip(ctx), "no se pudo descifrar el secreto", ct);
+                }
+            }
+            else if (!cfg.RequiereTotp) segundoOk = true;
+            else
+            {
+                await store.EventoAsync("login_sin_totp", u.Usuario, s!.Cliente.ClientId, Ip(ctx), "clave correcta pero el usuario no tiene segundo factor", ct);
+                return Reintentar(generico); // mismo mensaje: no se revela que la clave era correcta
+            }
+        }
+        if (!claveOk || !segundoOk)
         {
             var intentos = u.Intentos + 1;
             DateTime? bloqueo = intentos >= cfg.MaxIntentosLogin ? ahora.AddMinutes(cfg.BloqueoMin) : null;
             await store.RegistrarLoginAsync(u.Id, false, bloqueo is null ? intentos : 0, bloqueo, ct);
-            await store.EventoAsync(bloqueo is null ? "login_fallido" : "usuario_bloqueado", u.Usuario, s!.Cliente.ClientId, Ip(ctx), $"intento {intentos}", ct);
+            await store.EventoAsync(bloqueo is not null ? "usuario_bloqueado" : claveOk ? "totp_fallido" : "login_fallido", u.Usuario, s!.Cliente.ClientId, Ip(ctx), $"intento {intentos}", ct);
             return Reintentar(generico);
         }
 
         await store.RegistrarLoginAsync(u.Id, true, 0, null, ct);
         var codigo = Secretos.NuevoToken();
         await store.AddCodigoAsync(new CodigoAuth(Secretos.Hash(codigo), s!.Cliente.ClientId, u.Id, s.RedirectUri, s.CodeChallenge, s.Scope, opt.Resource, ahora.AddSeconds(cfg.CodigoSeg)), ct);
-        await store.EventoAsync("login_ok", u.Usuario, s.Cliente.ClientId, Ip(ctx), null, ct);
+        await store.EventoAsync("login_ok", u.Usuario, s.Cliente.ClientId, Ip(ctx), u.TotpSecreto is null ? "sin segundo factor" : "con segundo factor", ct);
         return Redirigir(s.RedirectUri, s.State, opt.Issuer, ("code", codigo));
     }
 
@@ -335,7 +362,7 @@ public static class LoginPage
         "p{color:#444;font-size:.92rem;line-height:1.4}label{display:block;margin:.8rem 0 .2rem;font-size:.85rem}input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #bbb;border-radius:6px}" +
         "button{padding:.6rem 1rem;border-radius:6px;border:0;font-size:.95rem;cursor:pointer}.ok{background:#1b5e20;color:#fff}.no{background:#e0e0e0;margin-left:.5rem}.err{color:#b00020;font-size:.88rem;margin-top:.8rem}";
 
-    public static string Render(string cliente, string host, Dictionary<string, string?> campos, string antiforgery, string? error)
+    public static string Render(string cliente, string host, Dictionary<string, string?> campos, string antiforgery, string? error, bool codigoObligatorio)
     {
         var ocultos = string.Concat(campos.Select(c => $"<input type=\"hidden\" name=\"{E(c.Key)}\" value=\"{E(c.Value)}\">"));
         return $"""
@@ -347,6 +374,7 @@ public static class LoginPage
             <input type="hidden" name="__RequestVerificationToken" value="{E(antiforgery)}">
             <label for="u">Usuario</label><input id="u" type="text" name="usuario" required maxlength="100" autofocus>
             <label for="p">Clave</label><input id="p" type="password" name="clave" required maxlength="200">
+            <label for="c">Codigo de la app autenticadora (6 digitos)</label><input id="c" type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="20" {(codigoObligatorio ? "required" : "")}>
             {(error is null ? "" : $"<div class=\"err\" role=\"alert\">{E(error)}</div>")}
             <p style="margin-top:1.2rem"><button class="ok" type="submit" name="accion" value="autorizar">Ingresar y autorizar</button>
             <button class="no" type="submit" name="accion" value="cancelar" formnovalidate>Cancelar</button></p>
