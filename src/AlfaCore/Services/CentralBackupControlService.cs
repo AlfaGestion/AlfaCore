@@ -73,12 +73,15 @@ public sealed class CentralBackupControlService(IConfiguration configuration, IA
                 DbNombre = dbNombre,
                 TipoBackup = tipoBackup,
                 Resultado = resultado,
-                request.Mensaje,
-                request.HostCliente,
-                request.UsuarioSql,
-                request.InstanciaSql,
-                request.VersionSql,
-                request.SistemaOperativo,
+                // 2026-11-25: se recorta al largo de cada columna. Un mensaje largo (varios
+                // errores de subida juntos) daba "se truncarian" y el reporte se perdia
+                // justo cuando habia problemas.
+                Mensaje = Recortar(request.Mensaje, 500),
+                HostCliente = Recortar(request.HostCliente, 150),
+                UsuarioSql = Recortar(request.UsuarioSql, 150),
+                InstanciaSql = Recortar(request.InstanciaSql, 150),
+                VersionSql = Recortar(request.VersionSql, 100),
+                SistemaOperativo = Recortar(request.SistemaOperativo, 100),
                 request.TamanioBaseMB,
                 request.EspacioLibreDiscoGB,
                 request.EspacioTotalDiscoGB,
@@ -98,5 +101,12 @@ public sealed class CentralBackupControlService(IConfiguration configuration, IA
             await appEvents.LogErrorAsync("BackupsControl", "Registrar", ex, "No se pudo registrar el estado del backup.", new { request.IdCliente, request.DbServidor, request.DbNombre }, AppEventSeverity.Error, ct);
             throw;
         }
+    }
+
+    private static string? Recortar(string? valor, int largo)
+    {
+        if (string.IsNullOrEmpty(valor) || valor.Length <= largo)
+            return valor;
+        return valor[..(largo - 3)] + "...";
     }
 }
