@@ -443,7 +443,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             .ToList();
     }
 
-    private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
+    internal static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
         bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null,
@@ -497,6 +497,11 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
         sb.AppendLine();
         sb.AppendLine("REGLAS:");
+        // Lo que antes decidían listas de palabras (saludos, "sí" sueltos, mensajes de prueba o sin contenido)
+        // lo decide la IA leyendo la conversación, con criterio y sin frases de ejemplo (2026-11-25).
+        sb.AppendLine("- Leé el último mensaje junto con toda la conversación y respondé a lo que la persona quiere decir, no a palabras sueltas. Si escribió varios mensajes seguidos, te llegan uno por renglón: es una sola intervención y la contestás en una sola respuesta. Un dato suelto (números, un nombre, un sí o un no) contesta lo que se venía hablando.");
+        sb.AppendLine("- Un saludo, un agradecimiento, una despedida o un mensaje de prueba lo contestás vos, breve y natural (tipo RESUELVE): no se deriva ni abre ticket. Si ya saludaste en esta charla, no vuelvas a saludar.");
+        sb.AppendLine("- Si no se entiende qué quiere, preguntale qué necesita (tipo ACLARA) en vez de suponer o derivar.");
         sb.AppendLine("- Respondé en español rioplatense, breve y directo, sin inventar datos del negocio (precios, stock, plazos) que no estén en la información.");
         sb.AppendLine("- No prometas nada que no puedas sostener con la información dada.");
         sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");
@@ -575,8 +580,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si resolviste la consulta: tipo=\"RESUELVE\", \"puede_responder\": true, y la respuesta.");
         sb.AppendLine("- Si NO podés resolver pero UNA pregunta concreta te permitiría hacerlo, y NO se la hiciste ya antes en esta conversación: tipo=\"ACLARA\", \"puede_responder\": false, y en \"respuesta\" esa única pregunta (breve y puntual).");
         sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve que deje claro que le va a responder una persona del equipo (un asesor o un compañero), no vos: nada de \"voy a verificar\" ni \"te respondo en un momento\", porque vos no vas a volver a escribir con la respuesta. Ej.: \"Le paso tu consulta a un asesor y te responde a la brevedad\". Redactala con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución. Nunca le pidas que contacte o consulte a un asesor: vos ya sos la empresa y la consulta le llega al equipo por este mismo chat.");
-        sb.AppendLine("- Si el cliente NO plantea nada nuevo y sólo pregunta por el estado de algo que ya consultó antes (\"¿pudieron ver algo?\", \"¿novedades?\", \"lo que pedimos ayer\", \"sigo esperando\", \"¿cómo va lo mío?\"): tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o pregunta nueva, NO es SEGUIMIENTO: tratalo como una consulta normal. Si pregunta por un pedido o una entrega (\"¿cuándo me entregan?\", \"¿ya salió?\") y tenés la herramienta de pedidos, usala: tampoco es SEGUIMIENTO.");
-        sb.AppendLine("- Si el cliente AVISA que su tema ya se resolvió o agradece cerrando (\"ya está arreglado\", \"ya anda\", \"lo pude solucionar\", \"gracias, ya está\"): NO es SEGUIMIENTO ni DERIVA. tipo=\"RESUELVE\", \"puede_responder\": true, y en \"respuesta\" un agradecimiento breve que cierre la charla, sin hacer preguntas.");
+        sb.AppendLine("- Si el cliente no plantea nada nuevo y sólo quiere saber cómo va algo que ya consultó antes: tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o una pregunta nueva, no es SEGUIMIENTO: tratalo como una consulta normal. Si lo que quiere saber es cómo viene un pedido o una entrega y tenés la herramienta de pedidos, usala: tampoco es SEGUIMIENTO.");
+        sb.AppendLine("- Si el cliente avisa que el problema que había consultado ya se resolvió: no es SEGUIMIENTO ni DERIVA. tipo=\"RESUELVE\", \"puede_responder\": true, \"tema_resuelto\": true, y en \"respuesta\" un agradecimiento breve que cierre la charla, sin hacer preguntas. En cualquier otro caso \"tema_resuelto\": false.");
+        sb.AppendLine("- DERIVA es sólo cuando hace falta que una persona del equipo tome el tema. Si vos le hacés una pregunta para poder ayudarlo, eso es ACLARA.");
         sb.AppendLine("- Cuando derivás, decidí en \"abrir_ticket\" si hace falta registrar un ticket, leyendo el mensaje junto con toda la conversación. Un ticket es para un tema que el equipo tiene que trabajar y al que hay que hacerle seguimiento. Si con lo que hay en la charla basta con que una persona del equipo lo lea y le conteste por acá, no hace falta ticket: \"abrir_ticket\": false. Si dudás, true.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 
@@ -592,8 +598,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
         sb.AppendLine();
         sb.AppendLine(precioRequiereIdentificacion
-            ? "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"pide_precio\": true/false, \"respuesta\": \"...\"}."
-            : "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false,\"respuesta\": \"...\"}.");
+            ? "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"tema_resuelto\": true/false, \"pide_precio\": true/false, \"respuesta\": \"...\"}."
+            : "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"tema_resuelto\": true/false, \"respuesta\": \"...\"}.");
         return sb.ToString().Trim();
     }
 
@@ -701,7 +707,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         "breve para el operador, incluyendo textualmente los datos útiles que se lean (códigos de error, IDs de AnyDesk, " +
         "números de comprobante, montos).";
 
-    private static ConversacionAsistenteRespuesta? ParseRespuesta(string? json)
+    internal static ConversacionAsistenteRespuesta? ParseRespuesta(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
             return null;
@@ -733,7 +739,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             var pidePrecio = root.TryGetProperty("pide_precio", out var pp)
                 && (pp.ValueKind == JsonValueKind.True
                     || (pp.ValueKind == JsonValueKind.String && bool.TryParse(pp.GetString(), out var bp) && bp));
-            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen, AbrirTicket = abrirTicket, PidePrecio = pidePrecio };
+            var temaResuelto = root.TryGetProperty("tema_resuelto", out var tr)
+                && (tr.ValueKind == JsonValueKind.True
+                    || (tr.ValueKind == JsonValueKind.String && bool.TryParse(tr.GetString(), out var btr) && btr));
+            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen, AbrirTicket = abrirTicket, PidePrecio = pidePrecio, TemaResuelto = temaResuelto };
         }
         catch (JsonException)
         {

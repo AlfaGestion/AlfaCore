@@ -278,6 +278,30 @@ Borradores en `CONV_BOT_CLIENTES` y `CONV_BOT_PEDIDOS.DireccionEntrega` (script
   el job de «Minutos de espera antes de responder» y en los mensajes que llegan mientras el bot está contestando.
 - Un mensaje con números nunca es un saludo (`EsMensajeSocial`): "2,3y4" quedaba reducido a la "y".
 
+## Bot: interpreta la IA, no listas de palabras (2026-11-25, rama `bot-ia-decide`)
+
+Lo que quiere decir el cliente lo decide la IA leyendo la conversación completa. Se sacaron las reglas por
+palabras que pisaban su respuesta:
+
+| Antes (regla por palabras) | Ahora |
+|---|---|
+| Saludo / agradecimiento → texto fijo "¡Hola! ¿En qué te puedo ayudar?" | Lo contesta la IA (criterio en el prompt: no se deriva ni abre ticket) |
+| Mensaje de prueba, "sí"/"no" sueltos, mensajes sin contenido | La IA contesta o pregunta qué necesita (ACLARA) |
+| "¿Novedades?" por frases | Tipo `SEGUIMIENTO` que devuelve la IA |
+| "Ya se arregló" por frases | Campo `tema_resuelto` del JSON; la respuesta al cliente la redacta la IA |
+| "¿Tu pedido o tu consulta?": elección por palabras y reescritura del mensaje | La IA lee la conversación; sólo se evita repetir la pregunta |
+| Sí/no a "¿escribís por tal cuenta?" por listas | Herramienta `confirmar_identidad` (sólo si ya se le preguntó) |
+| Confirmar/cancelar pedido o alta de cliente por listas | Herramientas `confirmar_pedido` / `confirmar_alta_cliente` (sólo con borrador pendiente) |
+| Ticket sólo si el mensaje "parece consulta" | Lo decide `abrir_ticket` de la IA |
+| DERIVA sin nombrar al equipo y con "?" → ACLARA | Criterio en el prompt |
+
+Quedan, porque no interpretan al cliente sino que cuidan qué se graba o se muestra: un pedido o alta se graba
+sólo si existe el borrador y el cliente recibe el texto que devuelve la grabación; sin identidad confirmada no
+se dan datos privados; tope de créditos; nunca dos aclaraciones seguidas; filtros sobre lo que escribe la IA
+(no pedir que contacte a otro, no afirmar que algo no se vende). Las palabras de escalado y de urgencia
+siguen siendo configuración de cada empresa. `EsMensajeSocial` queda sólo para no buscar en manuales y
+AlfaKnowledge ante un saludo (no decide la respuesta).
+
 ## Issues pendientes
 
 ### Issue 8. Completar flujo de envío WhatsApp

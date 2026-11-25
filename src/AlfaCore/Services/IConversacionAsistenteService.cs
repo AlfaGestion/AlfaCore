@@ -71,4 +71,10 @@ public sealed class ConversacionAsistenteRespuesta
     /// Lo decide la IA leyendo la conversación (no una lista de palabras); false si no lo informa.
     /// </summary>
     public bool PidePrecio { get; set; }
+
+    /// <summary>
+    /// El cliente avisa que el problema que había consultado ya se resolvió. Lo decide la IA leyendo la
+    /// conversación (antes, una lista de frases como "ya anda"); false si no lo informa.
+    /// </summary>
+    public bool TemaResuelto { get; set; }
 }

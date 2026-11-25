@@ -200,25 +200,6 @@ public sealed class ConversacionBotPedidosService(
         return "Listo, cancelé el pedido; no se registró nada. Si querés armar otro, decime qué artículos y cuántos.";
     }
 
-    /// <summary>"Sí", "dale", "confirmo"... como respuesta corta, sin negación.</summary>
-    internal static bool EsConfirmacion(string? texto)
-    {
-        var t = Normalizar(texto);
-        return t.Length > 0 && t.Split(' ').Length <= 8
-            && !Regex.IsMatch(t, @"\b(no|cancel\w*|anul\w*)\b")
-            && Regex.IsMatch(t, @"^(si|dale|ok|okey|okay|listo|perfecto|correcto|confirmo|confirmado|confirmar|confirmalo|de acuerdo|va|hacelo|mandalo|cargalo|registralo|adelante)\b");
-    }
-
-    /// <summary>"No", "cancelalo", "mejor no"... como respuesta corta.</summary>
-    internal static bool EsCancelacion(string? texto)
-    {
-        var t = Normalizar(texto);
-        // "no, mejor 4 aaa nomás" cambia el pedido, no lo cancela (batería 4264, 2026-10-28): lo rearma el modelo.
-        return t.Length > 0 && t.Split(' ').Length <= 8
-            && Regex.IsMatch(t, @"^(no|mejor no|cancela\w*|anula\w*|dejalo|olvidalo|no gracias)\b")
-            && !Regex.IsMatch(t, @"\d|\b(cambi\w*|agreg\w*|sum\w*|sac\w*|quit\w*|en vez|en lugar)\b");
-    }
-
     internal static IReadOnlyList<CatalogosCatalogoItemDto> BuscarEnCatalogo(IReadOnlyList<CatalogosCatalogoItemDto> articulos, string pedido)
     {
         var exacto = articulos.Where(a => string.Equals(a.IdArticulo.Trim(), pedido.Trim(), StringComparison.OrdinalIgnoreCase)
