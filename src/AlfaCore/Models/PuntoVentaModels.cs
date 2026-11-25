@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AlfaCore.Models;
 
 public sealed class PuntoVentaContextDto
@@ -67,6 +69,8 @@ public sealed class PuntoVentaArticleDto
 
 public sealed class PuntoVentaCartItemDto
 {
+    /// <summary>Renglón de una NP cuando la factura se carga desde el mismo POS.</summary>
+    public int? OrigenLineaId { get; set; }
     public string IdArticulo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
     public string Presentacion { get; set; } = string.Empty;
@@ -110,6 +114,80 @@ public sealed class PuntoVentaSettingsDto
     public string MedioDePagoContado { get; set; } = string.Empty;
     /// <summary>Si está activo, el recargo de tarjeta se informa como importe sin IVA.</summary>
     public bool RecargoTarjetaSinIva { get; set; }
+    /// <summary>Radio máximo de entrega. Vacío = sin límite configurado.</summary>
+    public string DistanciaMaximaEntregaKm { get; set; } = string.Empty;
+    public bool RelacionaCobranzasConNotasPedido { get; set; }
+    public bool CargaRapidaGrafica { get; set; }
+    public string ImporteRapido1 { get; set; } = "5";
+    public string ImporteRapido2 { get; set; } = "10";
+    public string ImporteRapido3 { get; set; } = "25";
+    public string ImporteRapido4 { get; set; } = "50";
+    public string ImporteRapido5 { get; set; } = "100";
+    public string ImporteRapido6 { get; set; } = "200";
+    public string CantidadRapida1 { get; set; } = "0.1";
+    public string CantidadRapida2 { get; set; } = "0.25";
+    public string CantidadRapida3 { get; set; } = "0.5";
+    public string CantidadRapida4 { get; set; } = "1";
+    public string CantidadRapida5 { get; set; } = "6";
+    public string CantidadRapida6 { get; set; } = "12";
+    public int CantidadDecimales { get; set; } = 2;
+    public bool ConfirmarCantidadPrecio { get; set; }
+}
+
+public enum PosIngresoRapidoModo
+{
+    Importe,
+    Cantidad
+}
+
+public sealed record PosIngresoRapidoConfirmado(PosIngresoRapidoModo Modo, decimal Valor);
+
+public static class PosIngresoRapidoCalculador
+{
+    public static bool TryParse(string? texto, out decimal valor)
+    {
+        var normalizado = (texto ?? string.Empty).Trim().Replace(',', '.');
+        return decimal.TryParse(normalizado, NumberStyles.Number, CultureInfo.InvariantCulture, out valor);
+    }
+
+    public static bool TryCalcularCantidad(
+        PosIngresoRapidoConfirmado ingreso,
+        decimal precioUnitario,
+        out decimal cantidad,
+        out string error)
+    {
+        cantidad = 0m;
+        error = string.Empty;
+        if (ingreso.Valor <= 0m)
+        {
+            error = "Ingresá un valor mayor que cero.";
+            return false;
+        }
+
+        cantidad = ingreso.Modo == PosIngresoRapidoModo.Importe
+            ? precioUnitario > 0m ? ingreso.Valor / precioUnitario : 0m
+            : ingreso.Valor;
+
+        if (ingreso.Modo == PosIngresoRapidoModo.Importe && precioUnitario <= 0m)
+        {
+            error = "El artículo no tiene un precio unitario válido para calcular la cantidad.";
+            return false;
+        }
+
+        if (cantidad <= 0m)
+        {
+            error = "La cantidad calculada debe ser mayor que cero.";
+            return false;
+        }
+
+        if (cantidad != decimal.Round(cantidad, 4, MidpointRounding.ToEven))
+        {
+            error = "El importe no produce una cantidad representable para este artículo.";
+            return false;
+        }
+
+        return true;
+    }
 }
 
 public sealed class PuntoVentaRubroDto
@@ -134,15 +212,29 @@ public sealed class PuntoVentaPaymentLineDto
     public string Observaciones { get; set; } = string.Empty;
     public decimal Importe { get; set; }
     public decimal Recargo { get; set; }
+    public bool EsAnticipo { get; set; }
+    public int IdCobranzaAnticipo { get; set; }
+    public string ComprobanteAnticipo { get; set; } = string.Empty;
 }
 
 public sealed class PuntoVentaSaleRequestDto
 {
+    public int? IdNotaPedidoOrigen { get; set; }
+    public string ComprobanteNotaPedidoOrigen { get; set; } = string.Empty;
+    public int IdCobranzaAnticipo { get; set; }
+    public string ComprobanteCobranzaAnticipo { get; set; } = string.Empty;
+    public decimal ImporteAnticipo { get; set; }
     public string CuentaCliente { get; set; } = string.Empty;
     public PuntoVentaClienteEventualDto? ClienteEventual { get; set; }
     public string Vendedor { get; set; } = string.Empty;
     public DateTime Fecha { get; set; } = DateTime.Today;
     public DateTime? FechaEntrega { get; set; }
+    public string NombreContacto { get; set; } = string.Empty;
+    public string TelefonoContacto { get; set; } = string.Empty;
+    public string DocumentoContacto { get; set; } = string.Empty;
+    public bool EsEntregaADomicilio { get; set; }
+    public string DomicilioEntrega { get; set; } = string.Empty;
+    public string LocalidadEntrega { get; set; } = string.Empty;
     public string Observaciones { get; set; } = string.Empty;
     public string TipoComprobante { get; set; } = "FC";
     public string Sucursal { get; set; } = "0001";

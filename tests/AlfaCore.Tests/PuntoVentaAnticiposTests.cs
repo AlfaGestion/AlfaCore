@@ -28,6 +28,32 @@ public sealed class PuntoVentaAnticiposTests
     }
 
     [Fact]
+    public void EstadoEntregaDistinguePendienteParcialYCompleta()
+    {
+        static PuntoVentaNpItemDto Linea(decimal cantidad, decimal entregada) => new()
+        {
+            Cantidad = cantidad,
+            CantidadEntregada = entregada
+        };
+
+        Assert.Equal("PENDIENTE", new PuntoVentaNpAnticiposDto { Items = [Linea(2m, 0m)] }.EstadoEntrega);
+        Assert.Equal("PARCIAL", new PuntoVentaNpAnticiposDto { Items = [Linea(2m, 1m)] }.EstadoEntrega);
+        Assert.Equal("ENTREGADO", new PuntoVentaNpAnticiposDto { Items = [Linea(2m, 2m)] }.EstadoEntrega);
+    }
+
+    [Fact]
+    public void EntregaAnuladaNoSePresentaComoPendiente()
+    {
+        var np = new PuntoVentaNpAnticiposDto
+        {
+            EstadoComprobante = "ANULADA",
+            Items = [new PuntoVentaNpItemDto { Cantidad = 1m, CantidadEntregada = 1m }]
+        };
+
+        Assert.Equal("ANULADA", np.EstadoEntrega);
+    }
+
+    [Fact]
     public void NotaSinAnticiposTieneTotalCeroVerificado()
     {
         var total = PuntoVentaAnticiposCalculador.Totalizar([]);
@@ -142,6 +168,24 @@ public sealed class PuntoVentaAnticiposTests
 
         Assert.Equal(PuntoVentaAnticiposTiposRelacion.PrVenta, relacion.Tipo);
         Assert.True(relacion.Verificada);
+    }
+
+    [Fact]
+    public void LeeResumenLegacyDeLaNotaDePedido()
+    {
+        var ok = PuntoVentaAnticiposCalculador.TryLeerResumenLegacy(
+            "SENA $2000.00 // SALDO $3000.00", out var sena, out var saldo);
+
+        Assert.True(ok);
+        Assert.Equal(2000m, sena);
+        Assert.Equal(3000m, saldo);
+    }
+
+    [Fact]
+    public void NoTomaTextoLibreComoResumenLegacy()
+    {
+        Assert.False(PuntoVentaAnticiposCalculador.TryLeerResumenLegacy(
+            "Cob.NP 000600000005X", out _, out _));
     }
 
     [Fact]

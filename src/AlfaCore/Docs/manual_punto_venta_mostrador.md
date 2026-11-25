@@ -111,12 +111,18 @@ Para una nota de crédito cargá los artículos que se devuelven y cobrá como s
 
 ## Gestionar encargos y notas de pedido
 
-En el modo **Mostrador / Producción**, abrí **☰ → Gestionar encargos** para consultar las notas de pedido comerciales pendientes. La pantalla carga primero el listado; las cobranzas y el detalle de artículos se consultan recién al abrir una nota, para que la consulta sea más rápida.
+En el modo **Mostrador / Producción**, abrí **☰ → Nuevo encargo** para seleccionar la **NP** y cargar el pedido con el mismo carrito comercial del mostrador. Abrí **☰ → Gestionar encargos** para consultar las notas de pedido comerciales pendientes. La pantalla carga primero el listado; las cobranzas y el detalle de artículos se consultan recién al abrir una nota, para que la consulta sea más rápida. La opción **☰ → Producción** abre el mismo circuito filtrado a NP comerciales pendientes y sirve como monitor operativo de solo lectura.
+
+Al generar una NP se solicita **nombre y apellido** y **teléfono**. El **DNI/documento** es opcional y también se puede usar para buscar encargos. Se puede registrar fecha y hora previstas. La casilla **Enviar a domicilio** distingue el envío del retiro en el local; al activarla son obligatorios domicilio y localidad. Si se configura **Máximo de entrega (km)** en la configuración del POS, el sistema compara la localidad con `TA_DistLocalidades` y rechaza la NP cuando supera el límite o no existe una distancia configurada.
+
+La opción **Relaciona Cobranzas con Notas de Pedidos** (`RelacionaCBaNP`) se administra en **Ventas → Carga de comprobantes**. Solo con valor `SI` se considera permitido relacionar una cobranza/anticipo con una NP; con `NO`, el servidor rechaza cualquier intento de cargarlo. El alta financiera de anticipos continúa protegida hasta homologar el circuito contable `CBCT` legacy.
 
 - Buscá por número de nota, cuenta, nombre o teléfono del cliente.
 - Cada nota muestra cliente, fecha, importe y fecha de entrega cuando fue informada.
 - Al abrirla podés revisar artículos, cantidades preparadas, teléfono, observaciones, cobranzas relacionadas y el historial de acciones.
+- Desde el detalle podés imprimir la **nota de pedido** o un **ticket general de producción**. El ticket de producción muestra únicamente cliente, entrega, observaciones y cantidades pendientes; no incluye precios ni cobranzas.
 - El avance se calcula desde las cantidades preparadas de las líneas: **Pendiente**, **En preparación** o **Listo**. Es un estado operativo separado del estado contable de la NP.
+- Desde el detalle podés abrir **Abrir facturación de esta NP**. La pantalla de Carga de Comprobantes queda filtrada por esa nota; allí se revisan cantidades, pendientes, simulación, permisos y confirmación antes de grabar.
 - Al generar una **NP**, podés informar fecha y hora de entrega y observaciones. La nota queda pendiente de facturar y no genera cobranza ni asiento.
 
 Los anticipos se muestran como **verificados** únicamente cuando la relación con la nota y el importe disponible fueron confirmados. Si aparece **No verificado**, no uses ese importe como seña hasta validarlo en el circuito contable.
@@ -263,3 +269,15 @@ La lista también está en el menú ☰ → **Atajos rápidos**. Desde ese menú
 **ARCA no respondió.** Esperá unos minutos y tocá **Reintentar CAE** en el recibo (o buscalo en **Reimprimir comprobantes**). No entregues el comprobante como factura hasta que tenga CAE.
 
 **Se cortó la conexión con una venta a medio cargar.** Al volver a entrar, aceptá *recuperar el comprobante pendiente* y volvé a cargar los pagos.
+# Panel de ingreso rápido
+
+En la configuración del Punto de Venta se puede activar **Habilitar panel de ingreso rápido**. La opción reutiliza `cfgCargaRapidaGrafica`; si está en `NO` (o no existe), el POS conserva su distribución y circuito habitual.
+
+Con el panel habilitado se puede preparar una operación en dos modos:
+
+- **Importe**: carga un importe y, al seleccionar un artículo, calcula la cantidad con el precio vigente. No modifica el precio unitario.
+- **Cantidad**: carga una cantidad entera o decimal y la aplica al seleccionar el artículo, respetando si el artículo admite fracciones.
+
+Los importes rápidos reutilizan `GOUR_IMPORTE1` a `GOUR_IMPORTE6`, con valores predeterminados 5, 10, 25, 50, 100 y 200. Se pueden editar desde la misma configuración del POS. Los botones rápidos acumulan valores; el teclado permite coma o punto decimal, borrar el último carácter, limpiar y confirmar.
+
+El panel prepara la próxima incorporación y usa el mismo `AddToCart` del POS. Por eso conserva la acumulación de líneas, precios, ofertas y validaciones existentes, sin interceptar globalmente el teclado ni iniciar cobros o facturación.

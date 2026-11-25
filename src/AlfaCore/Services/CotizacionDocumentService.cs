@@ -88,7 +88,8 @@ public sealed class CotizacionDocumentService(
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
         var header = await cn.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("""
-            SELECT TOP (1) ID AS IdComprobante, IDCOMPROBANTE AS IdComprobanteTexto, FECHA AS Fecha,
+            SELECT TOP (1) ID AS IdComprobante, ISNULL(IDCOMPLEMENTO, 0) AS IdComplemento,
+                   IDCOMPROBANTE AS IdComprobanteTexto, FECHA AS Fecha,
                    CUENTA AS CodigoCliente, NOMBRE AS EmpresaProspecto, IMPORTE AS Total
             FROM dbo.V_MV_Cpte WHERE ID = @Id AND UPPER(LTRIM(RTRIM(TC))) = N'NP';
             """, new { Id = idComprobante }, cancellationToken: ct));
@@ -113,8 +114,9 @@ public sealed class CotizacionDocumentService(
                 FROM dbo.V_MV_CpteInsumos
                 WHERE UPPER(LTRIM(RTRIM(TC))) = N'NP'
                   AND UPPER(LTRIM(RTRIM(IDCOMPROBANTE))) = UPPER(LTRIM(RTRIM(@Numero)))
+                  AND ISNULL(IDCOMPLEMENTO, 0) = @IdComplemento
                 ORDER BY ISNULL(SECUENCIA, 0), ISNULL(ID, 0);
-                """, new { Numero = (string)header.IdComprobanteTexto }, cancellationToken: ct))).AsList()
+                """, new { Numero = (string)header.IdComprobanteTexto, IdComplemento = (int)header.IdComplemento }, cancellationToken: ct))).AsList()
         };
         var template = previewTemplate ?? await templates.ResolveAsync(TiposDocumentoCore.NotaPedido, uNegocio, ct);
         var definition = templates.DeserializeAndValidate(template.TemplateJson, TiposDocumentoCore.NotaPedido);

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+
 namespace AlfaCore.Models;
 
 public sealed class PuntoVentaNpListadoFiltro
@@ -28,6 +31,7 @@ public sealed class PuntoVentaNpResumenDto
     public string EstadoAnticipos { get; init; } = PuntoVentaAnticiposEstados.Verificado;
     public string EstadoComprobante { get; init; } = string.Empty;
     public string EstadoProduccion { get; init; } = string.Empty;
+    public string EstadoEntrega { get; init; } = string.Empty;
 }
 
 public sealed class PuntoVentaNpPaginaDto
@@ -36,6 +40,7 @@ public sealed class PuntoVentaNpPaginaDto
     public int Total { get; init; }
     public int Pagina { get; init; }
     public int TamanoPagina { get; init; }
+    public bool TieneSiguiente { get; init; }
     public int TotalPaginas => TamanoPagina <= 0 ? 0 : (int)Math.Ceiling(Total / (double)TamanoPagina);
 }
 
@@ -54,22 +59,41 @@ public sealed class PuntoVentaNpAnticiposDto
     public decimal ImporteComercial { get; init; }
     public string EstadoComprobante { get; init; } = string.Empty;
     public IReadOnlyList<PuntoVentaNpCobranzaDto> Cobranzas { get; init; } = [];
+    public PuntoVentaNpCobranzaDto? AnticipoAplicable { get; init; }
     public decimal? TotalAnticiposVigentes { get; init; }
     public bool TotalAnticiposVerificado { get; init; }
     public string EstadoAnticipos { get; init; } = PuntoVentaAnticiposEstados.Verificado;
     public string EstadoProduccion { get; init; } = string.Empty;
+    public string EstadoEntrega
+    {
+        get
+        {
+            if (string.Equals(EstadoComprobante, "ANULADA", StringComparison.OrdinalIgnoreCase))
+                return "ANULADA";
+            if (Items.Count == 0)
+                return "PENDIENTE";
+
+            var total = Items.Sum(x => Math.Max(x.Cantidad, 0m));
+            var entregado = Items.Sum(x => Math.Clamp(x.CantidadEntregada, 0m, Math.Max(x.Cantidad, 0m)));
+            if (total > 0m && entregado >= total)
+                return "ENTREGADO";
+            return entregado > 0m ? "PARCIAL" : "PENDIENTE";
+        }
+    }
     public IReadOnlyList<ComprobanteAccionDto> Acciones { get; init; } = [];
     public IReadOnlyList<PuntoVentaNpItemDto> Items { get; init; } = [];
 }
 
 public sealed class PuntoVentaNpItemDto
 {
+    public int LineaId { get; init; }
     public string IdArticulo { get; init; } = string.Empty;
     public string Descripcion { get; init; } = string.Empty;
     public decimal Cantidad { get; init; }
     public decimal Precio { get; init; }
     public decimal Importe { get; init; }
     public decimal CantidadPreparada { get; init; }
+    public decimal CantidadEntregada { get; init; }
     public string Presentacion { get; init; } = string.Empty;
     public string Observaciones { get; init; } = string.Empty;
 }
@@ -126,6 +150,29 @@ public static class PuntoVentaAnticiposTiposRelacion
 
 public static class PuntoVentaAnticiposCalculador
 {
+    private static readonly Regex ResumenLegacyRegex = new(
+        @"^(?:SEÑA|SENA)\s+\$\s*(?<sena>[0-9]+(?:[.,][0-9]+)?)\s*//\s*SALDO\s+\$\s*(?<saldo>[0-9]+(?:[.,][0-9]+)?)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    public static bool TryLeerResumenLegacy(string? comentarios, out decimal sena, out decimal saldo)
+    {
+        sena = 0m;
+        saldo = 0m;
+        var match = ResumenLegacyRegex.Match((comentarios ?? string.Empty).Trim());
+        if (!match.Success
+            || !decimal.TryParse(match.Groups["sena"].Value.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out sena)
+            || !decimal.TryParse(match.Groups["saldo"].Value.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out saldo))
+        {
+            sena = 0m;
+            saldo = 0m;
+            return false;
+        }
+
+        sena = decimal.Round(sena, 2);
+        saldo = decimal.Round(saldo, 2);
+        return true;
+    }
+
     public static (string Tipo, bool Verificada, string? Advertencia) ClasificarRelacion(
         string? prVenta,
         string? observaciones,

@@ -53,6 +53,133 @@
         justify-content: flex-end;
         margin-left: auto;
     }
+
+    .pv-admin-quick-inputs {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(5rem, 1fr));
+        gap: 0.5rem;
+    }
+
+    .pv-admin-quick-inputs .field { margin: 0; }
+    .pv-admin-quick-inputs input { font-variant-numeric: tabular-nums; }
+
+    .pv-admin-rubros__more {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2rem;
+        margin-top: 0.35rem;
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-panel);
+        color: var(--color-primary);
+        font-size: 0.82rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .pv-admin-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        width: fit-content;
+        margin-top: 0.35rem;
+        color: var(--color-text);
+        cursor: pointer;
+    }
+
+    .pv-admin-switch__input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .pv-admin-switch__track {
+        position: relative;
+        display: inline-block;
+        width: 2.75rem;
+        height: 1.55rem;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: var(--color-panel);
+        transition: background .15s ease, border-color .15s ease;
+    }
+
+    .pv-admin-switch__track::after {
+        position: absolute;
+        top: 0.18rem;
+        left: 0.2rem;
+        width: 1.05rem;
+        height: 1.05rem;
+        border-radius: 50%;
+        background: var(--color-muted);
+        content: "";
+        transition: transform .15s ease, background .15s ease;
+    }
+
+    .pv-admin-switch.is-on .pv-admin-switch__track {
+        border-color: var(--color-primary);
+        background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+    }
+
+    .pv-admin-switch.is-on .pv-admin-switch__track::after {
+        background: var(--color-primary);
+        transform: translateX(1.18rem);
+    }
+
+    .pv-admin-switch__text { font-weight: 700; }
+
+    .pv-admin-quick-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-height: 2.1rem;
+        margin-top: 0.65rem;
+        padding: 0.4rem 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-panel);
+        color: var(--color-primary);
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .pv-admin-quick-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: rgba(2, 8, 23, 0.72);
+    }
+
+    .pv-admin-quick-modal__card {
+        width: min(42rem, 100%);
+        padding: 1.25rem;
+        border: 1px solid var(--color-border);
+        border-radius: 18px;
+        background: var(--color-panel-strong);
+        color: var(--color-text);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+    }
+
+    .pv-admin-quick-modal__header,
+    .pv-admin-quick-modal__actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .pv-admin-quick-modal__header h3 { margin: 0; }
+    .pv-admin-quick-modal__header small { color: var(--color-muted); }
+    .pv-admin-quick-modal__close { border: 0; background: transparent; color: var(--color-muted); font-size: 1.5rem; cursor: pointer; }
+    .pv-admin-quick-modal__quantities { display: flex; flex-wrap: wrap; gap: .45rem; margin: 1rem 0; }
+    .pv-admin-quick-modal__quantity { padding: .35rem .6rem; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-muted); font-size: .82rem; }
+    .pv-admin-quick-modal__actions { justify-content: flex-end; margin-top: 1rem; }
 </style>
 
 <section class="page-grid">
@@ -213,7 +340,7 @@
                                            @onchange="_ => _puntoVentaForm.Rubros.Clear()" />
                                     Todos
                                 </label>
-                                @foreach (var rubro in _catalogos.Rubros)
+                                @foreach (var rubro in RubrosVisibles)
                                 {
                                     var id = rubro.Valor;
                                     <label class="pv-admin-rubro">
@@ -223,9 +350,30 @@
                                     </label>
                                 }
                             </div>
+                            @if (_catalogos.Rubros.Count > 10)
+                            {
+                                <button type="button" class="pv-admin-rubros__more" @onclick="() => _mostrarTodosRubros = !_mostrarTodosRubros">
+                                    @(_mostrarTodosRubros ? "Ver menos" : $"Ver todos ({_catalogos.Rubros.Count})")
+                                </button>
+                            }
                             <small>Limita los artículos del Mostrador y de la carta QR. Sin marcar ninguno = todos.</small>
                         }
                     </div>
+                    <section class="field">
+                        <h4>Ingreso rápido</h4>
+                        <label class="pv-admin-switch @(_puntoVentaForm.CargaRapidaGrafica ? "is-on" : string.Empty)">
+                            <input class="pv-admin-switch__input" type="checkbox" @bind="_puntoVentaForm.CargaRapidaGrafica" />
+                            <span class="pv-admin-switch__track" aria-hidden="true"></span>
+                            <span class="pv-admin-switch__text">Habilitar panel de ingreso rápido</span>
+                        </label>
+                        <small>Permite ingresar importes y cantidades mediante un teclado numérico táctil.</small>
+                        @if (_puntoVentaForm.CargaRapidaGrafica)
+                        {
+                            <button type="button" class="pv-admin-quick-edit" @onclick="AbrirEditorIngresoRapido">
+                                <i class="bi bi-pencil-square"></i> Editar importes y cantidades
+                            </button>
+                        }
+                    </section>
                     <label class="carga-viajes-check">
                         <input class="carga-viajes-check__input" type="checkbox" checked="@_puntoVentaForm.Activo" @onchange="args => _puntoVentaForm.Activo = args.Value is bool flag && flag" />
                         <span class="carga-viajes-check__box" aria-hidden="true"></span>
@@ -234,6 +382,48 @@
 
                 </DetailCard>
             }
+        </div>
+    }
+
+    @if (_showIngresoRapidoModal)
+    {
+        <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="ingreso-rapido-config-title">
+            <section class="pv-admin-quick-modal__card">
+                <header class="pv-admin-quick-modal__header">
+                    <div>
+                        <h3 id="ingreso-rapido-config-title">Ingreso rápido</h3>
+                        <small>Configurá los importes que aparecerán en el teclado táctil.</small>
+                    </div>
+                    <button type="button" class="pv-admin-quick-modal__close" @onclick="CerrarEditorIngresoRapido" aria-label="Cerrar">×</button>
+                </header>
+
+                <div class="pv-admin-quick-inputs">
+                    <div class="field"><label>Importe rápido 1</label><input inputmode="decimal" @bind="_quickDraft1" /></div>
+                    <div class="field"><label>Importe rápido 2</label><input inputmode="decimal" @bind="_quickDraft2" /></div>
+                    <div class="field"><label>Importe rápido 3</label><input inputmode="decimal" @bind="_quickDraft3" /></div>
+                    <div class="field"><label>Importe rápido 4</label><input inputmode="decimal" @bind="_quickDraft4" /></div>
+                    <div class="field"><label>Importe rápido 5</label><input inputmode="decimal" @bind="_quickDraft5" /></div>
+                    <div class="field"><label>Importe rápido 6</label><input inputmode="decimal" @bind="_quickDraft6" /></div>
+                </div>
+
+                <strong>Cantidades rápidas</strong>
+                <div class="pv-admin-quick-modal__quantities" aria-label="Cantidades rápidas fijas">
+                    <div class="pv-admin-quick-inputs">
+                        <div class="field"><label>Cantidad rápida 1</label><input inputmode="decimal" @bind="_quickQuantityDraft1" /></div>
+                        <div class="field"><label>Cantidad rápida 2</label><input inputmode="decimal" @bind="_quickQuantityDraft2" /></div>
+                        <div class="field"><label>Cantidad rápida 3</label><input inputmode="decimal" @bind="_quickQuantityDraft3" /></div>
+                        <div class="field"><label>Cantidad rápida 4</label><input inputmode="decimal" @bind="_quickQuantityDraft4" /></div>
+                        <div class="field"><label>Cantidad rápida 5</label><input inputmode="decimal" @bind="_quickQuantityDraft5" /></div>
+                        <div class="field"><label>Cantidad rápida 6</label><input inputmode="decimal" @bind="_quickQuantityDraft6" /></div>
+                    </div>
+                </div>
+                <small>Se guardan por punto de venta y se muestran con dos decimales.</small>
+
+                <footer class="pv-admin-quick-modal__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditorIngresoRapido">Cancelar</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarEditorIngresoRapido">Aplicar</button>
+                </footer>
+            </section>
         </div>
     }
 
@@ -417,9 +607,17 @@
     private List<PuntoVentaEntidadDto> _puntosVenta = [];
     private PuntoVentaEntidadDto? _selectedPuntoVenta;
     private bool _showPuntoVentaForm;
+    private bool _showIngresoRapidoModal;
     private PuntoVentaEntidadSaveRequest _puntoVentaForm = new();
     private PuntoVentaCatalogosDto _catalogos = new();
     private string _comprobanteHabitual = "FC";
+    private bool _mostrarTodosRubros;
+
+    private IEnumerable<PuntoVentaCatalogoOpcionDto> RubrosVisibles
+        => _mostrarTodosRubros
+            ? _catalogos.Rubros
+            : _catalogos.Rubros.Take(10).Concat(
+                _catalogos.Rubros.Skip(10).Where(r => _puntoVentaForm.Rubros.Contains(r.Valor, StringComparer.OrdinalIgnoreCase)));
 
     private List<PuntoVentaSectorDto> _sectores = [];
     private PuntoVentaSectorDto? _selectedSector;
@@ -431,6 +629,18 @@
     private PuntoVentaMesaSaveRequest _mesaForm = new();
 
     private AppUiMessage? _feedback;
+    private string _quickDraft1 = string.Empty;
+    private string _quickDraft2 = string.Empty;
+    private string _quickDraft3 = string.Empty;
+    private string _quickDraft4 = string.Empty;
+    private string _quickDraft5 = string.Empty;
+    private string _quickDraft6 = string.Empty;
+    private string _quickQuantityDraft1 = string.Empty;
+    private string _quickQuantityDraft2 = string.Empty;
+    private string _quickQuantityDraft3 = string.Empty;
+    private string _quickQuantityDraft4 = string.Empty;
+    private string _quickQuantityDraft5 = string.Empty;
+    private string _quickQuantityDraft6 = string.Empty;
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -479,6 +689,8 @@
     private Task NuevoPuntoVentaAsync()
     {
         _puntoVentaForm = new PuntoVentaEntidadSaveRequest { Activo = true, Modo = PuntoVentaModoKeys.Mostrador };
+        _mostrarTodosRubros = false;
+        _showIngresoRapidoModal = false;
         _showPuntoVentaForm = true;
         return Task.CompletedTask;
     }
@@ -503,9 +715,24 @@
             Sucursal = pv.Sucursal,
             IdLista = pv.IdLista,
             ClasePrecio = pv.ClasePrecio,
+            CargaRapidaGrafica = pv.CargaRapidaGrafica,
+            ImporteRapido1 = pv.ImporteRapido1,
+            ImporteRapido2 = pv.ImporteRapido2,
+            ImporteRapido3 = pv.ImporteRapido3,
+            ImporteRapido4 = pv.ImporteRapido4,
+            ImporteRapido5 = pv.ImporteRapido5,
+            ImporteRapido6 = pv.ImporteRapido6,
+            CantidadRapida1 = pv.CantidadRapida1,
+            CantidadRapida2 = pv.CantidadRapida2,
+            CantidadRapida3 = pv.CantidadRapida3,
+            CantidadRapida4 = pv.CantidadRapida4,
+            CantidadRapida5 = pv.CantidadRapida5,
+            CantidadRapida6 = pv.CantidadRapida6,
             Rubros = pv.Rubros.ToList(),
             Activo = pv.Activo
         };
+        _mostrarTodosRubros = false;
+        _showIngresoRapidoModal = false;
         _showPuntoVentaForm = true;
 
         if (string.Equals(pv.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
@@ -524,8 +751,54 @@
     private void CancelarPuntoVentaForm()
     {
         _showPuntoVentaForm = false;
+        _mostrarTodosRubros = false;
+        _showIngresoRapidoModal = false;
         _puntoVentaForm = new PuntoVentaEntidadSaveRequest();
     }
+
+    private void AbrirEditorIngresoRapido()
+    {
+        _quickDraft1 = FormatearConfiguracion(_puntoVentaForm.ImporteRapido1);
+        _quickDraft2 = FormatearConfiguracion(_puntoVentaForm.ImporteRapido2);
+        _quickDraft3 = FormatearConfiguracion(_puntoVentaForm.ImporteRapido3);
+        _quickDraft4 = FormatearConfiguracion(_puntoVentaForm.ImporteRapido4);
+        _quickDraft5 = FormatearConfiguracion(_puntoVentaForm.ImporteRapido5);
+        _quickDraft6 = FormatearConfiguracion(_puntoVentaForm.ImporteRapido6);
+        _quickQuantityDraft1 = FormatearConfiguracion(_puntoVentaForm.CantidadRapida1);
+        _quickQuantityDraft2 = FormatearConfiguracion(_puntoVentaForm.CantidadRapida2);
+        _quickQuantityDraft3 = FormatearConfiguracion(_puntoVentaForm.CantidadRapida3);
+        _quickQuantityDraft4 = FormatearConfiguracion(_puntoVentaForm.CantidadRapida4);
+        _quickQuantityDraft5 = FormatearConfiguracion(_puntoVentaForm.CantidadRapida5);
+        _quickQuantityDraft6 = FormatearConfiguracion(_puntoVentaForm.CantidadRapida6);
+        _showIngresoRapidoModal = true;
+    }
+
+    private void CerrarEditorIngresoRapido() => _showIngresoRapidoModal = false;
+
+    private void AplicarEditorIngresoRapido()
+    {
+        _puntoVentaForm.ImporteRapido1 = LeerConfiguracion(_quickDraft1, 5m);
+        _puntoVentaForm.ImporteRapido2 = LeerConfiguracion(_quickDraft2, 10m);
+        _puntoVentaForm.ImporteRapido3 = LeerConfiguracion(_quickDraft3, 25m);
+        _puntoVentaForm.ImporteRapido4 = LeerConfiguracion(_quickDraft4, 50m);
+        _puntoVentaForm.ImporteRapido5 = LeerConfiguracion(_quickDraft5, 100m);
+        _puntoVentaForm.ImporteRapido6 = LeerConfiguracion(_quickDraft6, 200m);
+        _puntoVentaForm.CantidadRapida1 = LeerConfiguracion(_quickQuantityDraft1, 0.1m);
+        _puntoVentaForm.CantidadRapida2 = LeerConfiguracion(_quickQuantityDraft2, 0.25m);
+        _puntoVentaForm.CantidadRapida3 = LeerConfiguracion(_quickQuantityDraft3, 0.5m);
+        _puntoVentaForm.CantidadRapida4 = LeerConfiguracion(_quickQuantityDraft4, 1m);
+        _puntoVentaForm.CantidadRapida5 = LeerConfiguracion(_quickQuantityDraft5, 6m);
+        _puntoVentaForm.CantidadRapida6 = LeerConfiguracion(_quickQuantityDraft6, 12m);
+        _showIngresoRapidoModal = false;
+    }
+
+    private static string FormatearConfiguracion(decimal value)
+        => value.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static decimal LeerConfiguracion(string value, decimal fallback)
+        => decimal.TryParse((value ?? string.Empty).Trim().Replace('.', ','), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.GetCultureInfo("es-AR"), out var parsed) && parsed > 0m
+            ? decimal.Round(parsed, 2, MidpointRounding.AwayFromZero)
+            : fallback;
 
     private async Task GuardarPuntoVentaAsync()
     {
