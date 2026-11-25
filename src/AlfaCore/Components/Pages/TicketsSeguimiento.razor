@@ -168,7 +168,7 @@
                                         <a href="@ListaCliente(c)">@c.Nombre</a>
                                         @if (c.Prioritario)
                                         {
-                                            <span class="tks-chip">@(c.EstadoAbono == ConversacionAbonoEstados.Abonado ? "Con abono" : "Prioritario")</span>
+                                            <span class="tks-chip" style="@(c.TipoClienteColor.Length > 0 ? $"border-color:{c.TipoClienteColor}" : null)">@(c.TipoClienteNombre.Length > 0 ? c.TipoClienteNombre : c.EstadoAbono == ConversacionAbonoEstados.Abonado ? "Con abono" : "Prioritario")</span>
                                         }
                                     </td>
                                     <td class="num">@c.Abiertos</td>

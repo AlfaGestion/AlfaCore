@@ -9,8 +9,8 @@ La lista y el Kanban no solo muestran los tickets: ordenan qué resolver primero
 | Dato | Cómo se obtiene |
 |---|---|
 | **Esperando a** | *Nosotros* si el cliente escribió después de nuestra última respuesta (o nadie le respondió); *Cliente* si respondimos y no volvió a escribir, o si el ticket está en una etapa de espera; *Seguimiento* si tiene «Recordarme…» con fecha futura. Si el cliente escribe, vuelve a *Nosotros* aunque esté en espera o con seguimiento. |
-| **Tipo de cliente** | Prioritario = clasificación marcada en Conversaciones → Prioridad, o abono al mantenimiento activo (`ClienteAtencionSql`). |
-| **Prioridad efectiva** | Las estrellas del ticket; sube un nivel si el cliente es prioritario. |
+| **Tipo de cliente** | La clasificación del cliente en Alfa Gestión (`TA_CLASIFICACIONES`, nombre y color). En **Tickets → Configuración → Tipo de cliente** cada clasificación sube 0 a 3 niveles (`TICKETS-CLASIFICACION-NIVELES-{código}`); un cliente con abono activo (`ClienteAtencionSql`) sube como mínimo `TICKETS-ABONO-ACTIVO-NIVELES` (1 por defecto). Prioritario = sube al menos un nivel. Sin configurar, una clasificación sube 1 si está marcada como prioritaria en Conversaciones (como antes). |
+| **Prioridad efectiva** | Las estrellas del ticket más los niveles del tipo de cliente (tope 3). |
 | **Plazo** | `TICK_PLAZOS`: horas hábiles de primera respuesta y de resolución por prioridad efectiva. Se cuentan en el horario de Conversaciones → Automatizaciones (`HorarioLaboral`) y el tiempo en etapas de espera no cuenta (`TICK_ESTADOS_HIST`). Estados: en término, por vencer (75 %), vencido, frenado. Un vencido se sigue mostrando aunque ahora se espere al cliente. |
 | **Puntaje** | Suma de pesos (`TA_CONFIGURACION` grupo `TICKETS`, `TICKETS-PESO-*`): vencido / por vencer, prioridad, cliente prioritario, varios casos abiertos, horas hábiles esperando (con tope) y seguimiento vencido. Lo que espera al cliente o a una fecha va después. |
 
@@ -32,6 +32,12 @@ La lista y el Kanban no solo muestran los tickets: ordenan qué resolver primero
 
 - El encabezado de columnas de la lista era `position: fixed` a 3.45rem (shell viejo) y quedaba debajo de la barra de acciones: no se veía ni se podía ordenar. Ahora es sticky dentro de la página.
 - El Kanban traía los primeros N tickets en total ordenados por etapa: con muchos «Nuevo», las demás columnas quedaban vacías y una tarjeta movida desaparecía. Ahora trae los abiertos (hasta 2000) y los cerrados más recientes, y limita cada columna por separado.
+
+### Tipo de cliente (2026-11-25)
+
+- Cada empresa tiene sus propias clasificaciones (no hay nombres fijos en el código). En ALFA NET: A-Abono Full, B-Abonado Medio, C-Abonado Básico, D-No abonado; los servicios que incluye cada plan están en `MA_CUENTAS_SERVICIOS`.
+- La lista, el Kanban, la ficha y el panel muestran el nombre de la clasificación; el borde y la estrella toman su color. El puntaje suma el peso «Cliente prioritario» por cada nivel.
+- `TicketsAtencionCalculo.TipoCliente` resuelve niveles, nombre y color (pruebas en `TicketsTipoClienteTests`).
 
 ## Panel de seguimiento (`/tickets/seguimiento`)
 

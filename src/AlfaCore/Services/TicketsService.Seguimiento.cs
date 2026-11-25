@@ -112,7 +112,9 @@ public sealed partial class TicketsService
                     Vencidos = g.Count(t => t.EsperandoA == TicketEsperandoA.Nosotros && t.PlazoEstado == TicketPlazoEstados.Vencido),
                     CreadosPeriodo = creadosPorCliente.TryGetValue(g.Key, out var n) ? n : 0,
                     Prioritario = g.First().ClientePrioritario,
-                    EstadoAbono = g.First().EstadoAbono
+                    EstadoAbono = g.First().EstadoAbono,
+                    TipoClienteNombre = g.First().TipoClienteNombre,
+                    TipoClienteColor = g.First().TipoClienteColor
                 })
                 .OrderByDescending(c => c.Abiertos).ThenByDescending(c => c.Vencidos).ThenBy(c => c.Nombre, StringComparer.CurrentCultureIgnoreCase)
                 .Take(10)
@@ -154,7 +156,6 @@ public sealed partial class TicketsService
 
         var config = await LeerAtencionConfigAsync(cn, ct);
         var horario = await LeerHorarioAsync(ct);
-        var prioritarias = await LeerClasificacionesPrioritariasAsync(ct);
         var ids = cerrados.Select(c => c.Id).ToList();
         var datos = await LeerDatosTicketsAsync(cn, esquema, ids, ct);
         var periodos = esquema.TieneHistorial
@@ -166,8 +167,8 @@ public sealed partial class TicketsService
         {
             datos.TryGetValue(c.Id, out var d);
             clientes.TryGetValue(c.Cliente, out var cli);
-            var prioritario = string.Equals(cli.Abono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase)
-                              || (!string.IsNullOrWhiteSpace(cli.Clasificacion) && prioritarias.Contains(cli.Clasificacion));
+            var tipo = TicketsAtencionCalculo.TipoCliente(config, cli.Clasificacion,
+                string.Equals(cli.Abono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase));
             return TicketsAtencionCalculo.EvaluarCerrado(new TicketAtencionDatos
             {
                 Prioridad = c.Prioridad,
@@ -175,7 +176,7 @@ public sealed partial class TicketsService
                 TieneConversacion = c.TieneConversacion,
                 PrimeraRespuestaNuestra = d?.PrimeraNuestra,
                 PeriodosEspera = periodos.TryGetValue(c.Id, out var p) ? p : [],
-                ClientePrioritario = prioritario
+                NivelesCliente = tipo.Niveles
             }, c.Cierre, config, horario);
         }).ToList();
 

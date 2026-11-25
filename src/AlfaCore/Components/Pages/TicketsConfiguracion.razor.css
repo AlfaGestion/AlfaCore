@@ -4,6 +4,15 @@
 .tkcfg-prioridad { font-size: 13px; }
 .tkcfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 14px; }
 
+/* Tipo de cliente */
+.tkcfg-tipos { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.tkcfg-tipo { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(160px, 1fr); gap: 10px; align-items: center; }
+.tkcfg-tipo__nombre { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: 13px; }
+.tkcfg-tipo__nombre small { flex-basis: 100%; padding-left: 18px; color: var(--alfa-text-secondary, #a6abb5); font-size: 11px; }
+.tkcfg-tipo__color { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 3px; background: var(--alfa-border-default, #333640); }
+.tkcfg-tipo__color--abono { background: #a78bfa; }
+.tkcfg-nota { margin: 0 0 10px; color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; }
+
 /* Avisos automáticos */
 .tkcfg-checks { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .tkcfg-avisos__acciones { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
@@ -20,4 +29,5 @@
     .tkcfg-fila { grid-template-columns: 1fr 1fr; }
     .tkcfg-prioridad { grid-column: 1 / -1; font-weight: 600; }
     .tkcfg-fila--cabecera span:first-child { display: none; }
+    .tkcfg-tipo { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 }

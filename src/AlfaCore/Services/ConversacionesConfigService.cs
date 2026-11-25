@@ -999,6 +999,9 @@ public sealed class ConversacionesConfigService(
                 BotMaxRespuestas = ReadIntValue(values, "CONV_BOT_MAX_RESPUESTAS", 0, 5),
                 BotSoloFueraHorario = ReadValue(values, "CONV_BOT_SOLO_FUERA_HORARIO", string.Empty) == "1",
                 BotEsperaMinutos = ReadIntValue(values, "CONV_BOT_ESPERA_MINUTOS", 0, 0),
+                // 0 es un valor válido (no agrupa): ReadIntValue lo tomaría como "sin cargar".
+                BotAgruparSegundos = int.TryParse(ReadValue(values, "CONV_BOT_AGRUPAR_SEGUNDOS", string.Empty), out var agrupar)
+                    ? Math.Clamp(agrupar, 0, 60) : 6,
                 BotCanales = ParseBotCanales(ReadValue(values, "CONV_BOT_CANALES", string.Empty)),
                 BotGeneraTicket = ReadValue(values, "CONV_BOT_GENERA_TICKET", string.Empty, "1") != "0",
                 BotTicketEtiqueta = ReadValue(values, "CONV_BOT_TICKET_ETIQUETA", string.Empty, "Bot"),
@@ -1154,6 +1157,7 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_BOT_MAX_RESPUESTAS", (config.BotMaxRespuestas <= 0 ? 5 : config.BotMaxRespuestas).ToString(inv)));
             items.Add(("CONV_BOT_SOLO_FUERA_HORARIO", config.BotSoloFueraHorario ? "1" : "0"));
             items.Add(("CONV_BOT_ESPERA_MINUTOS", Math.Max(0, config.BotEsperaMinutos).ToString(inv)));
+            items.Add(("CONV_BOT_AGRUPAR_SEGUNDOS", Math.Clamp(config.BotAgruparSegundos, 0, 60).ToString(inv)));
             items.Add(("CONV_BOT_CANALES", FormatBotCanales(config.BotCanales)));
             items.Add(("CONV_BOT_GENERA_TICKET", config.BotGeneraTicket ? "1" : "0"));
             items.Add(("CONV_BOT_TICKET_ETIQUETA", (config.BotTicketEtiqueta ?? string.Empty).Trim()));

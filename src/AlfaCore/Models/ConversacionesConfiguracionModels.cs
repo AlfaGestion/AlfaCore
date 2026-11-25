@@ -385,6 +385,11 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// margen a un agente humano a atender primero. 0 = responde de inmediato.</summary>
     public int BotEsperaMinutos { get; set; }
 
+    /// <summary>Segundos que el bot espera a que el cliente termine de escribir: varios mensajes
+    /// seguidos ("Buen día" + "Buenas tardes", "no actualizan las cajas" + "2,3y4") se contestan juntos
+    /// con una sola respuesta. 0 = contesta cada mensaje apenas llega.</summary>
+    public int BotAgruparSegundos { get; set; } = 6;
+
     /// <summary>
     /// Canales en los que responde el bot (CONV_BOT_CANALES). Sin configurar = todos, para que una base
     /// que ya tenía el bot activo siga igual. Ej: activo en Chat web e Instagram, apagado en WhatsApp.

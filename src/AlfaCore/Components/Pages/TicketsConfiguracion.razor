@@ -58,6 +58,38 @@
             </div>
         </section>
 
+        <section class="panel-card tkcfg-tipos-card">
+            <h3 class="panel-card__title">Tipo de cliente<AlfaInfoTip>Sale de la clasificación de cada cliente en Alfa Gestión. Cada tipo sube la prioridad de sus tickets los niveles que elijas: con más prioridad, los plazos son más cortos y el ticket aparece antes en «Atender primero».</AlfaInfoTip></h3>
+            <p class="panel-card__subtitle">Cuánto sube la prioridad de los tickets según el tipo de cliente.</p>
+            @if (_config.TiposCliente.Count == 0)
+            {
+                <p class="tkcfg-nota">Esta base no tiene clasificaciones de clientes cargadas.</p>
+            }
+            <div class="tkcfg-tipos">
+                @foreach (var tipo in _config.TiposCliente)
+                {
+                    var actual = tipo;
+                    var id = $"tkcfg-tipo-{actual.Codigo}";
+                    <div class="tkcfg-tipo">
+                        <label for="@id" class="tkcfg-tipo__nombre">
+                            <span class="tkcfg-tipo__color" style="@(actual.ColorHex.Length > 0 ? $"background:{actual.ColorHex}" : null)"></span>
+                            @(actual.Descripcion.Length > 0 ? actual.Descripcion : $"Clasificación {actual.Codigo}")
+                        </label>
+                        <AlfaSelect Id="@id" Options="OpcionesNiveles" Value="@actual.Niveles.ToString()"
+                                    ValueChanged="v => actual.Niveles = Numero(v, actual.Niveles)" Disabled="@_saving" />
+                    </div>
+                }
+                <div class="tkcfg-tipo">
+                    <label for="tkcfg-tipo-abono" class="tkcfg-tipo__nombre">
+                        <span class="tkcfg-tipo__color tkcfg-tipo__color--abono"></span>
+                        Cualquier cliente con abono activo <small>(facturación automática): como mínimo</small>
+                    </label>
+                    <AlfaSelect Id="tkcfg-tipo-abono" Options="OpcionesNiveles" Value="@_config.AbonoActivoNiveles.ToString()"
+                                ValueChanged="v => _config.AbonoActivoNiveles = Numero(v, _config.AbonoActivoNiveles)" Disabled="@_saving" />
+                </div>
+            </div>
+        </section>
+
         <section class="panel-card">
             <h3 class="panel-card__title">Orden «Atender primero»</h3>
             <p class="panel-card__subtitle">
@@ -71,7 +103,7 @@
                            ValueChanged="v => _config.PesoPorVencer = Numero(v, _config.PesoPorVencer)" Disabled="@_saving" />
                 <AlfaInput Label="Por cada nivel de prioridad" Type="number" Step="1" Value="@_config.PesoPrioridad.ToString()"
                            ValueChanged="v => _config.PesoPrioridad = Numero(v, _config.PesoPrioridad)" Disabled="@_saving" />
-                <AlfaInput Label="Cliente prioritario" Type="number" Step="5" Value="@_config.PesoClientePrioritario.ToString()"
+                <AlfaInput Label="Cliente prioritario (por cada nivel)" Type="number" Step="5" Value="@_config.PesoClientePrioritario.ToString()"
                            ValueChanged="v => _config.PesoClientePrioritario = Numero(v, _config.PesoClientePrioritario)" Disabled="@_saving" />
                 <AlfaInput Label="Cliente con varios casos abiertos" Type="number" Step="5" Value="@_config.PesoVariosCasos.ToString()"
                            ValueChanged="v => _config.PesoVariosCasos = Numero(v, _config.PesoVariosCasos)" Disabled="@_saving" />
@@ -148,6 +180,14 @@
     private TicketsAvisosConfigDto? _avisos;
     private IReadOnlyList<TicketAvisoEnviadoDto> _ultimos = [];
     private bool _revisando;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> OpcionesNiveles =
+    [
+        new("0", "No sube"),
+        new("1", "Sube 1 nivel"),
+        new("2", "Sube 2 niveles"),
+        new("3", "Sube 3 niveles")
+    ];
 
     private static readonly IReadOnlyList<AlfaSelectOption> HorasResumen =
         [new(string.Empty, "No mandar"), .. Enumerable.Range(6, 15).Select(h => new AlfaSelectOption(h.ToString(), $"A las {h}:00"))];

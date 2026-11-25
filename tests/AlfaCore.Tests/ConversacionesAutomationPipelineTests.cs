@@ -1541,8 +1541,24 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("GRACIAS", true)]
     [InlineData("Hola, cuánto salen las pilas?", false)]
     [InlineData("Hola, se me cortó el sistema", false)]
+    [InlineData("2,3y4", false)]
+    [InlineData("y 2", false)]
+    [InlineData("Buen día\nBuenas tardes", true)]
     public void EsMensajeSocial_SoloSaludosYCierres(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionesService.EsMensajeSocial(mensaje));
+
+    [Fact]
+    public void UnirMensajesSinResponder_JuntaLosMensajesSeguidosEnOrden()
+    {
+        Assert.Equal("No me actualizan los precios en las cajas\n2,3y4",
+            ConversacionesService.UnirMensajesSinResponder([("TEXT", " No me actualizan los precios en las cajas "), ("TEXT", ""), ("TEXT", "2,3y4")]));
+        Assert.Equal("Buen día", ConversacionesService.UnirMensajesSinResponder([("TEXT", "Buen día")]));
+        Assert.Equal(string.Empty, ConversacionesService.UnirMensajesSinResponder([]));
+    }
+
+    [Fact]
+    public void UnirMensajesSinResponder_SiElUltimoEsAudioOImagen_UsaSoloEse()
+        => Assert.Equal("[audio]", ConversacionesService.UnirMensajesSinResponder([("TEXT", "hola"), ("AUDIO", "[audio]")]));
 
     [Theory]
     [InlineData("Hola", "¡Hola! ¿En qué te puedo ayudar?")]

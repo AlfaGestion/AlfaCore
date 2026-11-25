@@ -266,6 +266,18 @@ punta a punta (primer caso: un reparto de agua):
 Borradores en `CONV_BOT_CLIENTES` y `CONV_BOT_PEDIDOS.DireccionEntrega` (script
 `2026-11-17-053__conversaciones_bot_alta_clientes.sql`). Código: `ConversacionBotClientesService`.
 
+## Bot: mensajes seguidos del cliente (2026-11-25)
+
+- El cliente suele escribir en varios mensajes ("Buen día" + "Buenas tardes", "no me actualizan los precios en
+  las cajas" + "2,3y4"). Antes el bot contestaba cada uno por separado: dos saludos, una pregunta ya contestada y
+  un saludo fijo a "2,3y4" (Supermercado Manantial, ALFANET).
+- Ahora espera `CONV_BOT_AGRUPAR_SEGUNDOS` (6 por defecto, 0 = no espera; Configuración → Asistente IA →
+  Límites, «Segundos para que el cliente termine de escribir»). Si en ese tiempo llega otro mensaje, contesta
+  el llamado de ese último, y a la IA le llega todo lo que el cliente escribió desde nuestra última respuesta,
+  un mensaje por renglón (`UnirMensajesSinResponder`; si el último es audio o imagen va solo ese). Lo mismo en
+  el job de «Minutos de espera antes de responder» y en los mensajes que llegan mientras el bot está contestando.
+- Un mensaje con números nunca es un saludo (`EsMensajeSocial`): "2,3y4" quedaba reducido a la "y".
+
 ## Issues pendientes
 
 ### Issue 8. Completar flujo de envío WhatsApp

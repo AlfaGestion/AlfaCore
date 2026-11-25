@@ -613,7 +613,7 @@ Criterio aplicado:
 
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/TicketsAtencionCalculo.cs`
-- Propósito: orden «Atender primero» de Tickets: a quién le toca (nosotros, cliente o seguimiento), prioridad efectiva, plazo en horas hábiles (frenado mientras se espera al cliente), puntaje, motivos visibles y bandejas.
+- Propósito: orden «Atender primero» de Tickets: a quién le toca (nosotros, cliente o seguimiento), tipo de cliente (niveles por clasificación de `TA_CLASIFICACIONES` y abono activo, `TipoCliente`), prioridad efectiva, plazo en horas hábiles (frenado mientras se espera al cliente), puntaje, motivos visibles y bandejas.
 - Datos que usa: `TicketAtencionDatos` (lo arma `TicketsService.Atencion.cs` con `TICK_TICKETS`, `TICK_ESTADOS_HIST`, `TICK_PLAZOS`, `CONV_MENSAJES`, `TICK_INFORMES`), `TicketsAtencionConfigDto` (`TA_CONFIGURACION` grupo `TICKETS`).
 - Observaciones: funciones puras con pruebas en `TicketsAtencionCalculoTests`; la configuración se edita en `/tickets/configuracion`.
 

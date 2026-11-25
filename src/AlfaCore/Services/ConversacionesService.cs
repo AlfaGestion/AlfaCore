@@ -9162,19 +9162,31 @@ public sealed partial class ConversacionesService(
                 return;
             }
 
+            // El cliente suele escribir en varios mensajes seguidos. Se espera a que termine y se
+            // contesta todo junto: si llega otro mensaje en la espera, lo contesta el llamado de ese
+            // mensaje. Antes cada uno tenía su respuesta: "Buen día" + "Buenas tardes" recibían dos
+            // saludos, y "no actualizan los precios en las cajas" + "2,3y4" una pregunta que ya estaba
+            // contestada y un saludo (Supermercado Manantial, ALFANET 2026-11-25).
+            if (config.BotAgruparSegundos > 0)
+            {
+                var ultimoAlLlegar = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(config.BotAgruparSegundos), ct).ConfigureAwait(false);
+                if (await HayEntranteNuevoConTextoAsync(idConversacion, ultimoAlLlegar, ct).ConfigureAwait(false))
+                    return;
+            }
+
             // Un mensaje que entra mientras el bot responde el anterior choca con el lock de la
             // conversación (sp_getapplock con espera 0) y se descartaba sin respuesta: caso real
             // Base4264 (2026-10-27), un audio llegado 1 s antes de terminar la respuesta a una foto.
-            // Al terminar, si entró uno nuevo se responde el último (con todo el historial), como el
+            // Al terminar, si entró uno nuevo se responde lo nuevo (con todo el historial), como el
             // job de espera; el lock y los chequeos de "ya respondido" siguen evitando duplicados.
             var ultimoAtendido = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
             // "hola" y "cuánto sale el mouse?" con 1 s de diferencia (Base4271, 2026-10-27): cuando este
             // llamado arranca, el segundo ya está grabado y su propio llamado choca con el lock. Se
-            // respondía el "hola" (sin herramientas) y la respuesta, posterior a los dos, hacía que el
-            // mouse figurara como respondido. Se responde el último entrante, con todo el historial.
-            var textoUltimoEntrante = (await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false)).Trim();
-            if (textoUltimoEntrante.Length > 0)
-                texto = textoUltimoEntrante;
+            // responde todo lo que el cliente escribió desde nuestra última respuesta, con el historial.
+            var textoPendiente = (await GetTextoEntrantesSinResponderAsync(idConversacion, null, ct).ConfigureAwait(false)).Trim();
+            if (textoPendiente.Length > 0)
+                texto = textoPendiente;
             // Con varias conversaciones a la vez SQL Server puede elegir esta como víctima de un
             // interbloqueo (1205) y el mensaje quedaba sin respuesta (batería 4264, 2026-10-28). Se
             // reintenta: si la respuesta ya había salido, el chequeo de "ya respondido" corta el reintento.
@@ -9205,8 +9217,16 @@ public sealed partial class ConversacionesService(
                 if (ultimo <= ultimoAtendido)
                     break;
 
+                // También acá se le da tiempo a que termine de escribir lo que estaba mandando.
+                if (config.BotAgruparSegundos > 0)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(config.BotAgruparSegundos), ct).ConfigureAwait(false);
+                    ultimo = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
+                }
+
+                var desde = ultimoAtendido;
                 ultimoAtendido = ultimo;
-                var textoNuevo = (await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false)).Trim();
+                var textoNuevo = (await GetTextoEntrantesSinResponderAsync(idConversacion, desde, ct).ConfigureAwait(false)).Trim();
                 if (textoNuevo.Length == 0)
                     break;
 
@@ -9281,7 +9301,7 @@ public sealed partial class ConversacionesService(
                     var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
                     if (config.BotActivo && asistenteService.IsConfigured)
                     {
-                        var texto = await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false);
+                        var texto = await GetTextoEntrantesSinResponderAsync(idConversacion, null, ct).ConfigureAwait(false);
                         if (!string.IsNullOrWhiteSpace(texto))
                             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
                     }
@@ -9488,6 +9508,78 @@ public sealed partial class ConversacionesService(
         cmd.Parameters.AddWithValue("@Id", idConversacion);
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result as string ?? string.Empty;
+    }
+
+    /// <summary>Entró un mensaje del cliente posterior a <paramref name="idMensaje"/> con texto (no una
+    /// reacción ni la respuesta a la encuesta, que no disparan al bot): su propio llamado lo va a contestar junto con los anteriores.</summary>
+    private async Task<bool> HayEntranteNuevoConTextoAsync(long idConversacion, long idMensaje, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1) FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'ENTRANTE' AND IdMensaje > @Desde
+              AND ISNULL(Origen, N'') <> N'ENCUESTA' AND ISNULL(MessageType, N'') <> N'REACTION' AND LEN(LTRIM(RTRIM(ISNULL(CAST(Texto AS nvarchar(max)), N'')))) > 0;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        cmd.Parameters.AddWithValue("@Desde", idMensaje);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result is not null and not DBNull && Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
+    }
+
+    /// <summary>
+    /// Lo que el cliente escribió y todavía no se contestó: los mensajes entrantes posteriores a
+    /// <paramref name="desdeIdMensaje"/> o, si es null, a nuestra última respuesta. Se unen con
+    /// <see cref="UnirMensajesSinResponder"/>. Sin mensajes, el último entrante (como antes).
+    /// </summary>
+    private async Task<string> GetTextoEntrantesSinResponderAsync(long idConversacion, long? desdeIdMensaje, CancellationToken ct)
+    {
+        const string sql = """
+            DECLARE @Desde bigint;
+            SET @Desde = @DesdeParam;
+            IF @Desde IS NULL
+                SELECT @Desde = ISNULL(MAX(IdMensaje), 0) FROM dbo.CONV_MENSAJES
+                WHERE IdConversacion = @Id AND Direction = N'SALIENTE';
+            SELECT TOP (8) ISNULL(MessageType, N''),
+                   CASE WHEN ISNULL(Origen, N'') = N'ENCUESTA' THEN N'' ELSE ISNULL(CAST(Texto AS nvarchar(max)), N'') END
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'ENTRANTE' AND IdMensaje > @Desde
+              AND ISNULL(MessageType, N'') <> N'REACTION'
+            ORDER BY IdMensaje DESC;
+            """;
+        var mensajes = new List<(string Tipo, string Texto)>();
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            cmd.Parameters.Add("@DesdeParam", System.Data.SqlDbType.BigInt).Value = desdeIdMensaje is long d ? d : DBNull.Value;
+            await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await rd.ReadAsync(ct).ConfigureAwait(false))
+                mensajes.Add((rd.GetString(0), rd.GetString(1)));
+        }
+
+        mensajes.Reverse();
+        var unidos = UnirMensajesSinResponder(mensajes);
+        return unidos.Length > 0 ? unidos : await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Une en orden los textos de varios mensajes seguidos del cliente, uno por renglón. Si el último no
+    /// es texto (audio, imagen, documento) se usa sólo ese, porque el bot lo trata aparte (transcripción,
+    /// lectura de la imagen).
+    /// </summary>
+    internal static string UnirMensajesSinResponder(IReadOnlyList<(string Tipo, string Texto)> mensajes)
+    {
+        if (mensajes.Count == 0)
+            return string.Empty;
+        var ultimo = mensajes[^1];
+        if (!string.Equals(ultimo.Tipo, "TEXT", StringComparison.OrdinalIgnoreCase))
+            return (ultimo.Texto ?? string.Empty).Trim();
+        return string.Join("\n", mensajes
+            .Where(m => string.Equals(m.Tipo, "TEXT", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(m.Texto))
+            .Select(m => m.Texto.Trim()));
     }
 
     private async Task MarcarBotPendienteProcesadoAsync(long idPendiente, CancellationToken ct)
@@ -11099,7 +11191,8 @@ public sealed partial class ConversacionesService(
 
             var idTicket = await ticketsService.CreateAsync(new TicketCreateRequest
             {
-                Titulo = $"Consulta sin resolver: {Truncar(texto, 80)}",
+                // Varios mensajes seguidos llegan unidos por renglón: en el título van en una sola línea.
+                Titulo = $"Consulta sin resolver: {Truncar(Regex.Replace(texto ?? string.Empty, @"\s*\r?\n\s*", " / ").Trim(), 80)}",
                 Descripcion = $"El asistente no encontró respuesta a esta consulta.\n\nMensaje del cliente:\n{texto}",
                 Prioridad = 1,
                 IdConversacion = idConversacion,
@@ -11840,7 +11933,11 @@ public sealed partial class ConversacionesService(
 
     internal static bool EsMensajeSocial(string texto)
     {
-        var normalizado = RemoveDiacritics(texto).ToLowerInvariant();
+        // Los números son datos ("2,3y4" = cajas 2, 3 y 4): sin esto quedaba sólo la "y" y se
+        // contestaba "¡Hola! ¿En qué te puedo ayudar?" (Supermercado Manantial, 2026-11-25).
+        if (Regex.IsMatch(texto ?? string.Empty, @"\d"))
+            return false;
+        var normalizado = RemoveDiacritics(texto ?? string.Empty).ToLowerInvariant();
         var palabras = Regex.Matches(normalizado, "[a-z]+").Select(m => m.Value).ToArray();
         return palabras.Length > 0 && palabras.All(PalabrasSocialesRelleno.Contains);
     }
@@ -19179,7 +19276,7 @@ public sealed partial class ConversacionesService(
         => rd.IsDBNull(index) ? 0 : Convert.ToInt32(rd.GetValue(index), CultureInfo.InvariantCulture);
 
     // TA_CLASIFICACIONES.Color guarda un long de VB6 (&H00BBGGRR, canales invertidos respecto a web).
-    private static string VbColorIntToHex(int value)
+    internal static string VbColorIntToHex(int value)
     {
         if (value == 0)
             return string.Empty;

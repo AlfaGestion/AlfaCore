@@ -244,6 +244,10 @@
                                Value="@Config.BotEsperaMinutos.ToString(CultureInfo.InvariantCulture)"
                                ValueChanged="@((string? v) => Config.BotEsperaMinutos = ParseEntero(v, Config.BotEsperaMinutos, minimo: 0))"
                                HelpText="Le da tiempo a tu equipo a responder primero. 0 = responde de inmediato." />
+                    <AlfaInput Id="bot-agrupar" Label="Segundos para que el cliente termine de escribir" Type="number"
+                               Value="@Config.BotAgruparSegundos.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotAgruparSegundos = Math.Min(60, ParseEntero(v, Config.BotAgruparSegundos, minimo: 0)))"
+                               HelpText="Si manda varios mensajes seguidos, se contestan juntos en una sola respuesta. 0 = contesta cada mensaje apenas llega." />
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfiguracionAsistenteConsumo />

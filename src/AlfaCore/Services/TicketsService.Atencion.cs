@@ -41,6 +41,9 @@ public sealed partial class TicketsService
     };
 
     private const string ClaveEstadosEspera = "TICKETS-ESTADOS-ESPERA-CLIENTE";
+    /// <summary>TICKETS-CLASIFICACION-NIVELES-{código de TA_CLASIFICACIONES}: cuántos niveles sube ese tipo de cliente.</summary>
+    private const string PrefijoNivelesClasificacion = "TICKETS-CLASIFICACION-NIVELES-";
+    private const string ClaveAbonoActivoNiveles = "TICKETS-ABONO-ACTIVO-NIVELES";
 
     public Task<IReadOnlyList<TicketBandejaDto>> GetBandejasAsync(TicketsFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetBandejas", async token =>
@@ -147,8 +150,11 @@ public sealed partial class TicketsService
                 ["TICKETS-PESO-SEGUIMIENTO-VENCIDO"] = Entero(config.PesoSeguimientoVencido),
                 ["TICKETS-PLAZO-POR-VENCER-PORC"] = Math.Clamp(config.PorVencerPorcentaje, 1, 100).ToString(CultureInfo.InvariantCulture),
                 ["TICKETS-CLIENTE-VARIOS-CASOS"] = Math.Clamp(config.VariosCasosDesde, 2, 100).ToString(CultureInfo.InvariantCulture),
-                [ClaveEstadosEspera] = string.Join(",", TicketsAtencionCalculo.EstadosEspera(config))
+                [ClaveEstadosEspera] = string.Join(",", TicketsAtencionCalculo.EstadosEspera(config)),
+                [ClaveAbonoActivoNiveles] = Math.Clamp(config.AbonoActivoNiveles, 0, 3).ToString(CultureInfo.InvariantCulture)
             };
+            foreach (var tipo in config.TiposCliente.Where(t => !string.IsNullOrWhiteSpace(t.Codigo)))
+                valores[PrefijoNivelesClasificacion + tipo.Codigo.Trim()] = Math.Clamp(tipo.Niveles, 0, 3).ToString(CultureInfo.InvariantCulture);
 
             await GuardarClavesAsync(cn, (SqlTransaction)tx, valores, token);
             await tx.CommitAsync(token);
@@ -248,7 +254,6 @@ public sealed partial class TicketsService
 
         var config = await LeerAtencionConfigAsync(cn, ct);
         var horario = await LeerHorarioAsync(ct);
-        var clasificacionesPrioritarias = await LeerClasificacionesPrioritariasAsync(ct);
         var estadosEspera = TicketsAtencionCalculo.EstadosEspera(config);
 
         var datos = await LeerDatosTicketsAsync(cn, esquema, abiertos.Select(r => r.IdTicket).ToList(), ct);
@@ -271,9 +276,10 @@ public sealed partial class TicketsService
                 periodosTicket = [.. periodosTicket, (ticket.FechaHoraModificacion ?? ticket.FechaHoraAlta, (DateTime?)null)];
 
             var abono = cliente.Abono ?? string.Empty;
-            var prioritario = string.Equals(abono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase)
-                              || (!string.IsNullOrWhiteSpace(cliente.Clasificacion) && clasificacionesPrioritarias.Contains(cliente.Clasificacion));
+            var tipo = TicketsAtencionCalculo.TipoCliente(config, cliente.Clasificacion,
+                string.Equals(abono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase));
             ticket.ClienteClasificacion = cliente.Clasificacion ?? string.Empty;
+            ticket.TipoClienteColor = tipo.Color;
 
             TicketsAtencionCalculo.Aplicar(ticket, new TicketAtencionDatos
             {
@@ -288,7 +294,8 @@ public sealed partial class TicketsService
                 FechaSeguimiento = d?.FechaSeguimiento,
                 SeguimientoDesde = d?.SeguimientoDesde,
                 PeriodosEspera = periodosTicket,
-                ClientePrioritario = prioritario,
+                NivelesCliente = tipo.Niveles,
+                TipoClienteNombre = tipo.Nombre,
                 EstadoAbono = string.IsNullOrWhiteSpace(abono) ? ConversacionAbonoEstados.SinAbono : abono,
                 CasosAbiertosCliente = codigo.Length == 0 ? 0 : casos
             }, config, horario, esquema.Ahora);
@@ -316,9 +323,10 @@ public sealed partial class TicketsService
         return new EsquemaAtencion(GetInt(rd, 0) == 1, GetInt(rd, 1) == 1, GetInt(rd, 2) == 1, GetInt(rd, 3) == 1, rd.GetDateTime(4));
     }
 
-    private static async Task<TicketsAtencionConfigDto> LeerAtencionConfigAsync(SqlConnection cn, CancellationToken ct)
+    private async Task<TicketsAtencionConfigDto> LeerAtencionConfigAsync(SqlConnection cn, CancellationToken ct)
     {
         var config = new TicketsAtencionConfigDto();
+        var nivelesGuardados = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         const string sql = """
             IF OBJECT_ID(N'dbo.TICK_PLAZOS', N'U') IS NOT NULL
                 SELECT Prioridad, HorasRespuesta, HorasResolucion FROM dbo.TICK_PLAZOS WHERE ISNULL(Activo, 1) = 1 ORDER BY Prioridad;
@@ -328,6 +336,14 @@ public sealed partial class TicketsService
             SELECT UPPER(LTRIM(RTRIM(CLAVE))), LTRIM(RTRIM(ISNULL(VALOR, '')))
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) LIKE 'TICKETS-%';
+
+            IF OBJECT_ID(N'dbo.TA_CLASIFICACIONES') IS NOT NULL
+                SELECT LTRIM(RTRIM(ISNULL(Codigo, ''))), LTRIM(RTRIM(ISNULL(Descripcion, ''))), ISNULL(Color, 0)
+                FROM dbo.TA_CLASIFICACIONES
+                WHERE LTRIM(RTRIM(ISNULL(Codigo, ''))) <> ''
+                ORDER BY 2, 1;
+            ELSE
+                SELECT CAST('' AS nvarchar(20)), CAST('' AS nvarchar(100)), CAST(0 AS int) WHERE 1 = 0;
             """;
         await using var cmd = new SqlCommand(sql, cn);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
@@ -349,8 +365,43 @@ public sealed partial class TicketsService
                 {
                     asignar(config, numero);
                 }
+                else if (clave.StartsWith(PrefijoNivelesClasificacion, StringComparison.OrdinalIgnoreCase)
+                         && int.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var niveles))
+                {
+                    nivelesGuardados[clave[PrefijoNivelesClasificacion.Length..].Trim()] = Math.Clamp(niveles, 0, 3);
+                }
+                else if (string.Equals(clave, ClaveAbonoActivoNiveles, StringComparison.OrdinalIgnoreCase)
+                         && int.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var abono))
+                {
+                    config.AbonoActivoNiveles = Math.Clamp(abono, 0, 3);
+                }
             }
         }
+
+        if (await rd.NextResultAsync(ct))
+        {
+            while (await rd.ReadAsync(ct))
+            {
+                // Algunas bases tienen la misma clasificación repetida: vale la primera.
+                if (config.TiposCliente.Any(t => string.Equals(t.Codigo, GetString(rd, 0), StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                var color = 0;
+                try { color = Convert.ToInt32(rd.GetValue(2), CultureInfo.InvariantCulture); } catch (OverflowException) { } catch (FormatException) { } catch (InvalidCastException) { }
+                config.TiposCliente.Add(new TicketTipoClienteDto
+                {
+                    Codigo = GetString(rd, 0),
+                    Descripcion = GetString(rd, 1),
+                    ColorHex = ConversacionesService.VbColorIntToHex(color)
+                });
+            }
+        }
+        await rd.DisposeAsync();
+
+        // Clasificación sin configurar en Tickets: sube 1 nivel si es prioritaria en Conversaciones (como antes).
+        var sinConfigurar = config.TiposCliente.Where(t => !nivelesGuardados.ContainsKey(t.Codigo)).ToList();
+        HashSet<string> prioritarias = sinConfigurar.Count > 0 ? await LeerClasificacionesPrioritariasAsync(ct) : [];
+        foreach (var tipo in config.TiposCliente)
+            tipo.Niveles = nivelesGuardados.TryGetValue(tipo.Codigo, out var n) ? n : prioritarias.Contains(tipo.Codigo) ? 1 : 0;
 
         if (config.Plazos.Count == 0)
         {

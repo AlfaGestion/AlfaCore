@@ -238,9 +238,20 @@ public sealed class IaUsoFlushService(
                 await tx.CommitAsync(ct);
             }
 
-            File.Move(archivo, Path.ChangeExtension(archivo, $".importado-{DateTime.UtcNow:yyyyMMddHHmmss}.jsonl"));
+            File.Move(archivo, NombreArchivoImportado(archivo, DateTime.UtcNow));
             logger.LogInformation("Se reimportaron {Count} consumos de IA pendientes desde {Archivo}.", registros.Count, Path.GetFileName(archivo));
         }
+    }
+
+    /// <summary>
+    /// Nombre con el que queda un archivo ya subido. No puede empezar con "ia-uso-pendiente-": antes se
+    /// renombraba a "ia-uso-pendiente-202611.importado-....jsonl", que seguía entrando en la búsqueda de
+    /// pendientes y se volvía a subir en cada pasada (se subió 9 veces seguidas, 2026-11-24).
+    /// </summary>
+    internal static string NombreArchivoImportado(string archivo, DateTime utc)
+    {
+        var nombre = Path.GetFileNameWithoutExtension(archivo).Replace("ia-uso-pendiente-", "ia-uso-importado-", StringComparison.OrdinalIgnoreCase);
+        return Path.Combine(Path.GetDirectoryName(archivo) ?? string.Empty, $"{nombre}-{utc:yyyyMMddHHmmss}.jsonl");
     }
 
     /// <summary>Lee las líneas JSON de un archivo de pendientes; ignora líneas dañadas.</summary>
