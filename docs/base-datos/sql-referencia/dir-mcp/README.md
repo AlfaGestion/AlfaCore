@@ -10,9 +10,12 @@ Capa semantica para consultar la base en lenguaje natural desde Claude / ChatGPT
 | 3 | `003_ia_log_consultas.sql` | tabla `dbo.IA_LOG_CONSULTAS` (auditoria) | db_owner |
 | 4 | `004_config_ia_mcp.sql` | claves `IA_MCP_*` en `TA_CONFIGURACION` (no pisa existentes) | db_owner |
 | 5 | `005_login_solo_lectura.sql` | login/usuario dedicado: SELECT en `dir` + INSERT en el log | sysadmin / securityadmin |
+| 10 | `010_oauth_tablas.sql` | tablas del servidor OAuth: `MCP_USUARIO`, `MCP_CLIENTE_OAUTH`, `MCP_CODIGO`, `MCP_REFRESH_TOKEN`, `MCP_EVENTO` (en la base del almacén, p. ej. `ALFA_CENTRAL`) | db_owner |
+| 11 | `011_oauth_login_almacen.sql` | login **distinto** (`mcp_auth_rw`) con permisos solo sobre las tablas `MCP_*` (Modo SQLCMD) | sysadmin / securityadmin |
+| 12 | `012_config_oauth.sql` | claves `IA_MCP_OAUTH_*` y la lista blanca de redirects (en la base de **datos**) | db_owner |
 | 99 | `099_verificacion.sql` | calidad de datos, cuadre contra el libro y prueba de permisos | el login de 5 |
 
-Todos son idempotentes. UTF-8 sin BOM: correrlos con `sqlcmd -f i:65001`.
+Todos son idempotentes. UTF-8 sin BOM: correrlos con `sqlcmd -f i:65001`. Los scripts 10-12 son de la etapa 5 (OAuth); ver [README del servidor](../../../../src/AlfaCore.Mcp/README.md).
 
 ```
 sqlcmd -S <servidor> -d <base> -f i:65001 -i 001_esquema_dir.sql

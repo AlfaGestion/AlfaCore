@@ -5,53 +5,85 @@ ChatGPT hacer preguntas como "ventas del mes", "¿qué artículo me dejó más g
 Solo lectura. Toda la lógica de negocio vive una vez en las vistas SQL `dir.vw_*`
 ([scripts](../../docs/base-datos/sql-referencia/dir-mcp/README.md)); acá solo hay herramientas parametrizadas.
 
-> **Estado: etapa 3-4 (uso local).** Escucha solo en `127.0.0.1` y **no tiene autenticación**: no publicarlo ni abrir el puerto
-> hasta hacer la etapa 5 (OAuth + HTTPS).
+Dos modos de uso:
 
-## 1. Requisitos en la base (una sola vez)
-Correr en la base elegida, en orden, los scripts de `docs/base-datos/sql-referencia/dir-mcp/`: `001`, `002`, `003`, `004` y `005`.
-El **005 crea el login de solo lectura** (`mcp_dir_ro`). En SSMS hay que activar **Consulta → Modo SQLCMD** y completar los `:setvar`;
-si no, el script aborta con un mensaje (las variables `$(...)` no se reemplazan). Alternativa por consola:
+| Modo | Autenticación | Para qué | Quién |
+|---|---|---|---|
+| **Local simple** (`Development`, sin configurar `Mcp:Auth:Enabled`) | ninguna, solo `127.0.0.1` | probar con Claude Code en tu PC | por defecto con `dotnet run` |
+| **OAuth** (etapa 5) | OAuth 2.1 propio (usuario + clave, PKCE, tokens de vida corta) | claude.ai, ChatGPT y Claude Code por HTTPS | producción — ver [guía de IIS](../../docs/modulos/mcp-publicacion-iis.md) |
 
+> **Nunca** expongas el modo local a internet. En cualquier entorno que no sea `Development`, el servidor **exige** OAuth y se
+> niega a arrancar si `Mcp:Auth:Enabled=false`.
+
+## 1. Requisitos en la base de datos (una sola vez)
+Scripts de `docs/base-datos/sql-referencia/dir-mcp/`, en orden: `001`–`004` (esquema `dir`, vistas, auditoría, claves) y `005` (login
+de datos `mcp_dir_ro`, solo lectura). Para OAuth además: `010` (tablas `MCP_*`), `011` (login del almacén OAuth) y `012` (claves
+`IA_MCP_OAUTH_*`). En SSMS activar **Consulta → Modo SQLCMD** para los que llevan variables (005 y 011).
+
+## 2. Modo local simple (el que ya venís usando)
 ```
-sqlcmd -S "10.8.0.20\ALFANET" -f i:65001 -i 005_login_solo_lectura.sql -v MCP_DB="<base>" MCP_LOGIN="mcp_dir_ro" MCP_PASSWORD="<contraseña fuerte>"
+dotnet user-secrets set "ConnectionStrings:AlfaMcp" "Server=<servidor>;Database=<base>;User Id=mcp_dir_ro;Password=<contraseña>;TrustServerCertificate=True;Encrypt=False" --project src/AlfaCore.Mcp
+dotnet run --project src/AlfaCore.Mcp
+claude.cmd mcp add --scope user --transport http alfacore-dir http://127.0.0.1:5290/mcp
 ```
+Queda en `http://127.0.0.1:5290/mcp` (`GET /health` → `{"estado":"ok"}`). Probar con `npx @modelcontextprotocol/inspector`
+(*Streamable HTTP*, esa URL) o directamente preguntando en `claude`.
 
-## 2. Cadena de conexión (nunca en el repo)
-Usar **el login `mcp_dir_ro`**, no uno con más permisos. Cualquiera de las dos formas:
+## 3. Probar el flujo OAuth en tu PC (antes de publicar)
+Usa un almacén **en memoria** con un usuario de prueba, así no hace falta crear tablas. Requiere haber corrido el script **012** (la lista
+blanca de redirects vive en `TA_CONFIGURACION`: sin ella el registro se rechaza a propósito). En PowerShell:
 
-```
-# user-secrets (recomendado para desarrollo; se carga porque launchSettings usa el entorno Development)
-dotnet user-secrets set "ConnectionStrings:AlfaMcp" "Server=10.8.0.20\ALFANET;Database=<base>;User Id=mcp_dir_ro;Password=<contraseña>;TrustServerCertificate=True;Encrypt=False" --project src/AlfaCore.Mcp
-
-# o variable de entorno (la tiene prioridad sobre user-secrets)
-set ALFACORE_MCP_CONNECTION=Server=...;Database=...;User Id=mcp_dir_ro;Password=...
-```
-
-Sin cadena, el servidor no arranca y lo dice. Los parámetros de negocio (`IA_MCP_*`) se leen de `TA_CONFIGURACION` y se
-refrescan cada 30 s sin reiniciar.
-
-## 3. Ejecutar
-```
+```powershell
+$env:Mcp__Auth__Enabled = "true"
+$env:Mcp__Auth__Store = "Memory"                       # solo permitido en Development
+$env:Mcp__Auth__Issuer = "http://127.0.0.1:5290"
+$env:Mcp__Auth__DevUser = "alberto"
+$env:Mcp__Auth__DevPassword = "una-clave-larga-123"    # cualquiera de 12+ caracteres; no se guarda en ningún archivo
 dotnet run --project src/AlfaCore.Mcp
 ```
-Queda en `http://127.0.0.1:5290/mcp` (puerto en `appsettings.json`, clave `Urls`). `GET /health` responde `{"estado":"ok"}`.
+En otra ventana: `claude.cmd mcp remove alfacore-dir` y `claude.cmd mcp add --scope user --transport http alfacore-dir http://127.0.0.1:5290/mcp`.
+En `claude`: `/mcp` → `alfacore-dir` → **Authenticate**. Se abre el navegador con la pantalla de login; entrá con `alberto` y la clave de arriba.
+Al volver, debe decir *connected*. Para volver al modo simple, cerrá la ventana (las variables `$env:` mueren con ella).
 
-## 4. Probar con MCP Inspector
-```
-npx @modelcontextprotocol/inspector
-```
-En la pantalla: **Transport Type = Streamable HTTP**, **URL = `http://127.0.0.1:5290/mcp`**, *Connect*, pestaña **Tools → List Tools**.
-Probar por ejemplo `ventas_resumen` con `desde=2026-10-01`, `hasta=2026-10-31`, `agrupar_por=mes`, y `describir_esquema`.
+## 4. Qué hace el servidor OAuth
+| Endpoint | Función |
+|---|---|
+| `/.well-known/oauth-protected-resource/mcp` | metadatos del recurso (RFC 9728); el `401` apunta acá con `WWW-Authenticate: Bearer resource_metadata=...` |
+| `/.well-known/oauth-authorization-server`, `/.well-known/openid-configuration` (+ variantes con ruta) | metadatos del servidor de autorización (RFC 8414) |
+| `POST /oauth/register` | registro dinámico de clientes públicos (RFC 7591), solo con redirect URIs de la lista blanca |
+| `GET/POST /oauth/authorize` | pantalla de login y consentimiento; `authorization code` + **PKCE S256** obligatorio |
+| `POST /oauth/token` | canje del código y renovación; *refresh tokens* con rotación y detección de reuso |
+| `GET /oauth/jwks` | clave pública de firma (RS256) |
 
-## 5. Registrarlo en Claude Code
+Un solo permiso: `mcp:read`. Los *access tokens* son JWT RS256 con `audience` = URL del recurso, vida por defecto 60 min.
+
+### Administración de usuarios (por consola, nunca por HTTP)
 ```
-claude mcp add --transport http alfacore-dir http://127.0.0.1:5290/mcp
-claude mcp list            # debe figurar alfacore-dir conectado
+dotnet AlfaCore.Mcp.dll crear-usuario <usuario> "Nombre a mostrar" [base]      # pide la clave 2 veces (mínimo 12 caracteres)
 ```
-Después, dentro de Claude Code: *"¿cuánto vendí en octubre de 2026 y cuál fue el margen?"*, *"top 10 artículos por ganancia del
-último trimestre"*, *"comparame octubre con septiembre"*, *"¿quién me debe más de 500.000?"*. Para quitarlo:
-`claude mcp remove alfacore-dir`.
+(en desarrollo: `dotnet run --project src/AlfaCore.Mcp -- crear-usuario ...`). La clave se guarda como hash PBKDF2-SHA256 (600.000 iteraciones). Para
+desactivar o desbloquear a alguien, en el almacén OAuth:
+```sql
+UPDATE dbo.MCP_USUARIO SET Activo = 0 WHERE Usuario = 'fulano';                 -- deja de poder renovar al vencer su token
+UPDATE dbo.MCP_USUARIO SET Intentos = 0, BloqueadoHasta = NULL WHERE Usuario = 'fulano';   -- desbloquear
+UPDATE dbo.MCP_REFRESH_TOKEN SET Revocado = 1 WHERE UsuarioId = (SELECT Id FROM dbo.MCP_USUARIO WHERE Usuario = 'fulano');  -- cortar sesiones ya
+```
+
+### Parámetros (TA_CONFIGURACION de la base de datos, grupo `IA_MCP`; se refrescan cada 30 s)
+Negocio: `IA_MCP_HABILITADO` (interruptor general, también corta el login), `IA_MCP_MAX_FILAS`, `IA_MCP_TOP_MAXIMO`, `IA_MCP_TIMEOUT_SEG`,
+`IA_MCP_TC_PROFORMA`, `IA_MCP_INCLUIR_PROFORMAS`, `IA_MCP_CONSULTAR_SQL_HABILITADO`, `IA_MCP_LOG_PARAMETROS`, `IA_MCP_ADVERTIR_SIN_COSTO_PCT`.
+OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_INTENTOS`, `_BLOQUEO_MIN`, `_MAX_CLIENTES` y
+**`IA_MCP_OAUTH_REDIRECTS`** (lista blanca de aplicaciones que pueden conectarse). Si una clave falta, lo riesgoso queda apagado.
+
+### Configuración de infraestructura (appsettings / variables de entorno; nunca en el repo)
+| Variable | Qué es |
+|---|---|
+| `ALFACORE_MCP_CONNECTION` o secret `ConnectionStrings:AlfaMcp` | login de **datos** (`mcp_dir_ro`) |
+| `ALFACORE_MCP_AUTH_CONNECTION` o secret `ConnectionStrings:AlfaMcpAuth` | login del **almacén OAuth** (solo tablas `MCP_*`) |
+| `Mcp__Auth__Issuer` | URL pública https de la aplicación (ej. `https://alfacentral.ddns.net:8443`) |
+| `Mcp__Auth__EndpointPath` | ruta del recurso MCP (por defecto `/mcp`) |
+| `Mcp__Auth__SigningKeyPath` | PEM de la clave privada de firma, **fuera** de la carpeta publicada (se crea sola si no existe) |
+| `Mcp__Auth__LimiteLoginPorMin` / `LimiteTokenPorMin` / `LimiteRegistroPorMin` | límites por IP (10 / 60 / 10) |
 
 ## Herramientas
 | Herramienta | Para qué |
@@ -65,41 +97,36 @@ Después, dentro de Claude Code: *"¿cuánto vendí en octubre de 2026 y cuál f
 | `describir_esquema()` | vistas y columnas de `dir` (llamarla antes de `consultar_sql`) |
 | `consultar_sql(sql, max_filas)` | SELECT libre, una sentencia, solo `dir.*`, con tope de filas |
 
-Fechas siempre `AAAA-MM-DD`. Toda respuesta incluye `Criterio` (cómo se calcularon los importes), `Totales` del período completo y
-`Advertencias` (recortes, topes, líneas sin costo).
-
-## Parámetros en TA_CONFIGURACION (grupo `IA_MCP`)
-`IA_MCP_HABILITADO`, `IA_MCP_MAX_FILAS`, `IA_MCP_TOP_MAXIMO`, `IA_MCP_TIMEOUT_SEG`, `IA_MCP_TC_PROFORMA`,
-`IA_MCP_INCLUIR_PROFORMAS`, `IA_MCP_CONSULTAR_SQL_HABILITADO`, `IA_MCP_LOG_PARAMETROS`, `IA_MCP_ADVERTIR_SIN_COSTO_PCT`.
-Si una clave falta, lo riesgoso queda apagado (`HABILITADO` y `CONSULTAR_SQL_HABILITADO` por defecto en NO).
+Fechas siempre `AAAA-MM-DD`. Toda respuesta incluye `Criterio`, `Totales` del período completo y `Advertencias`.
 
 ## Seguridad (capas)
-1. **Permisos SQL (la barrera real):** el login solo tiene `SELECT` sobre el esquema `dir` e `INSERT` sobre `IA_LOG_CONSULTAS`. Las vistas
-   son de `dbo`, así que leen las tablas base por ownership chaining sin que el login tenga acceso directo.
-2. **Validador de `consultar_sql`** (ScriptDom): una sola sentencia SELECT, solo objetos `dir.*`, sin variables, `SELECT INTO`,
-   funciones de tabla, `OPENROWSET`/`OPENQUERY`, nombres de servidor/base ni funciones con esquema. Es secundario: no sustituye al punto 1.
-3. **Tope de filas y timeout** (`IA_MCP_MAX_FILAS`, `IA_MCP_TIMEOUT_SEG`); herramientas con SQL parametrizado: lo único interpolado en el
-   SQL sale de listas cerradas, nunca del texto del modelo.
-4. **Auditoría** de cada llamada en `dbo.IA_LOG_CONSULTAS` (fecha, usuario, herramienta, parámetros, duración, filas, error). Si la
-   auditoría falla, la consulta sigue y el error queda en el log de la aplicación (se priorizó disponibilidad).
-5. Escucha solo en loopback y valida el header `Host` (`AllowedHosts`).
+1. **Permisos SQL (la barrera real):** el login de datos solo tiene `SELECT` sobre `dir` e `INSERT` sobre `IA_LOG_CONSULTAS`; el del almacén OAuth
+   solo toca tablas `MCP_*`. Son logins **distintos**: comprometer uno no da acceso a lo del otro.
+2. **Autenticación OAuth 2.1:** PKCE S256 obligatorio; redirect URIs en lista blanca y comparación exacta; clientes solo públicos; códigos de un solo uso
+   (60 s); *refresh tokens* rotativos con revocación de toda la cadena si se reusa uno viejo; códigos y refresh tokens **solo se guardan como hash**;
+   tokens con `issuer`/`audience`/firma/vencimiento/`scope` validados (se rechaza `alg=none` y firmas ajenas).
+3. **Login:** claves PBKDF2, mismo mensaje y tiempo para usuario inexistente o clave mala, bloqueo tras N intentos, protección CSRF (antiforgery),
+   límite de pedidos por IP, pantalla con `X-Frame-Options: DENY`, CSP y nombre de cliente escapado.
+4. **Validador de `consultar_sql`** (ScriptDom): una sola sentencia SELECT, solo objetos `dir.*`, sin variables, `SELECT INTO`, funciones de tabla, `OPENROWSET`,
+   servidores vinculados ni funciones con esquema. Secundario respecto del punto 1.
+5. **Tope de filas y timeout**; SQL parametrizado (lo interpolado sale de listas cerradas).
+6. **Auditoría:** cada consulta en `dbo.IA_LOG_CONSULTAS` (con el usuario del token) y cada evento de login/token en `dbo.MCP_EVENTO`
+   (`login_ok`, `login_fallido`, `usuario_bloqueado`, `codigo_reutilizado`, `refresh_reutilizado`...).
+7. Errores internos: al usuario solo un código de incidente; el detalle queda en el log y en `IA_LOG_CONSULTAS`.
 
-Los errores internos nunca devuelven detalles al modelo: se responde con un código de incidente y el detalle queda en `IA_LOG_CONSULTAS`.
-
-## Preparado para la etapa 5 (OAuth + HTTPS + claude.ai / ChatGPT)
-- `IConexionResolver` (hoy: una base fija) → resolver la base por tenant desde `ALFA_CENTRAL` según el token.
-- `IMcpUserContext` (hoy: usuario fijo `mcp-local`) → usuario desde las claims del token; ya se audita en cada llamada.
-- `Program.cs` tiene marcado dónde van `UseAuthentication/UseAuthorization` y `MapMcp(...).RequireAuthorization()`.
-- Es **stateless**, listo para publicar detrás de un proxy/HTTPS y escalar sin sesiones pegajosas.
+**Límites conocidos:** el acceso de un usuario desactivado cae al vencer su *access token* (60 min por defecto), salvo que revoques sus *refresh tokens* (SQL de arriba);
+todavía no hay segundo factor (TOTP, etapa 5d); una sola clave de firma (para rotarla: cambiar el PEM; las sesiones se renuevan al volver a iniciar sesión).
 
 ## Pruebas
 ```
 dotnet test tests/AlfaCore.Mcp.Tests
 ```
-Unitarias (validador SQL, parámetros, configuración) corren siempre. Las 9 de integración se saltean salvo que se defina
-`ALFACORE_MCP_TEST_CONNECTION` apuntando a una base con `dir` instalado (no escriben nada: usan una auditoría en memoria).
+Corren siempre: validador SQL, parámetros, configuración y el **flujo OAuth completo** contra el servidor real en memoria (registro, login, PKCE, rotación, reuso,
+bloqueo, tokens falsificados/vencidos, interruptor, base caída). Opcionales (se saltean sin su variable de entorno):
+`ALFACORE_MCP_TEST_CONNECTION` (herramientas contra una base con `dir`) y `ALFACORE_MCP_TEST_AUTH_CONNECTION` (almacén SQL contra tablas `MCP_*`; limpia lo que crea).
 
 ## Trampas conocidas
 - En estas bases el literal `'2026-10-01'` se lee año-día-mes; el MCP antepone `SET DATEFORMAT ymd` y usa parámetros tipados.
-- Las bases a compatibilidad 80/100 no soportan `LAG/LEAD`, `IIF`, `CONCAT`, `FORMAT` ni `OFFSET/FETCH`; la descripción de `consultar_sql` se lo advierte al modelo.
-- Cuenta corriente y stock tardan 10-15 s en bases grandes (por eso el timeout por defecto es 60 s).
+- Compatibilidad 80/100: sin `LAG/LEAD`, `IIF`, `CONCAT`, `FORMAT` ni `OFFSET/FETCH` (la descripción de `consultar_sql` se lo advierte al modelo).
+- Cuenta corriente y stock tardan 10-15 s en bases grandes (timeout por defecto 60 s).
+- Si ya tenés `dotnet run` abierto, `dotnet build/test` no puede reemplazar los archivos: cerralo antes (Ctrl+C).

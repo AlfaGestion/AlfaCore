@@ -48,7 +48,14 @@ public sealed record McpRuntimeSettings(
     bool IncluirProformas,
     bool ConsultarSqlHabilitado,
     bool LogParametros,
-    decimal AdvertirSinCostoPct)
+    decimal AdvertirSinCostoPct,
+    int AccessTokenMin = 60,
+    int RefreshDias = 30,
+    int CodigoSeg = 60,
+    int MaxIntentosLogin = 5,
+    int BloqueoMin = 15,
+    int MaxClientesOauth = 500,
+    IReadOnlyList<string>? RedirectsPermitidos = null)
 {
     public static McpRuntimeSettings Desde(IReadOnlyDictionary<string, string> v) => new(
         Habilitado: Si(Get(v, "IA_MCP_HABILITADO"), false),
@@ -58,7 +65,20 @@ public sealed record McpRuntimeSettings(
         IncluirProformas: Si(Get(v, "IA_MCP_INCLUIR_PROFORMAS"), true),
         ConsultarSqlHabilitado: Si(Get(v, "IA_MCP_CONSULTAR_SQL_HABILITADO"), false),
         LogParametros: Si(Get(v, "IA_MCP_LOG_PARAMETROS"), true),
-        AdvertirSinCostoPct: Decimal(Get(v, "IA_MCP_ADVERTIR_SIN_COSTO_PCT"), 5m));
+        AdvertirSinCostoPct: Decimal(Get(v, "IA_MCP_ADVERTIR_SIN_COSTO_PCT"), 5m),
+        AccessTokenMin: Entero(Get(v, "IA_MCP_OAUTH_ACCESS_TOKEN_MIN"), 60, 5, 1440),
+        RefreshDias: Entero(Get(v, "IA_MCP_OAUTH_REFRESH_DIAS"), 30, 1, 365),
+        CodigoSeg: Entero(Get(v, "IA_MCP_OAUTH_CODIGO_SEG"), 60, 10, 300),
+        MaxIntentosLogin: Entero(Get(v, "IA_MCP_OAUTH_MAX_INTENTOS"), 5, 3, 20),
+        BloqueoMin: Entero(Get(v, "IA_MCP_OAUTH_BLOQUEO_MIN"), 15, 1, 1440),
+        MaxClientesOauth: Entero(Get(v, "IA_MCP_OAUTH_MAX_CLIENTES"), 500, 1, 10000),
+        RedirectsPermitidos: Lista(Get(v, "IA_MCP_OAUTH_REDIRECTS")));
+
+    /// <summary>Lista de URIs separadas por salto de linea, espacio, coma o punto y coma. Vacia = no se permite ningun cliente.</summary>
+    public static IReadOnlyList<string> Lista(string? valor) =>
+        string.IsNullOrWhiteSpace(valor)
+            ? Array.Empty<string>()
+            : valor.Split([' ', '\t', '\r', '\n', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static string? Get(IReadOnlyDictionary<string, string> v, string clave) =>
         v.TryGetValue(clave, out var valor) ? valor : null;
