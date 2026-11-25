@@ -79,6 +79,14 @@ public class ParametrosYConfigTests
     }
 
     [Fact]
+    public void La_lectura_sin_bloqueos_viene_prendida_por_defecto_y_se_apaga_con_NO()
+    {
+        Assert.True(McpRuntimeSettings.Desde(new Dictionary<string, string>()).LecturaSinBloqueos);
+        Assert.True(McpRuntimeSettings.Desde(new Dictionary<string, string> { ["IA_MCP_LECTURA_SIN_BLOQUEOS"] = "SI" }).LecturaSinBloqueos);
+        Assert.False(McpRuntimeSettings.Desde(new Dictionary<string, string> { ["IA_MCP_LECTURA_SIN_BLOQUEOS"] = "NO" }).LecturaSinBloqueos);
+    }
+
+    [Fact]
     public void Config_lee_valores_y_tolera_basura_y_decimales_con_coma()
     {
         var c = McpRuntimeSettings.Desde(new Dictionary<string, string>

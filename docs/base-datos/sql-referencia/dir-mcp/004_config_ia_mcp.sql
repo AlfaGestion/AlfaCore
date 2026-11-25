@@ -13,7 +13,8 @@ INSERT INTO @k (Clave, Valor, Descripcion) VALUES
  (N'IA_MCP_INCLUIR_PROFORMAS',         N'SI',      N'SI = las herramientas de ventas incluyen proformas (son ventas reales no fiscales). NO = solo comprobantes del libro de IVA.'),
  (N'IA_MCP_CONSULTAR_SQL_HABILITADO',  N'SI',      N'SI = permite la herramienta consultar_sql (solo SELECT sobre el esquema dir).'),
  (N'IA_MCP_LOG_PARAMETROS',            N'SI',      N'SI = IA_LOG_CONSULTAS guarda los parametros de cada llamada. NO = solo herramienta, duracion y filas.'),
- (N'IA_MCP_ADVERTIR_SIN_COSTO_PCT',    N'5',       N'Si el porcentaje de lineas sin costo supera este valor, las herramientas de margen agregan una advertencia.');
+ (N'IA_MCP_ADVERTIR_SIN_COSTO_PCT',    N'5',       N'Si el porcentaje de lineas sin costo supera este valor, las herramientas de margen agregan una advertencia.'),
+ (N'IA_MCP_LECTURA_SIN_BLOQUEOS',      N'SI',      N'SI = el MCP lee sin tomar bloqueos (READ UNCOMMITTED) para no frenar las escrituras de Alfa Gestion/AlfaCore; puede ver un comprobante a medio grabar. NO = aislamiento normal. En ambos casos pierde siempre ante un deadlock.');
 
 INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
 SELECT N'IA_MCP', k.Clave, k.Valor, k.Descripcion, GETDATE()

@@ -84,7 +84,7 @@ UPDATE dbo.MCP_REFRESH_TOKEN SET Revocado = 1 WHERE UsuarioId = (SELECT Id FROM 
 
 ### Parámetros (TA_CONFIGURACION de la base de datos, grupo `IA_MCP`; se refrescan cada 30 s)
 Negocio: `IA_MCP_HABILITADO` (interruptor general, también corta el login), `IA_MCP_MAX_FILAS`, `IA_MCP_TOP_MAXIMO`, `IA_MCP_TIMEOUT_SEG`,
-`IA_MCP_TC_PROFORMA`, `IA_MCP_INCLUIR_PROFORMAS`, `IA_MCP_CONSULTAR_SQL_HABILITADO`, `IA_MCP_LOG_PARAMETROS`, `IA_MCP_ADVERTIR_SIN_COSTO_PCT`.
+`IA_MCP_TC_PROFORMA`, `IA_MCP_INCLUIR_PROFORMAS`, `IA_MCP_CONSULTAR_SQL_HABILITADO`, `IA_MCP_LOG_PARAMETROS`, `IA_MCP_ADVERTIR_SIN_COSTO_PCT`, `IA_MCP_LECTURA_SIN_BLOQUEOS`.
 OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_INTENTOS`, `_BLOQUEO_MIN`, `_MAX_CLIENTES`, `_REQUIERE_TOTP` y
 **`IA_MCP_OAUTH_REDIRECTS`** (lista blanca de aplicaciones que pueden conectarse). Si una clave falta, lo riesgoso queda apagado.
 
@@ -122,10 +122,11 @@ Fechas siempre `AAAA-MM-DD`. Toda respuesta incluye `Criterio`, `Totales` del pe
    límite de pedidos por IP, pantalla con `X-Frame-Options: DENY`, CSP y nombre de cliente escapado.
 4. **Validador de `consultar_sql`** (ScriptDom): una sola sentencia SELECT, solo objetos `dir.*`, sin variables, `SELECT INTO`, funciones de tabla, `OPENROWSET`,
    servidores vinculados ni funciones con esquema. Secundario respecto del punto 1.
-5. **Tope de filas y timeout**; SQL parametrizado (lo interpolado sale de listas cerradas).
-6. **Auditoría:** cada consulta en `dbo.IA_LOG_CONSULTAS` (con el usuario del token) y cada evento de login/token en `dbo.MCP_EVENTO`
+5. **Protección de la base de producción:** cada consulta corre con `DEADLOCK_PRIORITY LOW` (en un bloqueo mutuo siempre pierde el MCP) y, por defecto, `READ UNCOMMITTED` (`IA_MCP_LECTURA_SIN_BLOQUEOS`): no toma bloqueos compartidos, así no frena a quien graba una venta o un cobro. Costo: en un instante muy raro puede verse un comprobante a medio grabar.
+6. **Tope de filas y timeout**; SQL parametrizado (lo interpolado sale de listas cerradas).
+7. **Auditoría:** cada consulta en `dbo.IA_LOG_CONSULTAS` (con el usuario del token) y cada evento de login/token en `dbo.MCP_EVENTO`
    (`login_ok`, `login_fallido`, `usuario_bloqueado`, `codigo_reutilizado`, `refresh_reutilizado`...).
-7. Errores internos: al usuario solo un código de incidente; el detalle queda en el log y en `IA_LOG_CONSULTAS`.
+8. Errores internos: al usuario solo un código de incidente; el detalle queda en el log y en `IA_LOG_CONSULTAS`.
 
 **Límites conocidos:** el acceso de un usuario desactivado cae al vencer su *access token* (60 min por defecto), salvo que revoques sus *refresh tokens* (SQL de arriba);
 no hay códigos de recuperación del segundo factor (si alguien pierde el teléfono: `configurar-totp`); una sola clave de firma (para rotarla: cambiar el PEM; las sesiones se renuevan al volver a iniciar sesión).

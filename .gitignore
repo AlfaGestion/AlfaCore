@@ -130,4 +130,5 @@ src/AlfaCore/App_Data/arca_descargas/
 
 # Servidor MCP: claves privadas de firma OAuth y datos locales. NUNCA al repositorio.
 src/AlfaCore.Mcp/App_Data/
-*.pem
+src/AlfaCore.Mcp/**/*.pem
+**/*.totp-key

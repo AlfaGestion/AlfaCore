@@ -131,6 +131,21 @@ public class HerramientasIntegracionTests
     }
 
     [FactIntegracion]
+    public async Task La_sesion_del_MCP_lee_sin_bloqueos_y_pierde_ante_un_deadlock()
+    {
+        var ejecutor = new SqlExecutor(new ConexionUnicaResolver(Environment.GetEnvironmentVariable(FactIntegracionAttribute.Variable)!));
+        const string sesion = "SELECT transaction_isolation_level AS Aislamiento, deadlock_priority AS PrioridadDeadlock FROM sys.dm_exec_sessions WHERE session_id = @@SPID";
+
+        var sinBloqueos = (await ejecutor.QueryAsync(OAuthApp.Base() with { LecturaSinBloqueos = true }, sesion, null, default)).Filas.Single();
+        Assert.Equal(1, Convert.ToInt32(sinBloqueos["Aislamiento"]));          // 1 = READ UNCOMMITTED
+        Assert.Equal(-5, Convert.ToInt32(sinBloqueos["PrioridadDeadlock"]));   // -5 = LOW: siempre la victima
+
+        var normal = (await ejecutor.QueryAsync(OAuthApp.Base() with { LecturaSinBloqueos = false }, sesion, null, default)).Filas.Single();
+        Assert.Equal(2, Convert.ToInt32(normal["Aislamiento"]));               // 2 = READ COMMITTED
+        Assert.Equal(-5, Convert.ToInt32(normal["PrioridadDeadlock"]));        // la prioridad baja se mantiene aunque se apague la lectura sucia
+    }
+
+    [FactIntegracion]
     public async Task las_herramientas_respetan_los_interruptores_de_configuracion()
     {
         var (_, apagado, _) = Crear(habilitado: false);

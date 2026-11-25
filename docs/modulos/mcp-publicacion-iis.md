@@ -24,7 +24,8 @@ Se publica como un **sitio nuevo en un puerto propio (8443)**, con el certificad
    (recomendado `ALFA_CENTRAL`); `012` en la base de gestión. Anotar las contraseñas de `mcp_dir_ro` y `mcp_auth_rw` (no van en ningún archivo del repo).
 2. **Red:** abrir el puerto **8443/TCP** hacia `10.8.0.53` en el router/firewall (reenvío de puertos). Es la única apertura nueva.
 3. **Certificado:** verificar que el certificado de `alfacentral.ddns.net` está en el almacén *Local Computer → Personal* y **no vence pronto**.
-4. Instalar en el servidor el **.NET 8 Hosting Bundle** (si falta) y reiniciar IIS (`iisreset`).
+4. **Hosting Bundle:** AlfaCore ya corre sobre .NET 8 en ese servidor, asi que el .NET 8 Hosting Bundle casi seguro **ya esta instalado**: verificarlo (`dotnet --list-runtimes` debe mostrar `Microsoft.AspNetCore.App 8.x`) y **no reiniciar IIS**. Solo si faltara, instalarlo **fuera de horario**: requiere `iisreset`, que tira todos los sitios (AlfaCore incluido) unos segundos. Crear el sitio y el pool nuevos NO requiere reiniciar nada.
+5. **Carga sobre SQL Server:** el MCP lee con `READ UNCOMMITTED` y prioridad baja ante deadlocks (clave `IA_MCP_LECTURA_SIN_BLOQUEOS`, por defecto `SI`), asi que no frena las escrituras de Alfa Gestion/AlfaCore. Aun asi, la primera semana conviene mirar la duracion de las consultas en `IA_LOG_CONSULTAS` (`DuracionMs`).
 
 ## 1. Publicar
 En tu PC:

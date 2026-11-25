@@ -56,7 +56,8 @@ public sealed record McpRuntimeSettings(
     int BloqueoMin = 15,
     int MaxClientesOauth = 500,
     IReadOnlyList<string>? RedirectsPermitidos = null,
-    bool RequiereTotp = true)
+    bool RequiereTotp = true,
+    bool LecturaSinBloqueos = true)
 {
     public static McpRuntimeSettings Desde(IReadOnlyDictionary<string, string> v) => new(
         Habilitado: Si(Get(v, "IA_MCP_HABILITADO"), false),
@@ -74,7 +75,8 @@ public sealed record McpRuntimeSettings(
         BloqueoMin: Entero(Get(v, "IA_MCP_OAUTH_BLOQUEO_MIN"), 15, 1, 1440),
         MaxClientesOauth: Entero(Get(v, "IA_MCP_OAUTH_MAX_CLIENTES"), 500, 1, 10000),
         RedirectsPermitidos: Lista(Get(v, "IA_MCP_OAUTH_REDIRECTS")),
-        RequiereTotp: Si(Get(v, "IA_MCP_OAUTH_REQUIERE_TOTP"), true));
+        RequiereTotp: Si(Get(v, "IA_MCP_OAUTH_REQUIERE_TOTP"), true),
+        LecturaSinBloqueos: Si(Get(v, "IA_MCP_LECTURA_SIN_BLOQUEOS"), true));
 
     /// <summary>Lista de URIs separadas por salto de linea, espacio, coma o punto y coma. Vacia = no se permite ningun cliente.</summary>
     public static IReadOnlyList<string> Lista(string? valor) =>
@@ -154,7 +156,15 @@ public class SqlExecutor(IConexionResolver resolver)
         await using var cn = new SqlConnection(await resolver.GetConnectionStringAsync(ct));
         await cn.OpenAsync(ct);
         await using var cmd = cn.CreateCommand();
-        cmd.CommandText = "SET DATEFORMAT ymd;\n" + sql;
+        // Protege a AlfaCore / Alfa Gestion: el MCP nunca debe hacer esperar a quien esta grabando una venta ni ganar un deadlock.
+        //  - DEADLOCK_PRIORITY LOW: si hay un bloqueo mutuo, la victima es siempre esta consulta.
+        //  - READ UNCOMMITTED (IA_MCP_LECTURA_SIN_BLOQUEOS=SI, por defecto): no toma bloqueos compartidos, asi que no frena escrituras
+        //    (a costo de poder ver, muy raramente, un comprobante a medio grabar). Con NO se usa el aislamiento normal.
+        cmd.CommandText = "SET DATEFORMAT ymd;\nSET DEADLOCK_PRIORITY LOW;\n"
+                          // Siempre explicito: el pool de SqlClient NO restablece el aislamiento al reutilizar una conexion,
+                          // y sin esto un valor anterior se filtraria a esta consulta.
+                          + (cfg.LecturaSinBloqueos ? "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n" : "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;\n")
+                          + sql;
         cmd.CommandTimeout = cfg.TimeoutSeg;
         if (parametros is not null)
             foreach (var (nombre, valor) in parametros)
