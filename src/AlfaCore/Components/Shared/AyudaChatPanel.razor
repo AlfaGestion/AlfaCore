@@ -3,6 +3,7 @@
 @inject IAyudaIaService AyudaIa
 @inject IAyudaHistorialService Historial
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @implements IDisposable
 
 @* Rediseño 2026-11-26: estilo de chat limpio (preguntas a la derecha, respuestas como texto con formato),
@@ -158,7 +159,8 @@
         using var consulta = new CancellationTokenSource(); _consulta = consulta;
         try
         {
-            var respuesta = await AyudaIa.PreguntarAsync(pregunta, Tema, _turnos.Select(t => new AyudaTurno(t.Pregunta, t.Respuesta.Texto)).ToArray(), consulta.Token);
+            // La pantalla desde la que se pregunta: la respuesta arranca desde ahí (desde el inicio, con el camino del menú).
+            var respuesta = await AyudaIa.PreguntarAsync(pregunta, Tema, _turnos.Select(t => new AyudaTurno(t.Pregunta, t.Respuesta.Texto)).ToArray(), consulta.Token, Nav.Uri);
             if (_disposed || consulta.IsCancellationRequested)
                 return;
             _scrollPendiente = true;

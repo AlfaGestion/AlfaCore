@@ -119,6 +119,31 @@ public sealed class AyudaContextualTests
         Assert.Contains("alfa-seleccion-sin-cerrar.js",File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","App.razor")),StringComparison.Ordinal);
     }
 
+    // "¿Cómo hago el cierre de caja?" desde el inicio respondía "Desde el menú ☰…" sin decir que primero hay que
+    // entrar al punto de venta (2026-11-26): la IA recibe dónde está el usuario y el camino del menú a cada fuente.
+    [Fact]
+    public void LaAyudaConIaSabeDondeEstaElUsuarioYComoSeLlegaACadaPantalla()
+    {
+        var menu=new List<AlfaCore.Models.ShellMenuSearchItemDto>{
+            new(){ModuloNombre="Ventas",SeccionNombre="Operación",Nombre="Punto de Venta",RutaWeb="/ventas/punto-venta"},
+            new(){ModuloNombre="Archivos",SeccionNombre="Maestros",Nombre="Clientes",RutaWeb="/clientes"},
+            new(){ModuloNombre="Compras",SeccionNombre="Compras",Nombre="Carga de comprobantes",RutaWeb="/compras/carga"} };
+        Assert.Equal("/ventas/punto-venta/mostrador",AyudaIaService.RutaRelativa("http://localhost:5065/ALFANET/106/ventas/punto-venta/mostrador?x=1"));
+        Assert.Equal("/",AyudaIaService.RutaRelativa("http://localhost:5065/"));
+        Assert.Equal(AyudaIaService.UbicacionInicio,AyudaIaService.Ubicacion("/",menu));
+        Assert.Equal("la pantalla Ventas → Operación → Punto de Venta",AyudaIaService.Ubicacion("/ventas/punto-venta/mostrador",menu));
+        // Secciones repetidas no se duplican ("Compras → Compras").
+        Assert.Equal("Compras → Carga de comprobantes",AyudaIaService.CaminoMenu("/compras/carga",menu));
+        var cierre=AyudaIaService.Recuperar("¿Cómo hago el cierre de caja del mostrador?","general").First(f=>f.Tema=="mostrador");
+        Assert.Equal("Ventas → Operación → Punto de Venta",AyudaIaService.ComoLlegar(cierre,menu));
+        Assert.Null(AyudaIaService.CaminoMenu("/no-existe",menu));
+    }
+
+    private sealed class NavegacionDePrueba:NavigationManager
+    {
+        public NavegacionDePrueba()=>Initialize("http://localhost/","http://localhost/");
+    }
+
     private static string RepoRoot()
     {
         var dir=new DirectoryInfo(AppContext.BaseDirectory);
@@ -144,6 +169,7 @@ public sealed class AyudaContextualTests
             "DiasAsync"=>Task.FromResult(60),
             _=>Task.CompletedTask };
         services.AddSingleton(historial);
+        services.AddSingleton<NavigationManager>(new NavegacionDePrueba());
         var capture=new Capture();services.AddSingleton<IComponentActivator>(capture);
         using var provider=services.BuildServiceProvider();
         await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
