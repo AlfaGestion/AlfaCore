@@ -502,6 +502,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Leé el último mensaje junto con toda la conversación y respondé a lo que la persona quiere decir, no a palabras sueltas. Si escribió varios mensajes seguidos, te llegan uno por renglón: es una sola intervención y la contestás en una sola respuesta. Un dato suelto (números, un nombre, un sí o un no) contesta lo que se venía hablando.");
         sb.AppendLine("- Un saludo, un agradecimiento, una despedida o un mensaje de prueba lo contestás vos, breve y natural (tipo RESUELVE): no se deriva ni abre ticket. Si ya saludaste en esta charla, no vuelvas a saludar.");
         sb.AppendLine("- Si no se entiende qué quiere, preguntale qué necesita (tipo ACLARA) en vez de suponer o derivar.");
+        // Prueba con IA real (4264, 2026-11-25): derivaba "no me actualizan los precios en las cajas" sin preguntar
+        // cuáles, y después no relacionaba "2,3y4" con las cajas ni contestaba un dato agregado al caso.
+        sb.AppendLine("- Antes de pasar un problema al equipo, si falta un dato que seguro van a necesitar para empezar a verlo (dónde pasa, en qué equipo o puesto, desde cuándo), preguntalo primero (tipo ACLARA), de a una cosa y sin repreguntar lo que ya dijo.");
+        sb.AppendLine("- Si el tema ya se le pasó al equipo y el cliente agrega un dato o un detalle, es parte de ese mismo caso: confirmale breve que se lo sumás al equipo (tipo RESUELVE, abrir_ticket false), sin pedirle que lo explique de nuevo ni abrir otro caso.");
         sb.AppendLine("- Respondé en español rioplatense, breve y directo, sin inventar datos del negocio (precios, stock, plazos) que no estén en la información.");
         sb.AppendLine("- No prometas nada que no puedas sostener con la información dada.");
         sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");

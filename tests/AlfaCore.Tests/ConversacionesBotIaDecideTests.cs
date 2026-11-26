@@ -25,6 +25,8 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.Contains("uno por renglón", prompt, StringComparison.Ordinal);
         Assert.Contains("Un dato suelto (números, un nombre, un sí o un no) contesta lo que se venía hablando", prompt, StringComparison.Ordinal);
         Assert.Contains("\"tema_resuelto\": true/false", prompt, StringComparison.Ordinal);
+        Assert.Contains("Antes de pasar un problema al equipo, si falta un dato", prompt, StringComparison.Ordinal);
+        Assert.Contains("es parte de ese mismo caso", prompt, StringComparison.Ordinal);
         // Las frases de ejemplo terminaban funcionando como disparadores.
         Assert.DoesNotContain("ya anda", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("¿pudieron ver algo?", prompt, StringComparison.Ordinal);
