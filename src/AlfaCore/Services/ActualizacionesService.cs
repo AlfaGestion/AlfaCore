@@ -416,6 +416,7 @@ public sealed class ActualizacionesService(
         ["2026-11-03-011__compras_borradores_anulacion.sql"] = "2026-11-03-015__compras_borradores_anulacion.sql",
         ["2026-11-03-012__ventas_libro_iva_menu_web.sql"] = "2026-11-03-005__ventas_libro_iva_menu_web.sql",
         ["2026-11-03-013__compras_libro_iva_menu_web.sql"] = "2026-11-03-006__compras_libro_iva_menu_web.sql",
+        ["2026-11-24-001__ventas_pos_mesas_formato.sql"] = "2026-11-24-004__ventas_pos_mesas_formato.sql",
         ["2026-11-03-016__ventas_libro_iva_menu_web.sql"] = "2026-11-03-005__ventas_libro_iva_menu_web.sql",
         ["2026-11-03-018__compras_libro_iva_menu_web.sql"] = "2026-11-03-006__compras_libro_iva_menu_web.sql",
         ["2026-11-03-014__compras_recepcion_registrada.sql"] = "2026-11-03-019__compras_recepcion_registrada.sql",
