@@ -20,6 +20,7 @@
     .pos-ingreso-rapido__keypad-grid button { min-height:2.55rem; font-size:1.2rem; }
     .pos-ingreso-rapido__actions { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; }
     .pos-ingreso-rapido__error { color:var(--color-danger,#f87171); font-size:.76rem; }
+    .pos-ingreso-rapido__keyboard-toggle { display:flex; justify-content:flex-end; }
     .pos-settings-modal__inline-fields { display:grid; grid-template-columns:repeat(3,1fr); gap:.35rem; }
 </style>
 
@@ -49,6 +50,8 @@
         <div class="pos-ingreso-rapido__error" role="alert">@_error</div>
     }
 
+    @if (!Compacto || _mostrarTeclado)
+    {
     <div class="pos-ingreso-rapido__body">
         <div class="pos-ingreso-rapido__quick">
             <div class="pos-ingreso-rapido__quick-grid">
@@ -68,12 +71,22 @@
             </div>
         </div>
     </div>
+    }
+    @if (Compacto)
+    {
+        <div class="pos-ingreso-rapido__keyboard-toggle">
+            <button type="button" @onclick="ToggleTeclado" aria-expanded="@_mostrarTeclado">
+                <i class="bi bi-keyboard"></i> @(_mostrarTeclado ? "Ocultar teclado" : "Teclado")
+            </button>
+        </div>
+    }
 </section>
 
 @code {
     [Parameter] public IReadOnlyList<decimal> ImportesRapidos { get; set; } = Array.Empty<decimal>();
     [Parameter] public IReadOnlyList<decimal> CantidadesRapidas { get; set; } = new[] { 0.1m, 0.25m, 0.5m, 1m, 6m, 12m };
     [Parameter] public int Decimales { get; set; } = 2;
+    [Parameter] public bool Compacto { get; set; }
     [Parameter] public EventCallback<PosIngresoRapidoConfirmado> OnConfirmed { get; set; }
     [Parameter] public EventCallback<PosIngresoRapidoConfirmado?> OnPreparedChanged { get; set; }
 
@@ -82,6 +95,7 @@
     private string _valueText = string.Empty;
     private string? _error;
     private bool _nuevaCarga = true;
+    private bool _mostrarTeclado;
 
     private string DisplayValue => Modo == PosIngresoRapidoModo.Importe
         ? (string.IsNullOrWhiteSpace(_valueText) ? "$ 0,00" : $"$ {FormatoImporte(_valueText)}")
@@ -96,6 +110,8 @@
         Modo = modo;
         await LimpiarAsync();
     }
+
+    private void ToggleTeclado() => _mostrarTeclado = !_mostrarTeclado;
 
     private async Task AgregarAsync(string tecla)
     {

@@ -10,6 +10,13 @@ public static class PuntoVentaModoKeys
     public static readonly string[] All = [Mostrador, MostradorProduccion, Salon, Delivery];
 }
 
+public static class PuntoVentaIngresoRapidoModoKeys
+{
+    public const string Deshabilitado = "DESHABILITADO";
+    public const string Compacto = "COMPACTO";
+    public const string Completo = "COMPLETO";
+}
+
 public sealed class PuntoVentaCatalogoOpcionDto
 {
     public string Valor { get; init; } = string.Empty;
@@ -39,6 +46,7 @@ public sealed class PuntoVentaEntidadDto
     /// <summary>Clase de precio 1..8. Null = la de la configuracion general.</summary>
     public int? ClasePrecio { get; set; }
     public bool CargaRapidaGrafica { get; set; }
+    public string ModoIngresoRapido { get; set; } = PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
     public decimal ImporteRapido1 { get; set; } = 5m;
     public decimal ImporteRapido2 { get; set; } = 10m;
     public decimal ImporteRapido3 { get; set; } = 25m;
@@ -71,6 +79,7 @@ public sealed class PuntoVentaEntidadSaveRequest
     public string IdLista { get; set; } = string.Empty;
     public int? ClasePrecio { get; set; }
     public bool CargaRapidaGrafica { get; set; }
+    public string ModoIngresoRapido { get; set; } = PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
     public decimal ImporteRapido1 { get; set; } = 5m;
     public decimal ImporteRapido2 { get; set; } = 10m;
     public decimal ImporteRapido3 { get; set; } = 25m;

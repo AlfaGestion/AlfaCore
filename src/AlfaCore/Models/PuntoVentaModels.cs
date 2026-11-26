@@ -29,6 +29,11 @@ public sealed class PuntoVentaCatalogFiltersDto
     public int Pagina { get; set; } = 1;
 }
 
+public static class PuntoVentaCatalogoKeys
+{
+    public const string Top = "@TOP@";
+}
+
 public sealed class PuntoVentaCatalogDto
 {
     public IReadOnlyList<PuntoVentaArticleDto> Articulos { get; init; } = [];
@@ -69,6 +74,7 @@ public sealed class PuntoVentaArticleDto
 
 public sealed class PuntoVentaCartItemDto
 {
+    public Guid LineaId { get; set; } = Guid.NewGuid();
     /// <summary>Renglón de una NP cuando la factura se carga desde el mismo POS.</summary>
     public int? OrigenLineaId { get; set; }
     public string IdArticulo { get; set; } = string.Empty;
@@ -82,6 +88,7 @@ public sealed class PuntoVentaCartItemDto
     public bool Exento { get; set; }
     public bool NoGravado { get; set; }
     public string Familia { get; set; } = string.Empty;
+    public string Observaciones { get; set; } = string.Empty;
     public decimal Subtotal => Math.Round(Cantidad * PrecioUnitario, 2);
 }
 
@@ -118,6 +125,7 @@ public sealed class PuntoVentaSettingsDto
     public string DistanciaMaximaEntregaKm { get; set; } = string.Empty;
     public bool RelacionaCobranzasConNotasPedido { get; set; }
     public bool CargaRapidaGrafica { get; set; }
+    public string ModoIngresoRapido { get; set; } = "DESHABILITADO";
     public string ImporteRapido1 { get; set; } = "5";
     public string ImporteRapido2 { get; set; } = "10";
     public string ImporteRapido3 { get; set; } = "25";

@@ -184,6 +184,7 @@ public sealed class PuntoVentaConfigService(
                     LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista,
                     CLASEPRECIO AS ClasePrecio,
                     ISNULL(CARGARAPIDAGRAFICA, 0) AS CargaRapidaGrafica,
+                    ISNULL(MODO_INGRESO_RAPIDO, CASE WHEN ISNULL(CARGARAPIDAGRAFICA, 0) = 1 THEN 'COMPLETO' ELSE 'DESHABILITADO' END) AS ModoIngresoRapido,
                     ISNULL(GOUR_IMPORTE1, 5) AS ImporteRapido1,
                     ISNULL(GOUR_IMPORTE2, 10) AS ImporteRapido2,
                     ISNULL(GOUR_IMPORTE3, 25) AS ImporteRapido3,
@@ -229,6 +230,7 @@ public sealed class PuntoVentaConfigService(
                     LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista,
                     CLASEPRECIO AS ClasePrecio,
                     ISNULL(CARGARAPIDAGRAFICA, 0) AS CargaRapidaGrafica,
+                    ISNULL(MODO_INGRESO_RAPIDO, CASE WHEN ISNULL(CARGARAPIDAGRAFICA, 0) = 1 THEN 'COMPLETO' ELSE 'DESHABILITADO' END) AS ModoIngresoRapido,
                     ISNULL(GOUR_IMPORTE1, 5) AS ImporteRapido1,
                     ISNULL(GOUR_IMPORTE2, 10) AS ImporteRapido2,
                     ISNULL(GOUR_IMPORTE3, 25) AS ImporteRapido3,
@@ -289,6 +291,10 @@ public sealed class PuntoVentaConfigService(
             if (request.ClasePrecio is < 1 or > 8)
                 request.ClasePrecio = null;
             request.Rubros ??= [];
+            request.ModoIngresoRapido = (request.ModoIngresoRapido ?? string.Empty).Trim().ToUpperInvariant();
+            if (request.ModoIngresoRapido is not (PuntoVentaIngresoRapidoModoKeys.Deshabilitado or PuntoVentaIngresoRapidoModoKeys.Compacto or PuntoVentaIngresoRapidoModoKeys.Completo))
+                request.ModoIngresoRapido = request.CargaRapidaGrafica ? PuntoVentaIngresoRapidoModoKeys.Completo : PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
+            request.CargaRapidaGrafica = request.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
             request.ImporteRapido1 = NormalizarImporteRapido(request.ImporteRapido1, 5m);
             request.ImporteRapido2 = NormalizarImporteRapido(request.ImporteRapido2, 10m);
             request.ImporteRapido3 = NormalizarImporteRapido(request.ImporteRapido3, 25m);
@@ -317,9 +323,9 @@ public sealed class PuntoVentaConfigService(
             {
                 const string insertSql = """
                     INSERT INTO dbo.POS_PUNTOVENTA
-                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, CARGARAPIDAGRAFICA, GOUR_IMPORTE1, GOUR_IMPORTE2, GOUR_IMPORTE3, GOUR_IMPORTE4, GOUR_IMPORTE5, GOUR_IMPORTE6, GOUR_CANTIDAD1, GOUR_CANTIDAD2, GOUR_CANTIDAD3, GOUR_CANTIDAD4, GOUR_CANTIDAD5, GOUR_CANTIDAD6, ACTIVO, USUARIO, FECHAHORA_ALTA)
+                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, CARGARAPIDAGRAFICA, MODO_INGRESO_RAPIDO, GOUR_IMPORTE1, GOUR_IMPORTE2, GOUR_IMPORTE3, GOUR_IMPORTE4, GOUR_IMPORTE5, GOUR_IMPORTE6, GOUR_CANTIDAD1, GOUR_CANTIDAD2, GOUR_CANTIDAD3, GOUR_CANTIDAD4, GOUR_CANTIDAD5, GOUR_CANTIDAD6, ACTIVO, USUARIO, FECHAHORA_ALTA)
                     VALUES
-                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @CargaRapidaGrafica, @ImporteRapido1, @ImporteRapido2, @ImporteRapido3, @ImporteRapido4, @ImporteRapido5, @ImporteRapido6, @CantidadRapida1, @CantidadRapida2, @CantidadRapida3, @CantidadRapida4, @CantidadRapida5, @CantidadRapida6, @Activo, @Usuario, GETDATE());
+                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @CargaRapidaGrafica, @ModoIngresoRapido, @ImporteRapido1, @ImporteRapido2, @ImporteRapido3, @ImporteRapido4, @ImporteRapido5, @ImporteRapido6, @CantidadRapida1, @CantidadRapida2, @CantidadRapida3, @CantidadRapida4, @CantidadRapida5, @CantidadRapida6, @Activo, @Usuario, GETDATE());
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """;
                 var nuevoId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
@@ -333,6 +339,7 @@ public sealed class PuntoVentaConfigService(
                     request.IdLista,
                     request.ClasePrecio,
                     request.CargaRapidaGrafica,
+                    request.ModoIngresoRapido,
                     request.ImporteRapido1,
                     request.ImporteRapido2,
                     request.ImporteRapido3,
@@ -364,6 +371,7 @@ public sealed class PuntoVentaConfigService(
                     IDLISTA = @IdLista,
                     CLASEPRECIO = @ClasePrecio,
                     CARGARAPIDAGRAFICA = @CargaRapidaGrafica,
+                    MODO_INGRESO_RAPIDO = @ModoIngresoRapido,
                     GOUR_IMPORTE1 = @ImporteRapido1,
                     GOUR_IMPORTE2 = @ImporteRapido2,
                     GOUR_IMPORTE3 = @ImporteRapido3,
@@ -393,6 +401,7 @@ public sealed class PuntoVentaConfigService(
                 request.IdLista,
                 request.ClasePrecio,
                 request.CargaRapidaGrafica,
+                request.ModoIngresoRapido,
                 request.ImporteRapido1,
                 request.ImporteRapido2,
                 request.ImporteRapido3,

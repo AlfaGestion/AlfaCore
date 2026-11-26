@@ -1159,6 +1159,16 @@ public sealed class PuntoVentaService(
                 : string.Empty;
             var familyFilter = filters.IdFamilia.Trim();
             var rubroFilter = filters.IdRubro.Trim();
+            var topArticuloIds = rubroFilter.Equals(PuntoVentaCatalogoKeys.Top, StringComparison.OrdinalIgnoreCase)
+                ? ParseTopArticuloIds(await TryReadConfigValueAsync(cn, "GOUR_TOPVTAS", token))
+                : [];
+            var topFilter = topArticuloIds.Count > 0
+                ? "AND LTRIM(RTRIM(a.IDARTICULO)) IN @TopArticuloIds"
+                : rubroFilter.Equals(PuntoVentaCatalogoKeys.Top, StringComparison.OrdinalIgnoreCase)
+                    ? "AND 1 = 0"
+                    : string.Empty;
+            if (rubroFilter.Equals(PuntoVentaCatalogoKeys.Top, StringComparison.OrdinalIgnoreCase))
+                rubroFilter = string.Empty;
             var search = filters.Texto.Trim();
             var take = filters.TamanioPagina <= 0 ? 24 : Math.Min(filters.TamanioPagina, 100);
             var pagina = filters.Pagina <= 0 ? 1 : filters.Pagina;
@@ -1193,6 +1203,8 @@ public sealed class PuntoVentaService(
             parameters.Add("Retail", pricing.Retail);
             parameters.Add("IdFamilia", familyFilter);
             parameters.Add("IdRubro", rubroFilter);
+            if (topArticuloIds.Count > 0)
+                parameters.Add("TopArticuloIds", topArticuloIds);
             if (puntoVenta.Rubros.Count > 0)
                 parameters.Add("RubrosPv", puntoVenta.Rubros);
             for (var i = 0; i < palabras.Length; i++)
@@ -1246,6 +1258,7 @@ public sealed class PuntoVentaService(
                   AND (@IdFamilia = '' OR LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = @IdFamilia)
                   AND (@IdRubro = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @IdRubro)
                   {rubrosPvFilter}
+                  {topFilter}
                   {wordFilters}
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS
@@ -2248,6 +2261,15 @@ public sealed class PuntoVentaService(
         ValidateSpResult(
             ConvertToInt(resultadoParam.Value),
             Convert.ToString(mensajeParam.Value) ?? $"No se pudo grabar el artículo {item.IdArticulo}.");
+
+        if (!string.IsNullOrWhiteSpace(item.Observaciones))
+        {
+            await cn.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.V_MV_CPTEINSUMOS SET OBSERVACIONES = @Observaciones WHERE ID = @IdLinea;",
+                new { IdLinea = ConvertToInt(idParam.Value), Observaciones = item.Observaciones.Trim() },
+                commandTimeout: SaleCommandTimeoutSeconds,
+                cancellationToken: ct));
+        }
     }
 
     private async Task AddReceiptSurchargeObservationAsync(
@@ -3440,6 +3462,14 @@ public sealed class PuntoVentaService(
             ? number.ToString("0000")
             : trimmed.Length <= 4 ? trimmed.PadLeft(4, '0') : trimmed[..4];
     }
+
+    private static List<string> ParseTopArticuloIds(string? value)
+        => (value ?? string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => x.Trim().TrimStart('@'))
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static string NormalizeOptionalSucursal(string value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : NormalizeSucursal(value);

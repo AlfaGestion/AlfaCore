@@ -362,12 +362,20 @@
                     <section class="field">
                         <h4>Ingreso rápido</h4>
                         <label class="pv-admin-switch @(_puntoVentaForm.CargaRapidaGrafica ? "is-on" : string.Empty)">
-                            <input class="pv-admin-switch__input" type="checkbox" @bind="_puntoVentaForm.CargaRapidaGrafica" />
+                            <input class="pv-admin-switch__input" type="checkbox" checked="@_puntoVentaForm.CargaRapidaGrafica" @onchange="OnIngresoRapidoEnabledChanged" />
                             <span class="pv-admin-switch__track" aria-hidden="true"></span>
                             <span class="pv-admin-switch__text">Habilitar panel de ingreso rápido</span>
                         </label>
                         <small>Permite ingresar importes y cantidades mediante un teclado numérico táctil.</small>
-                        @if (_puntoVentaForm.CargaRapidaGrafica)
+                        <label class="field pv-admin-quick-mode">
+                            <span>Modalidad</span>
+                            <select @bind="_puntoVentaForm.ModoIngresoRapido">
+                                <option value="DESHABILITADO">Deshabilitado</option>
+                                <option value="COMPACTO">Compacto</option>
+                                <option value="COMPLETO">Completo</option>
+                            </select>
+                        </label>
+                        @if (_puntoVentaForm.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado)
                         {
                             <button type="button" class="pv-admin-quick-edit" @onclick="AbrirEditorIngresoRapido">
                                 <i class="bi bi-pencil-square"></i> Editar importes y cantidades
@@ -716,6 +724,7 @@
             IdLista = pv.IdLista,
             ClasePrecio = pv.ClasePrecio,
             CargaRapidaGrafica = pv.CargaRapidaGrafica,
+            ModoIngresoRapido = pv.ModoIngresoRapido,
             ImporteRapido1 = pv.ImporteRapido1,
             ImporteRapido2 = pv.ImporteRapido2,
             ImporteRapido3 = pv.ImporteRapido3,
@@ -746,6 +755,17 @@
             _puntoVentaForm.Rubros.Add(idRubro);
         else
             _puntoVentaForm.Rubros.Remove(existente);
+    }
+
+    private void OnIngresoRapidoEnabledChanged(ChangeEventArgs args)
+    {
+        var enabled = args.Value is bool value && value;
+        _puntoVentaForm.CargaRapidaGrafica = enabled;
+        _puntoVentaForm.ModoIngresoRapido = enabled
+            ? (_puntoVentaForm.ModoIngresoRapido == PuntoVentaIngresoRapidoModoKeys.Deshabilitado
+                ? PuntoVentaIngresoRapidoModoKeys.Completo
+                : _puntoVentaForm.ModoIngresoRapido)
+            : PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
     }
 
     private void CancelarPuntoVentaForm()

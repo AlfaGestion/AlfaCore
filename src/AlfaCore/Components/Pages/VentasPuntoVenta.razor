@@ -500,6 +500,7 @@
         font-weight: 700;
         color: #243447;
     }
+    .pos-line__observation { margin-top:.25rem; color:var(--color-primary); font-size:.78rem; line-height:1.25; overflow-wrap:anywhere; }
 
     .pos-sidebar__notes {
         padding: 0.65rem 0.7rem 0;
@@ -1400,6 +1401,11 @@
         font-size: 1.2rem;
         font-weight: 900;
     }
+    .pos-item-modal__observation { display:grid; gap:.3rem; margin-top:.8rem; color:var(--color-muted); font-size:.82rem; }
+    .pos-item-modal__observation textarea { min-height:5rem; resize:vertical; }
+    .pos-item-modal__observation-actions { display:flex; gap:.45rem; margin-top:.45rem; }
+    .pos-item-modal__observation-actions button { min-height:2.2rem; padding:.4rem .7rem; border:1px solid var(--color-primary); border-radius:8px; background:var(--color-primary); color:#fff; cursor:pointer; }
+    .pos-item-modal__observation-actions button.is-muted { border-color:var(--color-border); background:transparent; color:var(--color-muted); }
 
     .pos-manual-article-modal {
         display: block;
@@ -6444,6 +6450,7 @@
 
                         <select class="pos-mobile-rubro" @bind="_filters.IdRubro" aria-label="Filtrar por rubro">
                             <option value="">Todos los rubros</option>
+                            <option value="@PuntoVentaCatalogoKeys.Top">Top</option>
                             @foreach (var rubro in _rubros)
                             {
                                 <option value="@rubro.IdRubro">@RubroLabel(rubro)</option>
@@ -6583,7 +6590,7 @@
             </footer>
         </section>
 
-        <section class="pos-stage @(_settings.CargaRapidaGrafica ? "pos-stage--quick" : string.Empty)">
+        <section class="pos-stage @(_settings.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado ? "pos-stage--quick" : string.Empty)">
             <aside class="pos-sidebar">
                 <div class="pos-sidebar__items">
                     @if (!_cartItems.Any())
@@ -6597,7 +6604,7 @@
                     {
                         @foreach (var item in _cartItems)
                         {
-                            <article class="pos-line" @onclick="() => OpenCartItemModal(item.IdArticulo)">
+                            <article class="pos-line" @onclick="() => OpenCartItemModal(item)">
                                 <div class="pos-line__main">
                                     <strong>@(string.IsNullOrWhiteSpace(item.Descripcion) ? "Artículo sin descripción" : item.Descripcion)</strong>
                                     <div class="pos-line__details">
@@ -6617,10 +6624,14 @@
                                                 <i class="bi bi-plus"></i>
                                             </button>
                                             <button type="button" class="pos-line__remove" title="Eliminar artículo"
-                                                    @onclick="() => RemoveItem(item.IdArticulo)">
+                                                    @onclick="() => RemoveItem(item)">
                                                 <i class="bi bi-trash3"></i>
                                             </button>
                                         </div>
+                                        @if (EsNotaPedido && !string.IsNullOrWhiteSpace(item.Observaciones))
+                                        {
+                                            <div class="pos-line__observation"><i class="bi bi-chat-left-text"></i> @item.Observaciones</div>
+                                        }
                                     </div>
                                 </div>
                                 <div class="pos-line__price">@FmtMoney(item.Subtotal)</div>
@@ -6630,12 +6641,13 @@
                 </div>
 
                 <div class="pos-sidebar__checkout">
-                    @if (_settings.CargaRapidaGrafica)
+                    @if (_settings.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado)
                     {
                         <PosIngresoRapido @ref="_ingresoRapidoRef"
                                           ImportesRapidos="ImportesRapidosConfigurados"
                                           CantidadesRapidas="CantidadesRapidasConfiguradas"
                                           Decimales="_settings.CantidadDecimales"
+                                          Compacto="@(_settings.ModoIngresoRapido == PuntoVentaIngresoRapidoModoKeys.Compacto)"
                                           OnConfirmed="AceptarIngresoRapidoAsync"
                                           OnPreparedChanged="ActualizarIngresoRapidoPreparadoAsync" />
                     }
@@ -6721,6 +6733,7 @@
                     <div class="pos-catalog__filters">
                         <select class="pos-select" @bind="_filters.IdRubro">
                             <option value="">Todos los rubros</option>
+                            <option value="@PuntoVentaCatalogoKeys.Top">Top</option>
                             @foreach (var rubro in _rubros)
                             {
                                 <option value="@rubro.IdRubro">@RubroLabel(rubro)</option>
@@ -6866,7 +6879,23 @@
 
             <div class="pos-item-modal__price">@FmtMoney(SelectedCartItem.Subtotal)</div>
 
-            <button type="button" class="pos-item-modal__danger" @onclick="() => RemoveItemAndClose(SelectedCartItem.IdArticulo)">Eliminar</button>
+            @if (EsNotaPedido)
+            {
+                <label class="pos-item-modal__observation">
+                    <span>Nota para preparación</span>
+                    <textarea @bind="_lineObservationBeingEdited" maxlength="500"
+                              placeholder="Indicaciones para este artículo"></textarea>
+                </label>
+                <div class="pos-item-modal__observation-actions">
+                    <button type="button" @onclick="SaveLineObservation">Guardar nota</button>
+                    @if (!string.IsNullOrWhiteSpace(SelectedCartItem.Observaciones))
+                    {
+                        <button type="button" class="is-muted" @onclick="ClearLineObservation">Quitar nota</button>
+                    }
+                </div>
+            }
+
+            <button type="button" class="pos-item-modal__danger" @onclick="() => RemoveItemAndClose(SelectedCartItem!)">Eliminar</button>
 
             <div class="pos-item-modal__qty-label">Cantidad</div>
             <div class="pos-item-modal__qty">
@@ -6876,8 +6905,8 @@
                        step="0.01"
                        @bind="SelectedCartItem.Cantidad"
                        @onkeydown="HandleQuantityKeyDown" />
-                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, -1m)">-</button>
-                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, 1m)">+</button>
+                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem!, -1m)">-</button>
+                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem!, 1m)">+</button>
             </div>
         </div>
     </section>
@@ -8742,6 +8771,8 @@
     private bool _closeReceiptAfterPrint;
     private string? _selectedCartItemId;
     private string _descriptionBeingEdited = string.Empty;
+    private string _lineObservationBeingEdited = string.Empty;
+    private PuntoVentaCartItemDto? _selectedCartItemDirect;
     private PuntoVentaArticleDto? _manualArticlePending;
     private decimal _manualArticlePendingQuantity = 1m;
     private string _manualArticleDescription = string.Empty;
@@ -9045,7 +9076,7 @@
     private decimal TotalRecargosPoint => _paymentLines.Sum(x => x.Recargo);
     private decimal PendienteCobro => Math.Max(decimal.Round(TotalCarrito - TotalPagado, 2), 0m);
     private decimal VueltoCobro => Math.Max(decimal.Round(TotalPagado - TotalCarrito - TotalRecargosPoint, 2), 0m);
-    private PuntoVentaCartItemDto? SelectedCartItem => _cartItems.FirstOrDefault(x => x.IdArticulo == _selectedCartItemId);
+    private PuntoVentaCartItemDto? SelectedCartItem => _selectedCartItemDirect ?? _cartItems.FirstOrDefault(x => x.IdArticulo == _selectedCartItemId);
     private IReadOnlyList<PuntoVentaPaymentMethodDto> PaymentMethodsFiltrados
     {
         get
@@ -9160,7 +9191,8 @@
                             Cantidad = item.Cantidad,
                             TasaIva = item.TasaIva,
                             Exento = item.Exento,
-                            Familia = item.Familia
+                            Familia = item.Familia,
+                            Observaciones = item.Observaciones
                         });
                     }
 
@@ -10040,6 +10072,9 @@
             return;
 
         _settings.CargaRapidaGrafica = puntoVenta.CargaRapidaGrafica;
+        _settings.ModoIngresoRapido = string.IsNullOrWhiteSpace(puntoVenta.ModoIngresoRapido)
+            ? (puntoVenta.CargaRapidaGrafica ? PuntoVentaIngresoRapidoModoKeys.Completo : PuntoVentaIngresoRapidoModoKeys.Deshabilitado)
+            : puntoVenta.ModoIngresoRapido;
         _settings.ImporteRapido1 = puntoVenta.ImporteRapido1.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
         _settings.ImporteRapido2 = puntoVenta.ImporteRapido2.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
         _settings.ImporteRapido3 = puntoVenta.ImporteRapido3.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
@@ -10128,7 +10163,8 @@
     private void AddToCartCore(PuntoVentaArticleDto article, decimal cantidad = 1m)
     {
         _chargeSuccess = null;
-        var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo);
+        var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo
+            && (!EsNotaPedido || string.IsNullOrWhiteSpace(x.Observaciones)));
         if (existing is not null)
         {
             existing.Cantidad += cantidad;
@@ -10278,19 +10314,22 @@
             _cartItems.Remove(item);
     }
 
-    private void OpenCartItemModal(string idArticulo)
+    private void OpenCartItemModal(PuntoVentaCartItemDto item)
     {
-        _selectedCartItemId = idArticulo;
-        var item = _cartItems.FirstOrDefault(x => x.IdArticulo == idArticulo);
-        _descriptionBeingEdited = string.IsNullOrWhiteSpace(item?.Descripcion)
+        _selectedCartItemDirect = item;
+        _selectedCartItemId = item.IdArticulo;
+        _descriptionBeingEdited = string.IsNullOrWhiteSpace(item.Descripcion)
             ? string.Empty
             : item.Descripcion;
+        _lineObservationBeingEdited = item.Observaciones ?? string.Empty;
     }
 
     private void CloseCartItemModal()
     {
         _selectedCartItemId = null;
+        _selectedCartItemDirect = null;
         _descriptionBeingEdited = string.Empty;
+        _lineObservationBeingEdited = string.Empty;
         _needScanFocus = true;
     }
 
@@ -10303,6 +10342,40 @@
 
         item.Descripcion = descripcion;
         CloseCartItemModal();
+    }
+
+    private void SaveLineObservation()
+    {
+        if (SelectedCartItem is null || !EsNotaPedido)
+            return;
+
+        SelectedCartItem.Observaciones = _lineObservationBeingEdited.Trim();
+        CloseCartItemModal();
+    }
+
+    private void ClearLineObservation()
+    {
+        if (SelectedCartItem is null)
+            return;
+
+        SelectedCartItem.Observaciones = string.Empty;
+        _lineObservationBeingEdited = string.Empty;
+    }
+
+    private void ChangeQty(PuntoVentaCartItemDto item, decimal delta)
+    {
+        item.Cantidad += delta;
+        if (item.Cantidad <= 0)
+            _cartItems.Remove(item);
+        if (SelectedCartItem == item && item.Cantidad <= 0)
+            CloseCartItemModal();
+    }
+
+    private void RemoveItem(PuntoVentaCartItemDto item)
+    {
+        _cartItems.Remove(item);
+        if (SelectedCartItem == item)
+            CloseCartItemModal();
     }
 
     private void HandleQuantityKeyDown(KeyboardEventArgs e)
@@ -10324,9 +10397,22 @@
             CloseCartItemModal();
     }
 
+    private void ChangeQtyAndRefreshModal(PuntoVentaCartItemDto item, decimal delta)
+    {
+        ChangeQty(item, delta);
+        if (item.Cantidad <= 0 || SelectedCartItem is null)
+            CloseCartItemModal();
+    }
+
     private void RemoveItemAndClose(string idArticulo)
     {
         RemoveItem(idArticulo);
+        CloseCartItemModal();
+    }
+
+    private void RemoveItemAndClose(PuntoVentaCartItemDto item)
+    {
+        RemoveItem(item);
         CloseCartItemModal();
     }
 
@@ -10948,7 +11034,8 @@
                     Presentacion = item.Presentacion,
                     PrecioUnitario = item.Precio,
                     PrecioOriginal = item.Precio,
-                    Cantidad = pendiente.Cantidad
+                    Cantidad = pendiente.Cantidad,
+                    Observaciones = item.Observaciones
                 });
             }
 
@@ -11491,6 +11578,9 @@
     /// checkout del POS salta directo a confirmar en vez de pedir forma de pago para estos dos.</summary>
     private bool EsRemitoONotaPedido
         => _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "RM" or "NP";
+
+    private bool EsNotaPedido
+        => _tipoComprobanteSeleccionado.Trim().Equals("NP", StringComparison.OrdinalIgnoreCase);
 
     private string TipoComprobanteSeleccionadoLabel()
         => _tipoComprobanteSeleccionado switch
