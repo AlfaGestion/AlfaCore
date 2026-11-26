@@ -282,6 +282,17 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.DoesNotContain(".TakeLast(60)", servicio, StringComparison.Ordinal);
     }
 
+    // ALFANET (2026-11-26): el máximo de respuestas contaba las de antes del cierre (charla nueva muda) y las
+    // asignaciones del sistema chocaban con la FK a TA_USUARIOS (el bot cortaba con error).
+    [Fact]
+    public void TopeDeRespuestasDesdeElCierre_YAsignacionesDelSistemaSinUsuario()
+    {
+        var source = Fuente();
+        Assert.Contains("AND b.IdMensaje > ISNULL((SELECT MAX(z.IdMensaje) FROM dbo.CONV_MENSAJES z", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("N'AlfaCore', N'BOT', @Observaciones", source, StringComparison.Ordinal);
+        Assert.Contains("CASE WHEN @UsuarioAccion IS NULL OR @UsuarioAccion = N'AlfaCore' THEN NULL ELSE @UsuarioAccion END", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);
