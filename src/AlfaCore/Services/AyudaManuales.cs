@@ -129,6 +129,7 @@ public static class AyudaManuales
         ("/contactos","archivos","Crear o editar un contacto"),
         ("/archivos/tablas","archivos","Tablas de referencia"),
         ("/archivos/chequeras","archivos","Chequeras"),
+        ("/archivos/comprobantes","archivos","Tabla de comprobantes"),
         ("/archivos/bancos","archivos","Bancos"),
         ("/auditoria/error","auditoria","Errores del sistema"),
         ("/auditoria/comprobantes","auditoria","Auditoría de comprobantes"),
