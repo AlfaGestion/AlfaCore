@@ -379,7 +379,7 @@ public sealed class ConversacionesAutomationPipelineTests
     public void Bot_BotEsperaMinutos_QueuesInsteadOfRespondingImmediately()
     {
         var method = ServiceSource.IndexOf("private async Task TryAutoReplyBotAsync", StringComparison.Ordinal);
-        var wait = ServiceSource.IndexOf("if (config.BotEsperaMinutos > 0)", method, StringComparison.Ordinal);
+        var wait = ServiceSource.IndexOf("if (config.BotEsperaMinutos > 0 && ", method, StringComparison.Ordinal);
         var encolar = ServiceSource.IndexOf("await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct)", method, StringComparison.Ordinal);
         Assert.True(method >= 0 && wait > method && encolar > wait);
     }
@@ -1146,7 +1146,7 @@ public sealed class ConversacionesAutomationPipelineTests
         try
         {
             // "Necesito comunicarme con Favio" (base real, 2026-11-02): la IA decide que no hace falta ticket.
-            // Si no informa el campo, se abre como antes.
+            // Si no informa el campo, no se abre: el ticket es para trabajo a fondo (2026-11-26).
             var handler = new QueueHttpHandler(
                 """
                 {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"abrir_ticket\":false,\"respuesta\":\"Le paso tu mensaje a Favio.\"}"}}]}
@@ -1165,7 +1165,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
             Assert.False(sinTicket!.AbrirTicket);
             Assert.Equal("DERIVA", sinTicket.Tipo);
-            Assert.True(sinCampo!.AbrirTicket);
+            Assert.False(sinCampo!.AbrirTicket);
         }
         finally
         {

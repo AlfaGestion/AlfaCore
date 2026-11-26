@@ -2896,6 +2896,40 @@
     grid-row: 1;
 }
 
+/* Pausar / reactivar el asistente en la conversación (2026-11-26). */
+.conversation-asistente-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: .32rem;
+    min-height: 28px;
+    padding: .2rem .62rem;
+    border-radius: 999px;
+    font-size: .71rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.conversation-asistente-toggle.is-activo {
+    color: #2dd4bf;
+}
+
+.conversation-asistente-toggle.is-pausado {
+    color: #fbbf24;
+}
+
+html[data-theme="light"] .conversation-asistente-toggle.is-activo {
+    color: #0f766e;
+}
+
+html[data-theme="light"] .conversation-asistente-toggle.is-pausado {
+    color: #b45309;
+}
+
+.conversations-page--odoo .conversation-header-state.has-assign-to-me .conversation-asistente-toggle {
+    grid-column: 1;
+    grid-row: 2;
+}
+
 .conversations-page--odoo .conversation-header-state.has-assign-to-me .conversation-header-state__close,
 .conversations-page--odoo .conversation-header-state.has-assign-to-me .conversation-header-state__closed {
     grid-column: 2;

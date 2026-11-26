@@ -210,6 +210,10 @@
                         </AlfaCheckbox>
                     </div>
                     <p class="cfg-hint">Si la conversación ya tiene un ticket abierto, no se crea otro.</p>
+                    <ConversacionesConfigTexto Id="bot-ticket-criterio" Label="Cuándo abrir un ticket" Filas="3"
+                                               HelpText="El asistente lo lee para decidir si el caso necesita ticket. Si lo dejás vacío, abre ticket sólo cuando hace falta trabajar el problema a fondo; lo demás lo contesta una persona por el chat."
+                                               Placeholder="@AlfaCore.Services.ConversacionAsistenteService.CriterioTicketPorDefecto"
+                                               Value="@Config.BotTicketCriterio" ValueChanged="@((string? v) => Config.BotTicketCriterio = v ?? string.Empty)" />
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfigTarjeta Titulo="Chat del sitio web" Descripcion="Los visitantes del chat web son anónimos: el asistente puede pedirles datos para saber quién escribe.">
@@ -236,18 +240,32 @@
                     <p class="cfg-hint">El horario de atención se configura en Automatización → Horario y mensaje fijo.</p>
                 </ConversacionesConfigTarjeta>
 
+                <ConversacionesConfigTarjeta Titulo="Modelo de IA" Descripcion="Qué tan bien entiende la charla el asistente y cuánto consume. Los créditos se descuentan según el modelo elegido.">
+                    <AlfaSelect Id="asis-modelo" Label="Modelo" Options="ModeloOptions"
+                                Value="@Config.AsistenteModelo"
+                                ValueChanged="@((string? v) => Config.AsistenteModelo = v ?? string.Empty)" />
+                </ConversacionesConfigTarjeta>
+
                 <ConversacionesConfigTarjeta Titulo="Límites" Columnas="2" Descripcion="Evitan que el asistente se extienda o que se adelante a tu equipo.">
                     <AlfaInput Id="bot-max" Label="Máximo de respuestas por conversación" Type="number"
                                Value="@Config.BotMaxRespuestas.ToString(CultureInfo.InvariantCulture)"
                                ValueChanged="@((string? v) => Config.BotMaxRespuestas = ParseEntero(v, Config.BotMaxRespuestas, minimo: 1))" />
-                    <AlfaInput Id="bot-espera" Label="Minutos de espera antes de responder" Type="number"
+                    <AlfaInput Id="bot-espera" Label="Minutos de espera en horario de atención" Type="number"
                                Value="@Config.BotEsperaMinutos.ToString(CultureInfo.InvariantCulture)"
                                ValueChanged="@((string? v) => Config.BotEsperaMinutos = ParseEntero(v, Config.BotEsperaMinutos, minimo: 0))"
-                               HelpText="Le da tiempo a tu equipo a responder primero. 0 = responde de inmediato." />
+                               HelpText="En horario le da tiempo a tu equipo a responder primero: si alguien contesta o se asigna la charla, el asistente no se mete. Fuera de horario responde enseguida. 0 = responde de inmediato." />
+                    <AlfaInput Id="bot-contexto" Label="Horas de charla que lee" Type="number"
+                               Value="@Config.BotContextoHoras.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotContextoHoras = Math.Min(2160, ParseEntero(v, Config.BotContextoHoras, minimo: 0)))"
+                               HelpText="Lee la charla desde que se cerró la conversación por última vez, y como mucho estas horas hacia atrás, para no mezclar temas viejos. 0 = todo desde el último cierre." />
                     <AlfaInput Id="bot-agrupar" Label="Segundos para que el cliente termine de escribir" Type="number"
                                Value="@Config.BotAgruparSegundos.ToString(CultureInfo.InvariantCulture)"
                                ValueChanged="@((string? v) => Config.BotAgruparSegundos = Math.Min(60, ParseEntero(v, Config.BotAgruparSegundos, minimo: 0)))"
                                HelpText="Si manda varios mensajes seguidos, se contestan juntos en una sola respuesta. 0 = contesta cada mensaje apenas llega." />
+                    <AlfaInput Id="bot-pausa-tecnico" Label="Horas que se calla cuando contesta alguien del equipo" Type="number"
+                               Value="@Config.BotPausaTrasTecnicoHoras.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotPausaTrasTecnicoHoras = Math.Min(720, ParseEntero(v, Config.BotPausaTrasTecnicoHoras, minimo: 0)))"
+                               HelpText="Si una persona del equipo le contestó al cliente o se asignó la charla, el caso es suyo y el asistente no se mete. Vuelve a responder pasado ese tiempo, si se cierra la conversación o si alguien lo reactiva desde la charla. 0 = sólo se calla con el mensaje que ya contestó la persona." />
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfiguracionAsistenteConsumo />
@@ -293,6 +311,12 @@
     [Parameter] public EventCallback<string> OnIrASeccion { get; set; }
 
     private bool IsDirty => !ConversacionesConfiguracion.AutomatizacionesEquals(Config, Original);
+
+    private static readonly IReadOnlyList<AlfaSelectOption> ModeloOptions =
+    [
+        new(string.Empty, "El del servidor (por defecto)"),
+        .. ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles.Select(m => new AlfaSelectOption(m.Codigo, m.Nombre))
+    ];
 
     private static readonly IReadOnlyList<AlfaSelectOption> PoliticaOptions =
     [

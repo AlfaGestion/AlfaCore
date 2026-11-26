@@ -48,6 +48,16 @@ IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
     VALUES (N'gpt-4o-mini', '2024-07-18', 0.15, 0.075, 0.60, N'Precio de lista OpenAI. Modelo por defecto si no hay OPENAI_MODEL.');
 
+-- Modelos que se pueden elegir para el asistente (CONV_ASISTENTE_MODELO, 2026-11-26). Sin su fila el consumo
+-- quedaría sin precio y no contaría en el tope de créditos. "gpt-4.1-mini" gana sobre "gpt-4.1" (prefijo más largo).
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-4.1', '2025-04-14', 2.00, 0.50, 8.00, N'Precio de lista OpenAI. Asistente "Avanzado".');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1-mini')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-4.1-mini', '2025-04-14', 0.40, 0.10, 1.60, N'Precio de lista OpenAI. Asistente "Intermedio".');
+
 -- Sin esta fila, el prefijo "gpt-4o-mini" lo cobraría con la tarifa de texto (los tokens de entrada son de audio).
 IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini-transcribe')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)

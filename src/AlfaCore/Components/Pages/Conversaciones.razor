@@ -1534,6 +1534,13 @@
                                             <span>Asignarme la conversación</span>
                                         </button>
                                     }
+                                    @if (MuestraBotonAsistente)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="ToggleAsistenteAsync" disabled="@_busyAction" title="@TituloBotonAsistente">
+                                            <i class="bi @(_estadoAsistente == ConversacionAsistenteEstado.Activo ? "bi-pause-circle" : "bi-robot")"></i>
+                                            <span>@TextoBotonAsistente</span>
+                                        </button>
+                                    }
                                     <button type="button" role="menuitem" @onclick="ToggleStatusMenu" disabled="@_busyAction">
                                         <i class="bi bi-circle-half"></i>
                                         <span>Estado: @GetCurrentStatusDescription()</span>
@@ -1573,6 +1580,18 @@
                                         disabled="@_busyAction"
                                         title="Asignarme · Tomar esta conversación">
                                     <i class="bi bi-person-check-fill"></i>
+                                </button>
+                            }
+                            @if (MuestraBotonAsistente)
+                            {
+                                <button type="button"
+                                        class="btn btn--ghost btn--sm conversation-asistente-toggle @(_estadoAsistente == ConversacionAsistenteEstado.Activo ? "is-activo" : "is-pausado")"
+                                        @onclick="ToggleAsistenteAsync"
+                                        disabled="@_busyAction"
+                                        title="@TituloBotonAsistente"
+                                        aria-label="@TextoBotonAsistente">
+                                    <i class="bi @(_estadoAsistente == ConversacionAsistenteEstado.Activo ? "bi-robot" : "bi-pause-circle-fill")"></i>
+                                    <span>@(_estadoAsistente == ConversacionAsistenteEstado.Activo ? "Asistente activo" : "Asistente pausado")</span>
                                 </button>
                             }
                             <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
@@ -6729,6 +6748,9 @@
 
         var conversationChanged = _selectedConversationId != idConversacion;
         _selectedConversationId = idConversacion;
+        if (conversationChanged)
+            _estadoAsistente = ConversacionAsistenteEstado.NoAplica;
+        _ = CargarEstadoAsistenteAsync(idConversacion);
         if (conversationChanged)
         {
             CloseQuotedPreview();
@@ -12801,6 +12823,73 @@
                _selectedConversation.IdTecnico?.Trim(),
                CurrentUserTechnician.IdTecnico.Trim(),
                StringComparison.OrdinalIgnoreCase);
+
+    // Asistente en la conversación (2026-11-26): se ve si responde, si está pausado a mano o si lo calla que
+    // atiende el equipo, y se puede pausar o reactivar con un botón.
+    private ConversacionAsistenteEstado _estadoAsistente = ConversacionAsistenteEstado.NoAplica;
+
+    private bool MuestraBotonAsistente
+        => _selectedConversation is not null && !IsSelectedConversationClosed && _estadoAsistente != ConversacionAsistenteEstado.NoAplica;
+
+    private string TituloBotonAsistente => _estadoAsistente switch
+    {
+        ConversacionAsistenteEstado.Activo => "El asistente responde en esta conversación · Pausarlo",
+        ConversacionAsistenteEstado.PausadoAMano => "Asistente pausado en esta conversación · Reactivarlo",
+        _ => "El asistente no responde: lo está atendiendo el equipo · Reactivarlo"
+    };
+
+    private string TextoBotonAsistente => _estadoAsistente == ConversacionAsistenteEstado.Activo ? "Pausar asistente" : "Reactivar asistente";
+
+    private async Task CargarEstadoAsistenteAsync(long idConversacion)
+    {
+        try
+        {
+            var estado = await ConversacionesSvc.GetEstadoAsistenteAsync(idConversacion, _tenantRequestCts?.Token ?? CancellationToken.None);
+            if (_selectedConversationId != idConversacion)
+                return;
+            _estadoAsistente = estado;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception)
+        {
+            // Sólo es un indicador: sin el dato no se muestra el botón y el resto de la pantalla sigue.
+        }
+    }
+
+    private async Task ToggleAsistenteAsync()
+    {
+        if (_selectedConversation is null || _busyAction)
+            return;
+
+        var idConversacion = _selectedConversation.IdConversacion;
+        var pausar = _estadoAsistente == ConversacionAsistenteEstado.Activo;
+        _busyAction = true;
+        _showMobileChatActions = false;
+        _actionMessage = null;
+        _actionError = null;
+        try
+        {
+            await ConversacionesSvc.SetAsistentePausadoAsync(new ConversacionAsistentePausaRequest
+            {
+                IdConversacion = idConversacion,
+                Pausar = pausar,
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+            _actionMessage = pausar ? "Asistente pausado en esta conversación." : "Asistente reactivado en esta conversación.";
+            await LoadConversationAsync(idConversacion, showLoading: false, clearActionState: false);
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
 
     private async Task AssignSelectedConversationToMeAsync()
     {

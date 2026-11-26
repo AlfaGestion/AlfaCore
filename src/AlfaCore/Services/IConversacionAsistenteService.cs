@@ -28,6 +28,11 @@ public interface IConversacionAsistenteService
         bool precioRequiereIdentificacion = false,
         string? linkCatalogoParaLead = null,
         IReadOnlyList<string>? imagenesDataUri = null,
+        string? criterioTicket = null,
+        bool casoYaDerivado = false,
+        string? temaPendiente = null,
+        bool ultimoFueAclaracion = false,
+        string? modelo = null,
         CancellationToken ct = default);
 
     /// <summary>
@@ -59,9 +64,9 @@ public sealed class ConversacionAsistenteRespuesta
 
     /// <summary>
     /// Si al derivar hace falta registrar un ticket. Lo decide la IA leyendo el mensaje y la conversación,
-    /// no una lista de palabras. Si el modelo no lo informa, se abre (comportamiento anterior).
+    /// no una lista de palabras. Si el modelo no lo informa, no se abre: el ticket es para trabajo a fondo (2026-11-26).
     /// </summary>
-    public bool AbrirTicket { get; set; } = true;
+    public bool AbrirTicket { get; set; }
 
     /// <summary>Qué vio el asistente en la imagen del cliente (datos útiles para el operador); vacío si no hubo imagen.</summary>
     public string ImagenDescripcion { get; set; } = string.Empty;

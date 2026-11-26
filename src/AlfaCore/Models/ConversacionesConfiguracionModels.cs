@@ -390,6 +390,32 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// con una sola respuesta. 0 = contesta cada mensaje apenas llega.</summary>
     public int BotAgruparSegundos { get; set; } = 6;
 
+    /// <summary>Horas que el bot queda callado en una conversación después de que una persona del equipo le
+    /// contesta al cliente o se asigna la charla: el caso es suyo. Se corta antes si la conversación se cierra o
+    /// si alguien reactiva el asistente. 0 = sólo calla ante el mensaje que ya contestó la persona.</summary>
+    public int BotPausaTrasTecnicoHoras { get; set; } = 24;
+
+    /// <summary>Horas hacia atrás que lee el asistente de la charla actual (desde el último cierre). Si nadie
+    /// cierra la conversación, evita que mezcle temas viejos. 0 = todo desde el último cierre.</summary>
+    public int BotContextoHoras { get; set; } = 48;
+
+    /// <summary>Modelo de OpenAI del asistente (CONV_ASISTENTE_MODELO). Vacío = el del servidor
+    /// (variable OPENAI_MODEL) o gpt-4o-mini.</summary>
+    public string AsistenteModelo { get; set; } = string.Empty;
+
+    /// <summary>Modelos que se pueden elegir. Cada uno necesita su precio en ALFA_CENTRAL.IA_PRECIO_MODELO
+    /// (CentralIaSchema) para que su consumo cuente en el tope de créditos.</summary>
+    public static readonly IReadOnlyList<(string Codigo, string Nombre)> AsistenteModelosDisponibles =
+    [
+        ("gpt-4o-mini", "Económico (gpt-4o-mini)"),
+        ("gpt-4.1-mini", "Intermedio (gpt-4.1-mini)"),
+        ("gpt-4.1", "Avanzado (gpt-4.1): entiende mejor la charla, cuesta unas 13 veces más")
+    ];
+
+    /// <summary>Cuándo el bot abre un ticket al derivar (texto para la IA). Vacío = criterio por defecto
+    /// (ConversacionAsistenteService.CriterioTicketPorDefecto): sólo trabajo a fondo.</summary>
+    public string BotTicketCriterio { get; set; } = string.Empty;
+
     /// <summary>
     /// Canales en los que responde el bot (CONV_BOT_CANALES). Sin configurar = todos, para que una base
     /// que ya tenía el bot activo siga igual. Ej: activo en Chat web e Instagram, apagado en WhatsApp.

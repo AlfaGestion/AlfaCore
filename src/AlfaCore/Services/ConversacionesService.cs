@@ -9156,7 +9156,9 @@ public sealed partial class ConversacionesService(
             if (await UltimoEntranteEsEncuestaAsync(idConversacion, ct).ConfigureAwait(false))
                 return;
 
-            if (config.BotEsperaMinutos > 0)
+            // En horario primero el equipo: el bot espera y contesta sólo si nadie lo hizo. Fuera de horario
+            // contesta enseguida (2026-11-26). Sin horario cargado, la espera vale siempre.
+            if (config.BotEsperaMinutos > 0 && !(config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow())))
             {
                 await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct).ConfigureAwait(false);
                 return;
@@ -9325,6 +9327,7 @@ public sealed partial class ConversacionesService(
     }
 
     private const int MaxRespuestasBotEncadenadas = 3;
+    internal const int MaxAclaracionesSeguidas = 2;
 
     internal const string TextoImagenSinTexto = "(El cliente mandó esta imagen sin escribir nada.)";
 
@@ -9755,6 +9758,22 @@ public sealed partial class ConversacionesService(
                     return;
                 }
 
+                // Si alguien del equipo tomó la charla (le contestó o se la asignó) el caso es suyo, y si la
+                // pausaron a mano el bot tampoco se mete (pedido de ALFA NET, 2026-11-26). Vuelve pasado el plazo
+                // configurado, al cerrar la conversación o cuando alguien lo reactiva.
+                var estadoAsistente = await GetEstadoAsistenteCoreAsync(idConversacion, config.BotPausaTrasTecnicoHoras, token).ConfigureAwait(false);
+                if (estadoAsistente is ConversacionAsistenteEstado.PausadoAMano or ConversacionAsistenteEstado.AtiendeElEquipo)
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotPausadoPorTecnico", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        estadoAsistente == ConversacionAsistenteEstado.PausadoAMano
+                            ? "El asistente está pausado a mano en esta conversación: no respondió."
+                            : "Una persona del equipo ya está atendiendo la conversación: el asistente no respondió.",
+                        new { idConversacion, estado = estadoAsistente.ToString(), horas = config.BotPausaTrasTecnicoHoras }, token).ConfigureAwait(false);
+                    return;
+                }
+
                 var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
                 if (config.BotSoloFueraHorario && !fueraDeHorario)
                 {
@@ -9841,7 +9860,7 @@ public sealed partial class ConversacionesService(
                         null, null, "AlfaCore", "URGENCIA", token).ConfigureAwait(false);
                 }
 
-                var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
+                var mensajes = await GetRecentMessagesForBotAsync(idConversacion, config.BotContextoHoras, token).ConfigureAwait(false);
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
                 // Sin vínculo guardado: el único cliente con ese teléfono cargado (si la empresa lo habilitó).
@@ -9913,7 +9932,8 @@ public sealed partial class ConversacionesService(
                 var ofreceAltaCliente = herramientas.Any(h => h.Nombre == ConversacionAsistenteHerramientasService.ToolRegistrarCliente);
                 // Si el bot ya repreguntó (ACLARA) y el cliente contesta, ese mensaje completa la
                 // consulta anterior: se fuerza consultar_precio también en el seguimiento ("AA").
-                var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
+                var aclaracionesSeguidas = await AclaracionesBotSeguidasAsync(idConversacion, token).ConfigureAwait(false);
+                var ultimaRespuestaFueAclaracion = aclaracionesSeguidas > 0;
                 var identidadPreguntadaAhora = false;
                 // El resumen de un pedido armado/actualizado ahora no es "otra aclaración": "agregale 2 aaa"
                 // con el pedido pendiente salía como contención + ticket (batería 4264, 2026-10-28).
@@ -10059,6 +10079,8 @@ public sealed partial class ConversacionesService(
                 // Resumen del caso que arma la IA: título del ticket aunque después se cambie la respuesta
                 // (p. ej. "nunca dos aclaraciones seguidas").
                 var resumenCasoIa = string.Empty;
+                var casoYaDerivado = false;
+                TemaPendiente? temaPrevio = null;
                 if (correccionDirecta is not null)
                 {
                     result = correccionDirecta.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
@@ -10105,6 +10127,23 @@ public sealed partial class ConversacionesService(
                         : await asistenteConocimiento.ComponerInformacionAsync(
                             config.AsistenteInformacion, EsMensajeSocial(texto) ? null : texto, token).ConfigureAwait(false);
                     informacionAsistente = AgregarCorreccionesAlContexto(informacionAsistente, correccionesGuia);
+                    casoYaDerivado = await DerivacionPendienteAsync(idConversacion, token).ConfigureAwait(false);
+                    string? temaPendienteIa = null;
+                    try
+                    {
+                        temaPrevio = await BuscarTemaPendienteAsync(idConversacion, token).ConfigureAwait(false);
+                        temaPendienteIa = DescribirTemaPendiente(temaPrevio.NumeroTicket, temaPrevio.HuboRespuestaDelEquipo);
+                        // Derivado por el bot sin ticket: lo explica la sección "caso ya pasado al equipo".
+                        if (casoYaDerivado && temaPendienteIa.Length == 0)
+                            temaPendienteIa = null;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Sin el dato la IA contesta igual, sin saber si hay un tema anterior.
+                        await _appEvents.LogErrorAsync("Conversaciones", "BotTemaPendiente", ex,
+                            "No se pudo buscar el tema pendiente antes de llamar al asistente.",
+                            new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
+                    }
                     result = await asistenteService.ResponderAsync(
                         config.AsistenteComportamiento, informacionAsistente, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
@@ -10112,6 +10151,11 @@ public sealed partial class ConversacionesService(
                         precioRequiereIdentificacion: precioRequiereIdentificacion,
                         linkCatalogoParaLead: linkCatalogoParaLead,
                         imagenesDataUri: imagenesBot,
+                        criterioTicket: config.BotTicketCriterio,
+                        casoYaDerivado: casoYaDerivado,
+                        temaPendiente: temaPendienteIa,
+                        ultimoFueAclaracion: ultimaRespuestaFueAclaracion,
+                        modelo: config.AsistenteModelo,
                         ct: token).ConfigureAwait(false);
                     resumenCasoIa = result?.ResumenCaso ?? string.Empty;
 
@@ -10158,11 +10202,13 @@ public sealed partial class ConversacionesService(
                 if (await UltimoEntranteEsEncuestaAsync(idConversacion, token).ConfigureAwait(false))
                     return;
 
-                // Nunca dos aclaraciones seguidas: si el bot ya repreguntó y vuelve a necesitar
-                // preguntar, pasa a un operador (contención estándar) en vez de insistir.
+                // Nunca tres aclaraciones seguidas: si el bot ya repreguntó dos veces y vuelve a necesitar
+                // preguntar, pasa a un operador (contención estándar) en vez de insistir. Antes cortaba en la
+                // segunda: "te hago una consulta más" → "¿cuál?" ya contaba y después no podía pedir un dato del
+                // problema (charlas reales de ALFANET, 2026-11-26). Lo de no insistir lo sabe la IA (prompt).
                 // La pregunta de identidad la arma el servidor y no cuenta: tras "¿cuál querés?" + "quiero 10
                 // azules" salía la contención en vez de "¿me confirmás que escribís por…?" (Base4271 2026-10-28).
-                if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && !pedidoPreparadoAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
+                if (aclaracionesSeguidas >= MaxAclaracionesSeguidas && !identidadPreguntadaAhora && !pedidoPreparadoAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
                 {
                     result = null;
                 }
@@ -10192,6 +10238,10 @@ public sealed partial class ConversacionesService(
                     await ResponderTemaResueltoAsync(idConversacion, pendienteResuelto, texto, result.Respuesta, token).ConfigureAwait(false);
                     return;
                 }
+
+                var respuestaSeguimientoIa = string.Equals(result?.Tipo, "SEGUIMIENTO", StringComparison.OrdinalIgnoreCase)
+                    ? result?.Respuesta
+                    : null;
 
                 // "Mi pedido" puede ser una compra o un tema de soporte. Con número de NP (o si ya eligió
                 // "el pedido") es la compra; si sólo tiene pedidos terminados y un ticket abierto, es el ticket;
@@ -10245,16 +10295,17 @@ public sealed partial class ConversacionesService(
                             new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
                     }
 
-                    if (pendiente is { Hay: true })
+                    // Lo derivó el bot y nadie lo tomó todavía: también es un tema en curso ("¿qué hago?").
+                    if (pendiente is { Hay: true } || (pendiente is not null && casoYaDerivado))
                     {
-                        await ResponderSeguimientoAsync(idConversacion, pendiente, token).ConfigureAwait(false);
+                        await ResponderSeguimientoAsync(idConversacion, pendiente, token, respuestaSeguimientoIa).ConfigureAwait(false);
                         return;
                     }
 
                     if (pendiente is not null)
                     {
                         omitirTicket = true;
-                        result = ultimaRespuestaFueAclaracion
+                        result = aclaracionesSeguidas >= MaxAclaracionesSeguidas
                             ? null
                             : new ConversacionAsistenteRespuesta { Tipo = "ACLARA", PuedeResponder = false, Respuesta = AclaracionSeguimientoSinTema };
                     }
@@ -10267,7 +10318,8 @@ public sealed partial class ConversacionesService(
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
                 // "Necesito comunicarme con Favio" / "Buen día Marcos, ..." (base real, 2026-11-02): todo DERIVA
                 // abría ticket. Si hace falta lo decide la IA con el mensaje y la conversación, no una regla.
-                var abrirTicketSegunIa = result?.AbrirTicket != false;
+                // Sólo si la IA lo pide: el ticket es para trabajo a fondo (2026-11-26).
+                var abrirTicketSegunIa = result?.AbrirTicket == true;
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
                 var respuesta = !usoFallbackBot
                     ? result!.Respuesta.Trim()
@@ -10286,14 +10338,17 @@ public sealed partial class ConversacionesService(
                 }
 
                 // Ya derivó y todavía no contestó nadie del equipo: cada mensaje nuevo del cliente mandaba otra
-                // contención ("Voy a derivar tu consulta…" cuatro veces seguidas, ticket #176, 2026-11-18). El
-                // cliente ya sabe que lo van a atender y el operador ve los mensajes nuevos en la conversación.
-                if (tipo == "DERIVA" && await DerivacionPendienteAsync(idConversacion, token).ConfigureAwait(false))
+                // contención ("Voy a derivar tu consulta…" cuatro veces seguidas, ticket #176, 2026-11-18). Ahora
+                // la IA sabe que el caso ya está con el equipo y contesta lo nuevo (2026-11-26); sólo se calla si
+                // no hubo respuesta de la IA o si repite tal cual una contención que ya se mandó hoy.
+                if (tipo == "DERIVA"
+                    && (casoYaDerivado || await DerivacionPendienteAsync(idConversacion, token).ConfigureAwait(false))
+                    && (usoFallbackBot || await HasSentAutomaticMessageTextAsync(idConversacion, "BOT", respuesta, BusinessNow(), token).ConfigureAwait(false)))
                 {
                     await _appEvents.LogAuditAsync(
                         "Conversaciones", "BotDerivacionRepetidaOmitida", "CONV_CONVERSACIONES",
                         idConversacion.ToString(CultureInfo.InvariantCulture),
-                        "El asistente ya había derivado la conversación y nadie del equipo respondió todavía: no se mandó otra contención.",
+                        "El asistente ya había derivado la conversación y nadie del equipo respondió todavía: no se mandó otra contención igual.",
                         new { idConversacion, respuesta }, token).ConfigureAwait(false);
                     return;
                 }
@@ -10357,7 +10412,7 @@ public sealed partial class ConversacionesService(
                 if (tipo == "ACLARA" && !identidadPreguntadaAhora && !pedidoPreparadoAhora)
                 {
                     // Además de informar al operador, es la marca persistida que usa
-                    // UltimaRespuestaBotFueAclaracionAsync para no repreguntar dos veces seguidas.
+                    // AclaracionesBotSeguidasAsync para no repreguntar más de dos veces seguidas.
                     await AddInternalEventCoreAsync(idConversacion, NotaBotAclaracion,
                         null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                     await _appEvents.LogAuditAsync(
@@ -11371,10 +11426,127 @@ public sealed partial class ConversacionesService(
         }
     }
 
-    private async Task<bool> UltimaRespuestaBotFueAclaracionAsync(long idConversacion, CancellationToken ct)
+    internal static string NotaAsistentePausado(string actor) => $"{actor} {TextoAsistentePausado}";
+    internal static string NotaAsistenteReactivado(string actor) => $"{actor} {TextoAsistenteReactivado}";
+    private const string TextoAsistentePausado = "pausó el asistente en esta conversación.";
+    private const string TextoAsistenteReactivado = "reactivó el asistente en esta conversación.";
+
+    /// <summary>
+    /// Si el asistente puede responder en esta conversación (2026-11-26, pedido de ALFA NET). Se mira sólo la
+    /// charla actual: desde el último cierre ("… cerró la conversación", el mismo corte que usa el historial).
+    /// - Pausado a mano: la última pausa es posterior a la última reactivación.
+    /// - Atiende el equipo: en las últimas <paramref name="horas"/>, después de la última reactivación, una
+    ///   persona le contestó al cliente o se asignó la charla (y sigue asignada). Las asignaciones automáticas
+    ///   (reglas, SLA, el bot) se graban como "AlfaCore" y no cuentan.
+    /// </summary>
+    private async Task<ConversacionAsistenteEstado> GetEstadoAsistenteCoreAsync(long idConversacion, int horas, CancellationToken ct)
+    {
+        var sql = $"""
+            DECLARE @Cierre bigint, @Pausa bigint, @Reactiva bigint, @Desde bigint, @DesdeFecha datetime;
+            SELECT @Cierre = MAX(IdMensaje) FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'NOTA_INTERNA' AND MessageType = N'SYSTEM'
+              AND (Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%');
+            SELECT @Pausa = MAX(IdMensaje) FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'NOTA_INTERNA' AND MessageType = N'SYSTEM'
+              AND Texto LIKE @TextoPausa AND IdMensaje > ISNULL(@Cierre, 0);
+            SELECT @Reactiva = MAX(IdMensaje) FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'NOTA_INTERNA' AND MessageType = N'SYSTEM'
+              AND Texto LIKE @TextoReactiva AND IdMensaje > ISNULL(@Cierre, 0);
+
+            IF ISNULL(@Pausa, 0) > ISNULL(@Reactiva, 0)
+                SELECT 2;
+            ELSE
+            BEGIN
+                SET @Desde = CASE WHEN ISNULL(@Reactiva, 0) > ISNULL(@Cierre, 0) THEN @Reactiva ELSE ISNULL(@Cierre, 0) END;
+                SELECT @DesdeFecha = FechaHora FROM dbo.CONV_MENSAJES WHERE IdMensaje = @Desde;
+
+                IF @Horas > 0 AND (
+                    EXISTS (SELECT 1 FROM dbo.CONV_MENSAJES h
+                            WHERE h.IdConversacion = @Id
+                              AND h.Direction = N'SALIENTE'
+                              AND {AutorMensajeSql("h")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})
+                              AND h.FechaHora >= DATEADD(hour, -@Horas, GETDATE())
+                              AND h.IdMensaje > @Desde)
+                    OR EXISTS (SELECT 1 FROM dbo.CONV_CONVERSACIONES c
+                               WHERE c.IdConversacion = @Id
+                                 AND NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NOT NULL
+                                 AND EXISTS (SELECT 1 FROM dbo.CONV_ASIGNACIONES a
+                                             WHERE a.IdConversacion = @Id
+                                               AND NULLIF(LTRIM(RTRIM(ISNULL(a.IdTecnico, N''))), N'') IS NOT NULL
+                                               AND LTRIM(RTRIM(ISNULL(a.UsuarioAccion, N''))) NOT IN (N'', N'AlfaCore')
+                                               AND a.FechaHora >= DATEADD(hour, -@Horas, GETDATE())
+                                               AND (@DesdeFecha IS NULL OR a.FechaHora > @DesdeFecha))))
+                    SELECT 3;
+                ELSE
+                    SELECT 1;
+            END
+            """;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await EnsureMensajeOrigenColumnAsync(cn, ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            cmd.Parameters.AddWithValue("@Horas", horas);
+            cmd.Parameters.AddWithValue("@TextoPausa", $"%{TextoAsistentePausado}");
+            cmd.Parameters.AddWithValue("@TextoReactiva", $"%{TextoAsistenteReactivado}");
+            var valor = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            return valor is null or DBNull ? ConversacionAsistenteEstado.Activo : (ConversacionAsistenteEstado)Convert.ToInt32(valor, CultureInfo.InvariantCulture);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Sin el dato se sigue como antes (sólo calla ante el mensaje que ya contestó la persona).
+            await _appEvents.LogErrorAsync("Conversaciones", "BotPausaTecnico", ex,
+                "No se pudo revisar si el asistente está pausado o si el equipo atiende la conversación; el asistente siguió.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return ConversacionAsistenteEstado.Activo;
+        }
+    }
+
+    public async Task<ConversacionAsistenteEstado> GetEstadoAsistenteAsync(long idConversacion, CancellationToken ct = default)
+    {
+        await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(idConversacion, ct);
+        var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+        if (!config.BotActivo || !config.BotRespondeEnCanal(await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false)))
+            return ConversacionAsistenteEstado.NoAplica;
+        return await GetEstadoAsistenteCoreAsync(idConversacion, config.BotPausaTrasTecnicoHoras, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Pausa o reactiva a mano el asistente en la conversación. Queda como evento en la charla (quién y cuándo);
+    /// reactivar también le devuelve la charla al asistente aunque alguien del equipo la haya atendido antes.
+    /// </summary>
+    public Task SetAsistentePausadoAsync(ConversacionAsistentePausaRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "AsistentePausa", async token =>
+        {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+            if (request.IdConversacion <= 0)
+                throw new InvalidOperationException("La conversación es obligatoria.");
+
+            var actorName = await BuildActionActorNameAsync(request.IdTecnicoAutor, request.NombreTecnicoAccion, request.UsuarioAccion, token);
+            await AddInternalEventCoreAsync(
+                request.IdConversacion,
+                request.Pausar ? NotaAsistentePausado(actorName) : NotaAsistenteReactivado(actorName),
+                request.IdTecnicoAutor,
+                request.NombreTecnicoAccion,
+                request.UsuarioAccion,
+                request.SistemaAccion,
+                token);
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", request.Pausar ? "AsistentePausado" : "AsistenteReactivado", "CONV_CONVERSACIONES",
+                request.IdConversacion.ToString(CultureInfo.InvariantCulture),
+                request.Pausar ? "Se pausó a mano el asistente en la conversación." : "Se reactivó el asistente en la conversación.",
+                new { request.IdConversacion, request.Pausar }, token);
+            return true;
+        }, "No se pudo cambiar el estado del asistente en la conversación.", ct);
+
+    /// <summary>Cuántas preguntas de aclaración seguidas hizo el bot sin otra respuesta en el medio (máx. 4).</summary>
+    private async Task<int> AclaracionesBotSeguidasAsync(long idConversacion, CancellationToken ct)
     {
         const string sql = """
-            SELECT TOP (1) ISNULL(Direction, N'') AS Direction, FechaHora
+            SELECT TOP (8) ISNULL(Direction, N'') AS Direction, FechaHora
             FROM dbo.CONV_MENSAJES
             WHERE IdConversacion = @Id
               AND (Direction = N'SALIENTE'
@@ -11389,19 +11561,47 @@ public sealed partial class ConversacionesService(
             cmd.Parameters.AddWithValue("@Id", idConversacion);
             cmd.Parameters.AddWithValue("@Nota", NotaBotAclaracion);
             await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            if (!await rd.ReadAsync(ct).ConfigureAwait(false))
-                return false;
-
-            var esNota = string.Equals(GetString(rd, 0), "NOTA_INTERNA", StringComparison.Ordinal);
-            var fecha = rd.IsDBNull(1) ? DateTime.MinValue : rd.GetDateTime(1);
-            return esNota && BusinessNow() - fecha <= VentanaUltimaAclaracion;
+            var filas = new List<(bool EsNota, DateTime Fecha)>();
+            while (await rd.ReadAsync(ct).ConfigureAwait(false))
+                filas.Add((string.Equals(GetString(rd, 0), "NOTA_INTERNA", StringComparison.Ordinal), rd.IsDBNull(1) ? DateTime.MinValue : rd.GetDateTime(1)));
+            return ContarAclaracionesSeguidas(filas, BusinessNow(), VentanaUltimaAclaracion);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Sin el dato no se puede garantizar "no repreguntar": se asume que no hubo aclaración
-            // previa (comportamiento anterior), sin cortar la respuesta del bot.
-            return false;
+            // Sin el dato no se puede garantizar "no repreguntar": se asume que no hubo aclaración previa.
+            return 0;
         }
+    }
+
+    /// <summary>
+    /// Filas de la más nueva a la más vieja (respuestas del bot y notas de aclaración): cada pregunta deja su
+    /// respuesta seguida de la nota. Cuenta los pares seguidos desde la última; corta en una respuesta sin nota.
+    /// </summary>
+    internal static int ContarAclaracionesSeguidas(IReadOnlyList<(bool EsNota, DateTime Fecha)> filas, DateTime ahora, TimeSpan ventana)
+    {
+        var cantidad = 0;
+        var esperaNota = true;
+        foreach (var (esNota, fecha) in filas)
+        {
+            if (esNota)
+            {
+                if (!esperaNota)
+                    continue;
+                if (ahora - fecha > ventana)
+                    break;
+                cantidad++;
+                esperaNota = false;
+            }
+            else if (esperaNota)
+            {
+                break;
+            }
+            else
+            {
+                esperaNota = true;
+            }
+        }
+        return cantidad;
     }
 
     internal static string ConstruirRespuestaPrecioRequiereIdentificacion(string? linkCatalogo, bool ofreceAlta = false)
@@ -11708,7 +11908,13 @@ public sealed partial class ConversacionesService(
                "Lo registró el asistente; el ticket sigue abierto hasta que alguien del equipo lo cierre.";
     }
 
-    internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente con el equipo. Ya les aviso que escribiste para que te respondan por acá a la brevedad.";
+    /// <summary>Qué tema anterior tiene pendiente el cliente, en palabras para la IA; vacío = ninguno.</summary>
+    internal static string DescribirTemaPendiente(int? numeroTicket, bool huboRespuestaDelEquipo)
+        => numeroTicket is int n
+            ? $"tiene abierto el ticket #{n.ToString(CultureInfo.InvariantCulture)}"
+            : huboRespuestaDelEquipo ? "una persona del equipo ya lo venía atendiendo en esta conversación" : string.Empty;
+
+    internal const string RespuestaSeguimiento ="Veo que tenés un tema pendiente con el equipo. Ya les aviso que escribiste para que te respondan por acá a la brevedad.";
     internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
     internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís? Así se la paso a quien corresponde.";
     internal const string ObservacionAsignacionSeguimiento = "Pide novedades de un tema pendiente";
@@ -11816,11 +12022,19 @@ public sealed partial class ConversacionesService(
     /// nadie del equipo y sin abrir otro ticket; adentro se asigna (si no tenía) y se avisa a quien
     /// venía atendiendo o al que tiene asignada la conversación.
     /// </summary>
-    private async Task ResponderSeguimientoAsync(long idConversacion, TemaPendiente pendiente, CancellationToken ct)
+    private async Task ResponderSeguimientoAsync(long idConversacion, TemaPendiente pendiente, CancellationToken ct, string? respuestaIa = null)
     {
         var hoy = BusinessNow();
         string? respuesta = RespuestaSeguimiento;
-        if (await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaSeguimiento, hoy, ct).ConfigureAwait(false))
+        // La respuesta la redacta la IA sobre lo que pregunta el cliente (2026-11-26); el texto fijo queda
+        // sólo si no la hay. Una misma frase no se repite en el día.
+        if (!string.IsNullOrWhiteSpace(respuestaIa))
+        {
+            respuesta = respuestaIa.Trim();
+            if (await HasSentAutomaticMessageTextAsync(idConversacion, "BOT", respuesta, hoy, ct).ConfigureAwait(false))
+                respuesta = null;
+        }
+        else if (await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaSeguimiento, hoy, ct).ConfigureAwait(false))
         {
             respuesta = await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaSeguimientoRepetida, hoy, ct).ConfigureAwait(false)
                 ? null
@@ -12583,8 +12797,10 @@ public sealed partial class ConversacionesService(
     private static bool IsValidAlertPhone(string? phone)
         => !string.IsNullOrWhiteSpace(phone) && NormalizePhone(phone).Length >= 8;
 
-    private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
+    private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, int horasContexto, CancellationToken ct)
     {
+        // Además del cierre, como mucho las últimas horasContexto (CONV_BOT_CONTEXTO_HORAS, 48 por defecto):
+        // si nadie cierra la conversación, temas de días atrás se mezclaban con lo nuevo (2026-11-26).
         // Si la conversación se cerró y después se reabrió (un cliente nuevo escribe tiempo después),
         // FechaHoraCierre ya quedó en NULL para ese momento (se limpia al reabrir -- ver
         // RefreshConversationAsync/ReopenClosedConversationsWithIncomingAfterCloseAsync), así que no
@@ -12611,6 +12827,7 @@ public sealed partial class ConversacionesService(
               AND Direction IN (N'ENTRANTE', N'SALIENTE')
               AND ISNULL(CAST(Texto AS nvarchar(max)), '') <> ''
               AND (@UltimoCierre IS NULL OR FechaHora > @UltimoCierre)
+              AND (@Horas <= 0 OR FechaHora >= DATEADD(hour, -@Horas, GETDATE()))
             ORDER BY FechaHora DESC, IdMensaje DESC;
             """;
         var result = new List<ConversacionMensajeDto>();
@@ -12618,6 +12835,7 @@ public sealed partial class ConversacionesService(
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Id", idConversacion);
+        cmd.Parameters.AddWithValue("@Horas", horasContexto);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
         {

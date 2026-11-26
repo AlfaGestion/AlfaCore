@@ -83,6 +83,8 @@ public interface IConversacionesService
     Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default);
     Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default);
     Task AssignConversationAsync(ConversacionAsignacionRequest request, CancellationToken ct = default);
+    Task<ConversacionAsistenteEstado> GetEstadoAsistenteAsync(long idConversacion, CancellationToken ct = default);
+    Task SetAsistentePausadoAsync(ConversacionAsistentePausaRequest request, CancellationToken ct = default);
     Task ChangeStatusAsync(ConversacionEstadoRequest request, CancellationToken ct = default);
     /// <summary>Procesa el auto-cierre por inactividad para la base activa. Devuelve cuántas acciones hizo (avisos + cierres).</summary>
     Task<int> ProcesarAutoCierreAsync(CancellationToken ct = default);

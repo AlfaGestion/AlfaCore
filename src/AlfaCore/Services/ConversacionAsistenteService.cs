@@ -31,13 +31,19 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         bool precioRequiereIdentificacion = false,
         string? linkCatalogoParaLead = null,
         IReadOnlyList<string>? imagenesDataUri = null,
+        string? criterioTicket = null,
+        bool casoYaDerivado = false,
+        string? temaPendiente = null,
+        bool ultimoFueAclaracion = false,
+        string? modelo = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(mensajeCliente))
             return null;
 
-        var model = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        // El de la configuración del asistente de la base (CONV_ASISTENTE_MODELO); si no, el del servidor.
+        var model = string.IsNullOrWhiteSpace(modelo) ? Environment.GetEnvironmentVariable("OPENAI_MODEL") : modelo.Trim();
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
@@ -56,7 +62,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var reintentoPorDerivarSinBuscar = false;
         var seUsoAlgunaHerramienta = false;
         string? herramientaForzadaSiguienteRonda = null;
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido, hayRegistrarCliente, hayGuardarContactoWeb);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido, hayRegistrarCliente, hayGuardarContactoWeb, criterioTicket, casoYaDerivado, temaPendiente, ultimoFueAclaracion);
 
         textoConRespaldo.AppendLine(systemPrompt);
         foreach (var m in historial)
@@ -443,12 +449,17 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             .ToList();
     }
 
+    /// <summary>Cuándo el bot abre ticket si la empresa no cargó su propio criterio (CONV_BOT_TICKET_CRITERIO).</summary>
+    public const string CriterioTicketPorDefecto =
+        "sólo cuando hace falta un desarrollo en profundidad: programar algo nuevo o cambiar cómo funciona el sistema (una función, un informe, un formato, una adaptación a su negocio). Un problema puntual (algo que no anda, no imprime, no conecta, no deja entrar o muestra un cartel de error) lo atiende una persona del equipo por el chat o con acceso remoto, sin ticket. Tampoco llevan ticket las dudas de uso, las consultas ni los pedidos de precio, de contacto o de un trámite.";
+
     internal static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
         bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null,
         bool hayPortalEntreHerramientas = false, bool hayPrepararPedido = false, bool hayRegistrarCliente = false,
-        bool hayGuardarContactoWeb = false)
+        bool hayGuardarContactoWeb = false, string? criterioTicket = null, bool casoYaDerivado = false,
+        string? temaPendiente = null, bool ultimoFueAclaracion = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -511,6 +522,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");
         sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
+        // Prueba con gpt-4.1 (2026-11-26): "cuando tengas los datos lo vemos juntos" con una prueba que sólo hace una persona.
+        sb.AppendLine("- Vos sólo podés escribir por este chat con lo que tenés en la información y en las herramientas. No te ofrezcas a revisar, probar, verificar, configurar o ver algo junto con el cliente, ni a volver a escribirle más tarde: eso lo hace una persona del equipo, y si hace falta, derivá.");
         sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
         sb.AppendLine("- Lo mismo con los servicios (reparaciones, instalaciones, etc.): si no figuran en la información, no digas que no se ofrecen. Decile que lo consultás con el equipo (tipo DERIVA) sin afirmar nada.");
         // Batería "empresa de servicios" (ALFA NET, 2026-10-28): inventó un mail de soporte, que el sistema
@@ -583,13 +596,42 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("CUANDO NO PODÉS RESOLVER (nunca dejes al cliente sin respuesta):");
         sb.AppendLine("- Si resolviste la consulta: tipo=\"RESUELVE\", \"puede_responder\": true, y la respuesta.");
         sb.AppendLine("- Si NO podés resolver pero UNA pregunta concreta te permitiría hacerlo, y NO se la hiciste ya antes en esta conversación: tipo=\"ACLARA\", \"puede_responder\": false, y en \"respuesta\" esa única pregunta (breve y puntual).");
-        sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve que deje claro que le va a responder una persona del equipo (un asesor o un compañero), no vos: nada de \"voy a verificar\" ni \"te respondo en un momento\", porque vos no vas a volver a escribir con la respuesta. Ej.: \"Le paso tu consulta a un asesor y te responde a la brevedad\". Redactala con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución. Nunca le pidas que contacte o consulte a un asesor: vos ya sos la empresa y la consulta le llega al equipo por este mismo chat.");
-        sb.AppendLine("- Si el cliente no plantea nada nuevo y sólo quiere saber cómo va algo que ya consultó antes: tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o una pregunta nueva, no es SEGUIMIENTO: tratalo como una consulta normal. Si lo que quiere saber es cómo viene un pedido o una entrega y tenés la herramienta de pedidos, usala: tampoco es SEGUIMIENTO.");
+        sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve que deje claro que le va a responder una persona del equipo (un asesor o un compañero), no vos: nada de \"voy a verificar\" ni \"te respondo en un momento\", porque vos no vas a volver a escribir con la respuesta. Nombrá en pocas palabras qué es lo que le pasás al equipo, con lo que contó, para que vea que lo entendiste; redactala con tus palabras, no con una frase hecha. No inventes la solución. Nunca le pidas que contacte o consulte a un asesor: vos ya sos la empresa y la consulta le llega al equipo por este mismo chat.");
+        sb.AppendLine("- Si el cliente no plantea nada nuevo y sólo quiere saber cómo va algo que ya consultó antes: tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\", con tus palabras y sobre lo que quiere saber, que le avisás al equipo que escribió por eso (sin prometer plazos ni nombrar a nadie). Si además plantea un problema o una pregunta nueva, no es SEGUIMIENTO: tratalo como una consulta normal. Si lo que quiere saber es cómo viene un pedido o una entrega y tenés la herramienta de pedidos, usala: tampoco es SEGUIMIENTO.");
         sb.AppendLine("- Si el cliente avisa que el problema que había consultado ya se resolvió: no es SEGUIMIENTO ni DERIVA. tipo=\"RESUELVE\", \"puede_responder\": true, \"tema_resuelto\": true, y en \"respuesta\" un agradecimiento breve que cierre la charla, sin hacer preguntas. En cualquier otro caso \"tema_resuelto\": false.");
         sb.AppendLine("- DERIVA es sólo cuando hace falta que una persona del equipo tome el tema. Si vos le hacés una pregunta para poder ayudarlo, eso es ACLARA.");
-        sb.AppendLine("- Cuando derivás, decidí en \"abrir_ticket\" si hace falta registrar un ticket, leyendo el mensaje junto con toda la conversación. Un ticket es para un tema que el equipo tiene que trabajar y al que hay que hacerle seguimiento. Si con lo que hay en la charla basta con que una persona del equipo lo lea y le conteste por acá, no hace falta ticket: \"abrir_ticket\": false. Si dudás, true.");
+        // Charlas reales repetidas (2026-11-26): con "si dudás, true" casi todo lo derivado abría ticket. El
+        // ticket es para trabajo a fondo; lo demás lo contesta una persona por el chat. El criterio es de cada empresa.
+        var criterio = string.IsNullOrWhiteSpace(criterioTicket) ? CriterioTicketPorDefecto : criterioTicket.Trim();
+        sb.AppendLine($"- Cuando derivás, decidí en \"abrir_ticket\" si hace falta registrar un ticket, leyendo el mensaje junto con toda la conversación. Cuándo abrir ticket, según la empresa: {criterio} Si no se cumple, alcanza con que una persona del equipo lo lea y le conteste por acá: \"abrir_ticket\": false. Si dudás, false.");
         sb.AppendLine("- En \"resumen_caso\" poné en una línea corta de qué se trata lo que plantea el cliente, juntando lo que dijo en toda la charla (qué le pasa, dónde, con qué), escrito para que alguien del equipo lo entienda sin leer el chat. Si sólo saluda o agradece, dejalo vacío.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
+
+        // Lo que el sistema sabe del caso, para que la IA conteste con eso en vez de que el código pise su
+        // respuesta con textos fijos ("¿Me contás a qué consulta te referís?", "Gracias por tu mensaje…"), 2026-11-26.
+        if (temaPendiente is not null || ultimoFueAclaracion)
+        {
+            sb.AppendLine();
+            sb.AppendLine("ESTADO DEL CASO:");
+            if (temaPendiente is { Length: 0 })
+                sb.AppendLine("- No tiene ningún tema anterior pendiente con el equipo: no es SEGUIMIENTO. Si pregunta por algo anterior, preguntale de qué se trata.");
+            else if (!string.IsNullOrWhiteSpace(temaPendiente))
+                sb.AppendLine($"- Tema anterior pendiente con el equipo: {temaPendiente.Trim()}.");
+            if (ultimoFueAclaracion)
+                sb.AppendLine("- Tu último mensaje ya fue una pregunta y el cliente contestó: no repitas esa pregunta. Volvé a preguntar sólo si sin otro dato el equipo no puede ni empezar a verlo; si no, con lo que hay resolvé o pasáselo al equipo (DERIVA) diciendo de qué se trata.");
+        }
+
+        // Antes, ya derivado y sin respuesta del equipo, el bot callaba todo lo nuevo (2026-11-26, pedido de
+        // ALFA NET: que analice la situación y responda en consecuencia).
+        if (casoYaDerivado)
+        {
+            sb.AppendLine();
+            sb.AppendLine("CASO YA PASADO AL EQUIPO: en esta charla ya le dijiste al cliente que su consulta la ve una persona del equipo, y todavía nadie del equipo le respondió.");
+            sb.AppendLine("- Leé lo nuevo que escribe en ese contexto y contestá lo que corresponda a eso: puede sumar datos al mismo caso, preguntar cómo va, agradecer o decir que espera, plantear algo que podés resolver vos o traer un tema distinto.");
+            sb.AppendLine("- Si suma datos o pedidos al mismo caso: tipo=\"RESUELVE\", \"abrir_ticket\": false, y en \"respuesta\" confirmale en una frase que lo agregás a lo que ya tiene el equipo. No es DERIVA: el caso ya está derivado.");
+            sb.AppendLine("- Si agradece o dice que espera, sin preguntar nada: tipo=\"RESUELVE\" y una respuesta breve y cordial. No es SEGUIMIENTO.");
+            sb.AppendLine("- Usá DERIVA sólo si trae un tema distinto que también necesita al equipo. Nunca le repitas que lo pasás al equipo con la misma idea que ya le dijiste.");
+        }
 
         if (fueraDeHorario)
         {
@@ -738,9 +780,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             var imagen = root.TryGetProperty("imagen", out var img) && img.ValueKind == JsonValueKind.String
                 ? (img.GetString() ?? string.Empty).Trim()
                 : string.Empty;
-            var abrirTicket = !(root.TryGetProperty("abrir_ticket", out var at)
-                && (at.ValueKind == JsonValueKind.False
-                    || (at.ValueKind == JsonValueKind.String && bool.TryParse(at.GetString(), out var bt) && !bt)));
+            // Sin el campo no se abre ticket: el ticket es para trabajo a fondo y lo tiene que decidir la IA (2026-11-26).
+            var abrirTicket = root.TryGetProperty("abrir_ticket", out var at)
+                && (at.ValueKind == JsonValueKind.True
+                    || (at.ValueKind == JsonValueKind.String && bool.TryParse(at.GetString(), out var bt) && bt));
             var pidePrecio = root.TryGetProperty("pide_precio", out var pp)
                 && (pp.ValueKind == JsonValueKind.True
                     || (pp.ValueKind == JsonValueKind.String && bool.TryParse(pp.GetString(), out var bp) && bp));

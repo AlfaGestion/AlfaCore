@@ -321,8 +321,37 @@ audios, hasta la primera respuesta de una persona del equipo. Salieron dos falla
   devuelve `resumen_caso` (de qué se trata, con toda la charla) y es el título del ticket
   (`TituloTicketBot`); si viene vacío, queda el mensaje como antes.
 
-Lo que sigue igual a propósito: con el tema ya en manos del equipo, si el cliente agrega datos (una foto
-del error, "te dejo acceso") el bot no repite la contención; el equipo los ve en la conversación.
+### Después de derivar y tickets (2026-11-26, pedido de ALFA NET)
+
+- **Si alguien del equipo tomó la charla, el bot se apaga.** Una respuesta de una persona o una asignación
+  hecha por una persona (las automáticas de reglas, SLA y el bot se graban "AlfaCore" y no cuentan) en las
+  últimas `CONV_BOT_PAUSA_TECNICO_HORAS` (24 por defecto; 0 = sólo calla ante el mensaje que ya contestó la
+  persona), sin cierre ni reactivación después, hace que el bot no responda (`GetEstadoAsistenteCoreAsync`,
+  evento `BotPausadoPorTecnico`). Se configura en Asistente IA → Límites.
+- **Pausar / reactivar a mano.** Botón "Asistente activo / Asistente pausado" en el encabezado de la charla
+  (en celular, en el menú ⋮). Deja el evento "X pausó / reactivó el asistente en esta conversación"; la pausa
+  dura hasta reactivarlo o cerrar la conversación. Reactivar también le devuelve la charla al bot aunque el
+  equipo la haya atendido (`SetAsistentePausadoAsync`, `GetEstadoAsistenteAsync`).
+- **En horario primero el equipo.** `CONV_BOT_ESPERA_MINUTOS` ahora vale sólo dentro del horario de atención
+  (sin horario cargado, siempre): el bot espera y contesta si nadie lo tomó. Fuera de horario, enseguida.
+- **Qué lee.** Desde el último cierre y como mucho `CONV_BOT_CONTEXTO_HORAS` (48 por defecto; 0 = sin límite).
+- **Modelo por base.** `CONV_ASISTENTE_MODELO` (Asistente IA → General → Modelo de IA): vacío = el del servidor
+  (`OPENAI_MODEL` o gpt-4o-mini), o gpt-4o-mini / gpt-4.1-mini / gpt-4.1. Sólo modelos de esa lista, porque cada
+  uno necesita su precio en `ALFA_CENTRAL.IA_PRECIO_MODELO` para contar en el tope de créditos; `CentralIaSchema`
+  carga los de gpt-4.1 y gpt-4.1-mini (precio de lista de OpenAI, verificar) y se vuelve a aplicar si faltan.
+- **Si derivó y todavía no contestó nadie, responde según lo nuevo.** Antes callaba todo. Ahora la IA recibe
+  que el caso ya está con el equipo (sección "CASO YA PASADO AL EQUIPO" del prompt) y contesta: confirma que
+  suma el dato al caso, agradece, resuelve lo que puede o deriva un tema distinto. Sólo calla si la IA no
+  respondió o si repite tal cual una contención ya mandada hoy.
+- **Ticket sólo para trabajo a fondo.** La IA decide `abrir_ticket` con el criterio de
+  `CONV_BOT_TICKET_CRITERIO` (Asistente IA → Si no encuentra respuesta; vacío =
+  `ConversacionAsistenteService.CriterioTicketPorDefecto`). Si duda, o si no informa el campo, no se abre.
+- **Menos textos fijos.** La mitad de las respuestas eran frases fijas o la frase de ejemplo del prompt copiada
+  tal cual. Ahora: la contención nombra de qué se trata; la IA recibe el "ESTADO DEL CASO" (ticket abierto,
+  alguien del equipo lo venía atendiendo, o nada pendiente, y si su último mensaje ya fue una pregunta) y
+  redacta ella la respuesta al "¿novedades?" (`ResponderSeguimientoAsync` usa su texto). Se permiten hasta
+  dos preguntas seguidas (`MaxAclaracionesSeguidas`, `ContarAclaracionesSeguidas`); recién en la tercera
+  sale la contención fija.
 
 Para leer los resultados: cada tramo arranca como charla nueva del chat web, sin el historial ni el ticket
 abierto que tenía el cliente real. Por eso hay más tickets nuevos que en la realidad (en 166 de 219 casos el
