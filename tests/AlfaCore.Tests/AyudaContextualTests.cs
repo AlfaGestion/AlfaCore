@@ -91,6 +91,27 @@ public sealed class AyudaContextualTests
         Assert.DoesNotContain(AyudaManuales.Temas.SelectMany(t=>AyudaManuales.Obtener(t.Clave).Articulos),a=>a.Id=="indice" || a.Contenido.Length==0);
     }
 
+    // "DE DONDE DOY DE ALTA LOS" no encontraba nada: se exigían todas las palabras (2026-11-26).
+    [Fact]
+    public void ElBuscadorIgnoraPalabrasVaciasYOrdenaPorCoincidencias()
+    {
+        Assert.Equal(new[]{"alta"},AyudaManuales.TerminosBusqueda("DE DONDE DOY DE ALTA LOS"));
+        var resultados=AyudaManuales.BuscarEnTodo("de dónde doy de alta un cliente","general");
+        Assert.NotEmpty(resultados);
+        Assert.Equal("dar-de-alta-un-cliente",resultados[0].Articulo.Id);
+        Assert.Empty(AyudaManuales.BuscarEnTodo("de donde los"));
+        // La ayuda con IA muestra texto plano: sin los asteriscos de las negritas.
+        var fuentes=AyudaIaService.Recuperar("como doy de alta un cliente","archivos");
+        using var json=System.Text.Json.JsonDocument.Parse($$"""{"respuesta":"Pulsá **Nuevo cliente**.","fuentes":["{{fuentes[0].Id}}"]}""");
+        Assert.Equal("Pulsá Nuevo cliente.",AyudaIaService.ValidarRespuesta(json.RootElement,fuentes).Texto);
+        // El campo no recibe el texto de vuelta mientras se escribe y busca al hacer una pausa.
+        var dialogo=File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","Shared","AyudaContextualDialog.razor"));
+        Assert.Contains("@oninput=\"AlEscribir\"",dialogo,StringComparison.Ordinal);
+        Assert.DoesNotContain("Value=\"@_buscar\"",dialogo,StringComparison.Ordinal);
+        // Seleccionar texto y soltar el mouse fuera de una ventana no la cierra (todas las ventanas).
+        Assert.Contains("alfa-seleccion-sin-cerrar.js",File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","App.razor")),StringComparison.Ordinal);
+    }
+
     private static string RepoRoot()
     {
         var dir=new DirectoryInfo(AppContext.BaseDirectory);
