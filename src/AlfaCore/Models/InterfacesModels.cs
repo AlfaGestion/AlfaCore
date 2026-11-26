@@ -41,10 +41,10 @@ public sealed class InterfacesUploadSettingsDto
     public string DestinoTipo { get; set; } = "FTP";
     public string DestinoNombre { get; set; } = "Recepción principal";
     public string RutaBase { get; set; } = string.Empty;
-    public string FtpHost { get; set; } = "alfanet.ddns.net";
+    public string FtpHost { get; set; } = string.Empty;
     public int FtpPuerto { get; set; } = 21;
-    public string FtpUsuario { get; set; } = "ftpalfa";
-    public string FtpClave { get; set; } = "24681012";
+    public string FtpUsuario { get; set; } = string.Empty;
+    public string FtpClave { get; set; } = string.Empty;
     public bool FtpModoPasivo { get; set; } = true;
     public string EstadoInicialCodigo { get; set; } = "A_PROCESAR";
     public int TamanoMaximoMb { get; set; } = 25;

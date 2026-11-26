@@ -15,10 +15,11 @@ public sealed class InterfacesConfigService(
     private const string DefaultDestinoTipo = "FTP";
     private const string DefaultDestinoNombre = "Recepción principal";
     private const string DefaultRutaBase = "/";
-    private const string DefaultFtpHost = "alfanet.ddns.net";
+    // Por defecto, el FTP de ALFA NET: credenciales en variables de entorno ALFANET_FTP_* (nunca en el código).
+    private static string DefaultFtpHost => AlfaNetFtpCredenciales.Host;
     private const int DefaultFtpPuerto = 21;
-    private const string DefaultFtpUsuario = "ftpalfa";
-    private const string DefaultFtpClave = "24681012";
+    private static string DefaultFtpUsuario => AlfaNetFtpCredenciales.Usuario;
+    private static string DefaultFtpClave => AlfaNetFtpCredenciales.Clave;
     private const string DefaultIaFolder = @"C:\dev\IA_ProcesarDocumentos";
     private const string DefaultIaScriptName = "lector_facturas_to_json_v5.py";
 

@@ -12,8 +12,9 @@ REM del cliente ftp.exe clasico, porque ftp.exe usa modo activo por
 REM defecto y eso falla detras de la mayoria de los routers/firewalls.
 REM curl usa modo pasivo automaticamente y funciona sin configurar nada.
 REM
-REM ATENCION: este archivo tiene credenciales de FTP en texto plano.
-REM No lo compartas fuera del equipo ni lo subas a repos publicos.
+REM Credenciales del FTP: NO van en este archivo. Se toman de las variables
+REM de entorno ALFANET_FTP_HOST, ALFANET_FTP_USUARIO y ALFANET_FTP_CLAVE
+REM (las mismas que usa AlfaCore). Si falta alguna, el script la pregunta.
 REM
 REM Por defecto ya queda configurado para Fernandez Deposito:
 REM   Carpeta:   C:\Alfa Gestion\imagenes\ImagenesWeb2\  (y su subcarpeta thumbs4\)
@@ -51,9 +52,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "FTP_HOST=alfanet.ddns.net"
-set "FTP_USER=ftpalfa"
-set "FTP_PASS=24681012"
+set "FTP_HOST=%ALFANET_FTP_HOST%"
+set "FTP_USER=%ALFANET_FTP_USUARIO%"
+set "FTP_PASS=%ALFANET_FTP_CLAVE%"
+if "%FTP_HOST%"=="" set /p "FTP_HOST=Servidor FTP: "
+if "%FTP_USER%"=="" set /p "FTP_USER=Usuario FTP: "
+if "%FTP_PASS%"=="" set /p "FTP_PASS=Clave FTP: "
+if "%FTP_HOST%"=="" goto :SinCredenciales
+if "%FTP_USER%"=="" goto :SinCredenciales
+if "%FTP_PASS%"=="" goto :SinCredenciales
 set "FTP_CARPETA_BASE=Clientes/%IDCLIENTE%/%IDBASE%"
 
 echo ===============================================
@@ -126,3 +133,9 @@ for %%F in ("%ORIGEN%\*.jpg" "%ORIGEN%\*.jpeg" "%ORIGEN%\*.png" "%ORIGEN%\*.webp
 
 echo Subidos correctamente: %SUBIDOS% ^| Con error: %ERRORES%
 exit /b 0
+
+:SinCredenciales
+echo Faltan los datos del FTP. Defini ALFANET_FTP_HOST, ALFANET_FTP_USUARIO y ALFANET_FTP_CLAVE
+echo como variables de entorno o ingresalos cuando el script los pide.
+pause
+exit /b 1
