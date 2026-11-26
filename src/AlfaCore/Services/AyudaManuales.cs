@@ -258,6 +258,9 @@ public static class AyudaManuales
         {
             var encabezado=Regex.Match(linea,@"^#{2,3}\s+(.+)$");
             if(encabezado.Success) { Guardar();titulo=encabezado.Groups[1].Value.Trim(); }
+            // La introducción (texto antes del primer ##) también es un artículo, con el título del manual: ahí
+            // están los pasos de "Carga de comprobantes de compras" y la ayuda no los encontraba (2026-11-26).
+            else if(titulo is null && Regex.Match(linea,@"^#\s+(.+)$") is { Success: true } principal) titulo=principal.Groups[1].Value.Trim();
             else if(titulo is not null)texto.AppendLine(linea);
         }
         Guardar();return new(tema,contenido,articulos.AsReadOnly());

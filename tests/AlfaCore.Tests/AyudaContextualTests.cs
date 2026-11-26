@@ -100,6 +100,9 @@ public sealed class AyudaContextualTests
         Assert.NotEmpty(resultados);
         Assert.Equal("dar-de-alta-un-cliente",resultados[0].Articulo.Id);
         Assert.Empty(AyudaManuales.BuscarEnTodo("de donde los"));
+        // La introducción del manual también es un artículo: "¿Cómo cargo una factura de compra?" no encontraba nada.
+        var compra=AyudaIaService.Recuperar("¿Cómo cargo una factura de compra?","general");
+        Assert.Contains(compra,f=>f.Tema=="carga-compras" && f.Articulo=="carga-y-consulta-de-comprobantes-de-compras");
         // La respuesta de la IA se muestra con formato (Markdown sin HTML): negritas y listas, sin asteriscos sueltos.
         Assert.Contains("<strong>Nuevo cliente</strong>",AyudaManuales.Html("Pulsá **Nuevo cliente**."),StringComparison.Ordinal);
         Assert.DoesNotContain("<script>",AyudaManuales.Html("<script>alert(1)</script>"),StringComparison.Ordinal);
