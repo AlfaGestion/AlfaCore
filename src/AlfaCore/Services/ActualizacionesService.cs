@@ -422,6 +422,9 @@ public sealed class ActualizacionesService(
         ["2026-11-03-005__compras_carga_servicios_menu_web.sql"] = "2026-11-03-020__compras_carga_servicios_menu_web.sql",
         ["2026-11-03-006__compras_registro_operaciones.sql"] = "2026-11-03-021__compras_registro_operaciones.sql",
         ["2026-11-24-001__ventas_pos_mesas_formato.sql"] = "2026-11-24-004__ventas_pos_mesas_formato.sql",
+        ["2026-11-16-001__ventas_pos_puntoventa_rubros_lista.sql"] = "2026-11-16-002__ventas_pos_puntoventa_rubros_lista.sql",
+        ["2026-11-17-001__ventas_pos_turno_transferencia.sql"] = "2026-11-18-080__ventas_pos_turno_transferencia.sql",
+        ["2026-11-17-052__conversaciones_bot_alta_clientes.sql"] = "2026-11-17-053__conversaciones_bot_alta_clientes.sql",
 
         ["2026-10-30-001__caja_tarjetas_anular_importacion.sql"] = "2026-10-30-004__caja_tarjetas_anular_importacion.sql",
         ["2026-10-30-001__caja_conciliaciones_asistidas_ia_menu_web.sql"] = "2026-10-30-003__caja_conciliaciones_asistidas_ia_menu_web.sql",
