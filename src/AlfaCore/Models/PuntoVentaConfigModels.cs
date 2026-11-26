@@ -170,3 +170,12 @@ public static class PuntoVentaMesaFormatoKeys
         _ => Cuadrada
     };
 }
+
+/// <summary>Qué hizo «Cantidad de mesas» en un sector.</summary>
+public sealed class PuntoVentaAjusteMesasResultado
+{
+    public int Agregadas { get; set; }
+    public int Reactivadas { get; set; }
+    public int Borradas { get; set; }
+    public int Desactivadas { get; set; }
+}

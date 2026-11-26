@@ -636,7 +636,21 @@
             _posicionarMenuCaja = false;
             try { await Js.InvokeVoidAsync("alfaPosSalon.posicionMenu", ".salon-caja-menu__boton", ".salon-caja-menu__panel"); } catch { }
         }
+
+        // Cada vez que el plano se vuelve a crear (@key nuevo, por ejemplo al guardar una mesa) el elemento es otro
+        // y pierde el arrastre: si se sigue editando, se vuelve a habilitar sobre el plano nuevo.
+        if (_editandoPlano && _planoVersionArrastre != _planoVersion)
+        {
+            _planoVersionArrastre = _planoVersion;
+            try { await Js.InvokeVoidAsync("alfaPosSalon.setEditing", CanvasId, true); } catch { }
+        }
+        else if (!_editandoPlano)
+        {
+            _planoVersionArrastre = -1;
+        }
     }
+
+    private int _planoVersionArrastre = -1;
 
     public async ValueTask DisposeAsync()
     {

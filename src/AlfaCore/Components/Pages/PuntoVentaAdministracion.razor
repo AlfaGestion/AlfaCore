@@ -246,6 +246,10 @@
                     <div class="actions pv-admin-form-actions">
                         <button type="button" class="btn btn--primary btn--sm" @onclick="GuardarPuntoVentaAsync">Guardar</button>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelarPuntoVentaForm">Cancelar</button>
+                        @if (_puntoVentaForm.Id is > 0)
+                        {
+                            <button type="button" class="btn btn--danger btn--sm" @onclick="() => _confirmarBorrarPuntoVenta = true">Borrar</button>
+                        }
                     </div>
                     <div class="field">
                         <label>Código</label>
@@ -511,6 +515,17 @@
             <div class="split-grid">
                 <DataTable Titulo="@($"Mesas de {_selectedSector.Nombre}")" Subtitulo="Ubicación, capacidad e ícono de cada mesa.">
                     <Toolbar>
+                        <div class="pv-mesas-cantidad" title="Deja el sector con esta cantidad de mesas (sin contar la barra) y las reparte en el plano.">
+                            <label>Cantidad de mesas</label>
+                            <input type="number" min="0" max="200" @bind="_cantidadMesas" />
+                            <label>de</label>
+                            <input type="number" min="1" max="99" @bind="_capacidadMesas" />
+                            <label>personas</label>
+                            <label class="pv-mesas-cantidad__check">
+                                <input type="checkbox" @bind="_redistribuirMesas" /> Repartir en el plano
+                            </label>
+                            <button type="button" class="btn btn--ghost btn--sm" disabled="@_ajustandoMesas" @onclick="AjustarCantidadMesasAsync">Aplicar</button>
+                        </div>
                         <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaMesaAsync">+ Nueva mesa</button>
                     </Toolbar>
                     <Header>
@@ -534,7 +549,10 @@
                                 <td>@mesa.Nombre</td>
                                 <td>@(mesa.Capacidad?.ToString() ?? "-")</td>
                                 <td>@(mesa.Activo ? "Sí" : "No")</td>
-                                <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarMesaAsync(mesa)">Editar</button></td>
+                                <td>
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarMesaAsync(mesa)">Editar</button>
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _mesaParaBorrar = mesa">Quitar</button>
+                                </td>
                             </tr>
                         }
                     </Rows>
@@ -604,6 +622,17 @@
         }
     }
 </section>
+
+
+<AlfaConfirmDialog Open="_confirmarBorrarPuntoVenta" Title="Borrar punto de venta"
+                   Message="@($"¿Borrar el punto de venta {_puntoVentaForm.Codigo} · {_puntoVentaForm.Nombre}?")"
+                   SecondaryMessage="Se borran también sus sectores, mesas y rubros. Si tiene pedidos, comandas, turnos de caja o llamados de mesa no se puede borrar."
+                   ConfirmLabel="Borrar" Loading="_borrandoPuntoVenta" OnConfirm="BorrarPuntoVentaAsync" OnCancel="() => _confirmarBorrarPuntoVenta = false" />
+
+<AlfaConfirmDialog Open="_mesaParaBorrar is not null" Title="Quitar mesa"
+                   Message="@($"¿Quitar la mesa {_mesaParaBorrar?.Codigo} · {_mesaParaBorrar?.Nombre}?")"
+                   SecondaryMessage="Se borra del sector. Si ya tuvo pedidos, llamados o reservas no se puede borrar: desmarcá «Activa»."
+                   ConfirmLabel="Quitar" Loading="_ajustandoMesas" OnConfirm="BorrarMesaAsync" OnCancel="() => _mesaParaBorrar = null" />
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -820,6 +849,34 @@
             ? decimal.Round(parsed, 2, MidpointRounding.AwayFromZero)
             : fallback;
 
+    private bool _confirmarBorrarPuntoVenta;
+    private bool _borrandoPuntoVenta;
+
+    private async Task BorrarPuntoVentaAsync()
+    {
+        if (_puntoVentaForm.Id is not > 0 || _borrandoPuntoVenta) return;
+        _borrandoPuntoVenta = true;
+        _feedback = null;
+        var id = _puntoVentaForm.Id.Value;
+        var nombre = _puntoVentaForm.Nombre;
+        var result = await UiOps.RunAsync(() => PosConfigSvc.DeletePuntoVentaAsync(id), "No se pudo borrar el punto de venta.");
+        _borrandoPuntoVenta = false;
+        _confirmarBorrarPuntoVenta = false;
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success("Borrado", $"Se borró el punto de venta {nombre}.");
+        _selectedPuntoVenta = null;
+        _selectedSector = null;
+        _sectores = [];
+        _mesas = [];
+        CancelarPuntoVentaForm();
+        await LoadPuntosVentaAsync();
+    }
+
     private async Task GuardarPuntoVentaAsync()
     {
         _feedback = null;
@@ -843,6 +900,25 @@
         _feedback = AppUiMessage.Success("Guardado", "El punto de venta se guardó correctamente.");
         _showPuntoVentaForm = false;
         await LoadPuntosVentaAsync();
+
+        // Salón: se muestra el salón (el servicio arma sector, barra y mesas si todavía no tenía sectores).
+        if (_puntoVentaForm.Modo == PuntoVentaModoKeys.Salon && _puntosVenta.FirstOrDefault(p => p.Id == result.Value) is { } guardado)
+        {
+            var eraNuevo = _puntoVentaForm.Id is not > 0;
+            await SeleccionarPuntoVentaAsync(guardado);
+            _showPuntoVentaForm = false;
+            if (_sectores.FirstOrDefault() is { } primero)
+            {
+                await SeleccionarSectorAsync(primero);
+                _showSectorForm = false;
+                if (eraNuevo)
+                {
+                    var conBarra = _mesas.Any(EsBarra);
+                    _feedback = AppUiMessage.Success("Guardado",
+                        $"Se armó el sector {primero.Nombre}{(conBarra ? " con barra y" : " con")} {_mesas.Count(m => !EsBarra(m))} mesa(s). Podés cambiar la cantidad con «Aplicar».");
+                }
+            }
+        }
     }
 
     private async Task LoadSectoresAsync(int idPuntoVenta)
@@ -911,6 +987,70 @@
         _mesas = result.Success && result.Value is not null ? result.Value.ToList() : [];
         if (!result.Success)
             _feedback = result.Feedback;
+        var activas = _mesas.Where(m => m.Activo && !EsBarra(m)).ToList();
+        _cantidadMesas = activas.Count;
+        if (activas.Select(m => m.Capacidad).FirstOrDefault(c => c is > 0) is { } capacidad)
+            _capacidadMesas = capacidad;
+    }
+
+    private static bool EsBarra(PuntoVentaMesaDto mesa)
+        => string.Equals(mesa.Codigo?.Trim(), "BAR", StringComparison.OrdinalIgnoreCase);
+
+    private int _cantidadMesas;
+    private int _capacidadMesas = 4;
+    private bool _redistribuirMesas = true;
+    private bool _ajustandoMesas;
+    private PuntoVentaMesaDto? _mesaParaBorrar;
+
+    private async Task AjustarCantidadMesasAsync()
+    {
+        if (_selectedSector is null || _ajustandoMesas) return;
+        _ajustandoMesas = true;
+        _feedback = null;
+        var idSector = _selectedSector.Id;
+        var result = await UiOps.RunAsync(
+            () => PosConfigSvc.AjustarCantidadMesasAsync(idSector, _cantidadMesas, _capacidadMesas, _redistribuirMesas, AppUserSession.GetCurrentUserName(string.Empty)),
+            "No se pudo cambiar la cantidad de mesas.");
+        _ajustandoMesas = false;
+        if (!result.Success || result.Value is null)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        var r = result.Value;
+        var partes = new List<string>();
+        if (r.Agregadas > 0) partes.Add($"{r.Agregadas} nueva(s)");
+        if (r.Reactivadas > 0) partes.Add($"{r.Reactivadas} reactivada(s)");
+        if (r.Borradas > 0) partes.Add($"{r.Borradas} borrada(s)");
+        if (r.Desactivadas > 0) partes.Add($"{r.Desactivadas} dada(s) de baja porque ya tenían pedidos");
+        _feedback = AppUiMessage.Success("Mesas actualizadas",
+            $"{_selectedSector.Nombre} quedó con {_cantidadMesas} mesa(s){(partes.Count > 0 ? ": " + string.Join(", ", partes) : string.Empty)}."
+            + (_redistribuirMesas ? " Se repartieron en el plano." : string.Empty));
+        _showMesaForm = false;
+        await LoadMesasAsync(idSector);
+    }
+
+    private async Task BorrarMesaAsync()
+    {
+        if (_mesaParaBorrar is null || _ajustandoMesas) return;
+        _ajustandoMesas = true;
+        _feedback = null;
+        var mesa = _mesaParaBorrar;
+        var result = await UiOps.RunAsync(() => PosConfigSvc.DeleteMesaAsync(mesa.Id), "No se pudo borrar la mesa.");
+        _ajustandoMesas = false;
+        _mesaParaBorrar = null;
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success("Mesa quitada", $"Se borró la mesa {mesa.Nombre}.");
+        if (_mesaForm.Id == mesa.Id)
+            CancelarMesaForm();
+        if (_selectedSector is not null)
+            await LoadMesasAsync(_selectedSector.Id);
     }
 
     private Task NuevaMesaAsync()
