@@ -88,7 +88,7 @@ Criterio aplicado:
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/AyudaHistorialService.cs`
 - Propósito: historial de la ayuda con IA por usuario y conversación (guardar, listar, abrir y borrar).
-- Datos que usa: `dbo.AYUDA_IA_MENSAJES` (script `2026-11-26-003__ayuda_ia_historial.sql`) y `TA_CONFIGURACION.AYUDA_IA_HISTORIAL_DIAS` (60 por defecto): al guardar borra lo más viejo.
+- Datos que usa: `dbo.AYUDA_IA_MENSAJES` (script `2026-11-26-010__ayuda_ia_historial.sql`) y `TA_CONFIGURACION.AYUDA_IA_HISTORIAL_DIAS` (60 por defecto): al guardar borra lo más viejo.
 - Observaciones: sin la tabla (base sin actualizar) la ayuda funciona igual, sin historial. Las fuentes guardadas se vuelven a leer de los manuales y se descartan las que ya no existen.
 
 ### FiltroPeriodo
