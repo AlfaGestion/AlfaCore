@@ -9207,6 +9207,7 @@ public sealed partial class ConversacionesService(
             }
 
             await ResponderConReintentoAsync(texto, null).ConfigureAwait(false);
+            MarcarEntranteAtendidoBot(idConversacion, ultimoAtendido);
             for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
             {
                 // La respuesta recién mandada es posterior al mensaje nuevo y lo haría figurar como
@@ -9231,6 +9232,7 @@ public sealed partial class ConversacionesService(
                     break;
 
                 await ResponderConReintentoAsync(textoNuevo, automaticoConocido).ConfigureAwait(false);
+                MarcarEntranteAtendidoBot(idConversacion, ultimoAtendido);
             }
         }
         catch (Exception ex)
@@ -9366,94 +9368,112 @@ public sealed partial class ConversacionesService(
     // OpenAI admite imágenes de hasta 20 MB; una foto de WhatsApp pesa bastante menos.
     private const int TamanoMaximoImagenBot = 8 * 1024 * 1024;
 
+    // Tope de archivos de una misma tanda que se le pasan a la IA (fotos que mira, audios que transcribe).
+    private const int MaxAdjuntosTandaBot = 4;
+
     /// <summary>
-    /// Imagen (jpg/png/webp/gif) adjunta al último mensaje entrante, como data URI para el modelo.
-    /// Null si no hay, si es muy grande o si no se puede leer.
+    /// Fotos (jpg/png/webp/gif) de los mensajes del cliente todavía sin responder, en orden, como data URI
+    /// para el modelo. Vacío si no hay o no se pueden leer; las muy grandes se saltean.
     /// </summary>
-    private async Task<string?> CargarImagenUltimoEntranteAsync(long idConversacion, CancellationToken ct)
+    private async Task<IReadOnlyList<string>> CargarImagenesSinResponderAsync(long idConversacion, CancellationToken ct)
     {
         try
         {
-            var adjunto = await LeerUltimoAdjuntoEntranteAsync(idConversacion, "IMAGE", "image/", ct).ConfigureAwait(false);
-            if (adjunto is not { } a || a.Bytes.Length > TamanoMaximoImagenBot)
-                return null;
-
-            var mime = a.MimeType.Split(';')[0].Trim().ToLowerInvariant();
-            if (mime is not ("image/jpeg" or "image/png" or "image/webp" or "image/gif"))
-                return null;
-
-            return $"data:{mime};base64,{Convert.ToBase64String(a.Bytes)}";
+            var adjuntos = await LeerAdjuntosSinResponderAsync(idConversacion, "IMAGE", "image/", ct).ConfigureAwait(false);
+            var imagenes = new List<string>();
+            foreach (var a in adjuntos)
+            {
+                var mime = a.MimeType.Split(';')[0].Trim().ToLowerInvariant();
+                if (a.Bytes.Length <= TamanoMaximoImagenBot && mime is "image/jpeg" or "image/png" or "image/webp" or "image/gif")
+                    imagenes.Add($"data:{mime};base64,{Convert.ToBase64String(a.Bytes)}");
+            }
+            return imagenes;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await _appEvents.LogErrorAsync("Conversaciones", "BotImagen", ex,
                 "No se pudo leer la imagen entrante; el asistente siguió sin verla.",
                 new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
-            return null;
+            return [];
         }
     }
 
     /// <summary>
-    /// Último adjunto del tipo pedido del último mensaje entrante (ya descargado por
-    /// StoreIncomingAttachmentsAsync): archivo local o, si no está, el contenido durable de CONV_ADJUNTOS.
+    /// Adjuntos del tipo pedido de los mensajes entrantes posteriores a nuestra última respuesta (los
+    /// mismos que une <see cref="GetTextoEntrantesSinResponderAsync"/>), en orden y a lo sumo
+    /// <see cref="MaxAdjuntosTandaBot"/> (los más recientes). Ya descargados por StoreIncomingAttachmentsAsync:
+    /// archivo local o, si no está, el contenido durable de CONV_ADJUNTOS.
     /// </summary>
-    private async Task<(string Nombre, string MimeType, byte[] Bytes)?> LeerUltimoAdjuntoEntranteAsync(
+    private async Task<IReadOnlyList<(string Nombre, string MimeType, byte[] Bytes)>> LeerAdjuntosSinResponderAsync(
         long idConversacion, string tipoArchivo, string prefijoMime, CancellationToken ct)
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct).ConfigureAwait(false);
         var contenidoSql = await AttachmentContentSqlAsync(cn, "a", ct).ConfigureAwait(false);
         var sql = $"""
-            SELECT TOP (1) ISNULL(a.NombreArchivo, N''), ISNULL(a.MimeType, N''), ISNULL(a.RutaLocal, N''),
+            {SqlDesdeSinResponder}
+            SELECT TOP ({MaxAdjuntosTandaBot}) ISNULL(a.NombreArchivo, N''), ISNULL(a.MimeType, N''), ISNULL(a.RutaLocal, N''),
                    {contenidoSql}
             FROM dbo.CONV_ADJUNTOS a
-            WHERE a.IdMensaje = (SELECT MAX(m.IdMensaje) FROM dbo.CONV_MENSAJES m
-                                 WHERE m.IdConversacion = @Id AND m.Direction = N'ENTRANTE')
+            WHERE a.IdMensaje IN (SELECT TOP (8) m.IdMensaje FROM dbo.CONV_MENSAJES m
+                                  WHERE m.IdConversacion = @Id AND m.Direction = N'ENTRANTE' AND m.IdMensaje > @Desde
+                                    AND ISNULL(m.MessageType, N'') <> N'REACTION'
+                                  ORDER BY m.IdMensaje DESC)
               AND (UPPER(ISNULL(a.TipoArchivo, N'')) = @Tipo OR LOWER(ISNULL(a.MimeType, N'')) LIKE @Mime)
-            ORDER BY a.IdAdjunto DESC;
+            ORDER BY a.IdMensaje DESC, a.IdAdjunto DESC;
             """;
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Id", idConversacion);
         cmd.Parameters.AddWithValue("@Tipo", tipoArchivo);
         cmd.Parameters.AddWithValue("@Mime", prefijoMime + "%");
+        AgregarParametrosDesdeSinResponder(cmd, idConversacion, null);
+        var adjuntos = new List<(string, string, byte[])>();
         await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await rd.ReadAsync(ct).ConfigureAwait(false))
-            return null;
-
-        var nombre = rd.GetString(0);
-        var mime = rd.GetString(1);
-        var ruta = rd.GetString(2);
-        var bytes = !string.IsNullOrWhiteSpace(ruta) && File.Exists(ruta)
-            ? await File.ReadAllBytesAsync(ruta, ct).ConfigureAwait(false)
-            : rd.IsDBNull(3) ? null : (byte[])rd.GetValue(3);
-        return bytes is { Length: > 0 } ? (nombre, mime, bytes) : null;
+        while (await rd.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var ruta = rd.GetString(2);
+            var bytes = !string.IsNullOrWhiteSpace(ruta) && File.Exists(ruta)
+                ? await File.ReadAllBytesAsync(ruta, ct).ConfigureAwait(false)
+                : rd.IsDBNull(3) ? null : (byte[])rd.GetValue(3);
+            if (bytes is { Length: > 0 })
+                adjuntos.Add((rd.GetString(0), rd.GetString(1), bytes));
+        }
+        adjuntos.Reverse();
+        return adjuntos;
     }
 
     /// <summary>Mensaje que es sólo una nota de voz/audio, sin texto propio ("[audio]").</summary>
     internal static bool EsAudioSinTexto(string? texto)
         => Regex.IsMatch((texto ?? string.Empty).Trim(), @"^\[audio\](\s.*)?$", RegexOptions.IgnoreCase);
 
+    /// <summary>Algún renglón de lo que mandó el cliente es una nota de voz sin texto.</summary>
+    internal static bool TieneAudioSinTexto(string? texto)
+        => (texto ?? string.Empty).Split('\n').Any(EsAudioSinTexto);
+
     /// <summary>
-    /// Transcribe el audio adjunto al último mensaje entrante (ya descargado por StoreIncomingAttachmentsAsync).
-    /// Lee el archivo local o, si no está, el contenido durable de CONV_ADJUNTOS. Null si no hay audio o falla.
+    /// Transcribe, en orden, los audios de los mensajes del cliente todavía sin responder (ya descargados por
+    /// StoreIncomingAttachmentsAsync). Si uno falla se corta ahí: los siguientes quedan como "[audio]".
     /// </summary>
-    private async Task<string?> TranscribirUltimoAudioEntranteAsync(long idConversacion, CancellationToken ct)
+    private async Task<IReadOnlyList<string>> TranscribirAudiosSinResponderAsync(long idConversacion, CancellationToken ct)
     {
+        var transcripciones = new List<string>();
         try
         {
-            var adjunto = await LeerUltimoAdjuntoEntranteAsync(idConversacion, "AUDIO", "audio/", ct).ConfigureAwait(false);
-            if (adjunto is not { } a)
-                return null;
-
-            return await asistenteService.TranscribirAudioAsync(a.Bytes, a.Nombre, a.MimeType, ct).ConfigureAwait(false);
+            foreach (var a in await LeerAdjuntosSinResponderAsync(idConversacion, "AUDIO", "audio/", ct).ConfigureAwait(false))
+            {
+                var t = await asistenteService.TranscribirAudioAsync(a.Bytes, a.Nombre, a.MimeType, ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(t))
+                    break;
+                transcripciones.Add(t.Trim());
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await _appEvents.LogErrorAsync("Conversaciones", "BotTranscripcionAudio", ex,
                 "No se pudo transcribir el audio entrante; el asistente siguió con la repregunta.",
                 new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
-            return null;
         }
+        return transcripciones;
     }
 
     private async Task<long> GetLastIncomingIdAsync(long idConversacion, CancellationToken ct)
@@ -9512,12 +9532,8 @@ public sealed partial class ConversacionesService(
     /// </summary>
     private async Task<string> GetTextoEntrantesSinResponderAsync(long idConversacion, long? desdeIdMensaje, CancellationToken ct)
     {
-        const string sql = """
-            DECLARE @Desde bigint;
-            SET @Desde = @DesdeParam;
-            IF @Desde IS NULL
-                SELECT @Desde = ISNULL(MAX(IdMensaje), 0) FROM dbo.CONV_MENSAJES
-                WHERE IdConversacion = @Id AND Direction = N'SALIENTE';
+        const string sql = $"""
+            {SqlDesdeSinResponder}
             SELECT TOP (8) ISNULL(MessageType, N''),
                    CASE WHEN ISNULL(Origen, N'') = N'ENCUESTA' THEN N'' ELSE ISNULL(CAST(Texto AS nvarchar(max)), N'') END
             FROM dbo.CONV_MENSAJES
@@ -9531,7 +9547,7 @@ public sealed partial class ConversacionesService(
             await cn.OpenAsync(ct).ConfigureAwait(false);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Id", idConversacion);
-            cmd.Parameters.Add("@DesdeParam", System.Data.SqlDbType.BigInt).Value = desdeIdMensaje is long d ? d : DBNull.Value;
+            AgregarParametrosDesdeSinResponder(cmd, idConversacion, desdeIdMensaje);
             await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await rd.ReadAsync(ct).ConfigureAwait(false))
                 mensajes.Add((rd.GetString(0), rd.GetString(1)));
@@ -9543,20 +9559,92 @@ public sealed partial class ConversacionesService(
     }
 
     /// <summary>
-    /// Une en orden los textos de varios mensajes seguidos del cliente, uno por renglón. Si el último no
-    /// es texto (audio, imagen, documento) se usa sólo ese, porque el bot lo trata aparte (transcripción,
-    /// lectura de la imagen).
+    /// Une en orden lo que mandó el cliente en varios mensajes seguidos, uno por renglón, incluidas fotos y
+    /// audios con su marcador ("[image]", "[audio]") o su texto. El bot después mira todas las fotos y
+    /// transcribe todos los audios de la tanda (<see cref="ReemplazarAudios"/>, <see cref="ReemplazarImagenes"/>):
+    /// antes se usaba sólo el último y "[foto] / me sale este cartel" se contestaba "¿qué mensaje te aparece?"
+    /// (charlas reales de ALFANET repetidas, 2026-11-25).
     /// </summary>
     internal static string UnirMensajesSinResponder(IReadOnlyList<(string Tipo, string Texto)> mensajes)
-    {
-        if (mensajes.Count == 0)
-            return string.Empty;
-        var ultimo = mensajes[^1];
-        if (!string.Equals(ultimo.Tipo, "TEXT", StringComparison.OrdinalIgnoreCase))
-            return (ultimo.Texto ?? string.Empty).Trim();
-        return string.Join("\n", mensajes
-            .Where(m => string.Equals(m.Tipo, "TEXT", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(m.Texto))
+        => string.Join("\n", mensajes
+            .Where(m => !string.IsNullOrWhiteSpace(m.Texto))
             .Select(m => m.Texto.Trim()));
+
+    /// <summary>
+    /// Cambia cada renglón "[audio]" por su transcripción, en orden. Un solo audio queda como antes: el
+    /// texto es la transcripción. Si hay menos transcripciones que audios, los que faltan quedan igual.
+    /// </summary>
+    internal static string ReemplazarAudios(string texto, IReadOnlyList<string> transcripciones)
+    {
+        var siguiente = 0;
+        var renglones = (texto ?? string.Empty).Split('\n').Select(r =>
+        {
+            if (!EsAudioSinTexto(r) || siguiente >= transcripciones.Count)
+                return r;
+            var resto = Regex.Replace(r.Trim(), @"^\[audio\]\s*", string.Empty, RegexOptions.IgnoreCase);
+            var t = transcripciones[siguiente++].Trim();
+            return resto.Length > 0 ? $"{t} {resto}" : t;
+        });
+        return string.Join("\n", renglones);
+    }
+
+    /// <summary>
+    /// Con las fotos ya pasadas a la IA: si todo lo que mandó son fotos, el texto fijo de "imagen sin
+    /// texto"; si no, cada "[image]" suelto se nombra como foto adjunta y la leyenda queda como texto.
+    /// </summary>
+    internal static string ReemplazarImagenes(string texto)
+    {
+        var renglones = (texto ?? string.Empty).Split('\n').Where(r => r.Trim().Length > 0).ToList();
+        if (renglones.Count > 0 && renglones.All(r => Regex.IsMatch(r.Trim(), @"^\[(image|sticker)\]$", RegexOptions.IgnoreCase)))
+            return TextoImagenSinTexto;
+        return string.Join("\n", renglones.Select(r =>
+        {
+            var limpio = r.Trim();
+            if (Regex.IsMatch(limpio, @"^\[(image|sticker)\]$", RegexOptions.IgnoreCase))
+                return TextoImagenEnTanda;
+            return Regex.Replace(limpio, @"^\[image\]\s+", string.Empty, RegexOptions.IgnoreCase);
+        }));
+    }
+
+    internal const string TextoImagenEnTanda = "(mandó una imagen)";
+
+    // Último mensaje del cliente que el bot ya atendió, por base y conversación, contestara o no. Cuando calla
+    // a propósito (ya derivó y nadie del equipo respondió) no queda ninguna respuesta que marque el corte, y
+    // cada mensaje nuevo se juntaba con la consulta vieja: la IA volvía a derivar y el bot no contestaba más,
+    // ni un "gracias" (charlas reales de ALFANET repetidas, 2026-11-25). En memoria: si el proceso se reinicia
+    // se vuelve a cortar en nuestra última respuesta, como antes. El historial completo la IA lo ve igual.
+    private static readonly ConcurrentDictionary<string, long> EntranteAtendidoBot = new(StringComparer.Ordinal);
+
+    private string ClaveEntranteAtendidoBot(long idConversacion)
+        => $"{ConnectionString}|{idConversacion.ToString(CultureInfo.InvariantCulture)}";
+
+    private void MarcarEntranteAtendidoBot(long idConversacion, long idMensaje)
+    {
+        if (idMensaje > 0)
+            EntranteAtendidoBot.AddOrUpdate(ClaveEntranteAtendidoBot(idConversacion), idMensaje, (_, actual) => Math.Max(actual, idMensaje));
+    }
+
+    /// <summary>
+    /// Desde dónde cuenta "lo que el cliente escribió y no se atendió": el corte explícito o, si no hay, el
+    /// mayor entre nuestra última respuesta y el último mensaje que el bot ya atendió. Requiere @Id,
+    /// @DesdeParam y @Atendido (<see cref="AgregarParametrosDesdeSinResponder"/>).
+    /// </summary>
+    private const string SqlDesdeSinResponder = """
+        DECLARE @Desde bigint;
+        SET @Desde = @DesdeParam;
+        IF @Desde IS NULL
+        BEGIN
+            SELECT @Desde = ISNULL(MAX(IdMensaje), 0) FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'SALIENTE';
+            IF @Atendido > @Desde SET @Desde = @Atendido;
+        END
+        """;
+
+    private void AgregarParametrosDesdeSinResponder(SqlCommand cmd, long idConversacion, long? desdeIdMensaje)
+    {
+        cmd.Parameters.Add("@DesdeParam", System.Data.SqlDbType.BigInt).Value = desdeIdMensaje is long d ? d : DBNull.Value;
+        cmd.Parameters.Add("@Atendido", System.Data.SqlDbType.BigInt).Value =
+            EntranteAtendidoBot.TryGetValue(ClaveEntranteAtendidoBot(idConversacion), out var atendido) ? atendido : 0L;
     }
 
     private async Task MarcarBotPendienteProcesadoAsync(long idPendiente, CancellationToken ct)
@@ -9692,13 +9780,15 @@ public sealed partial class ConversacionesService(
                 // escrito. Va después de los cortes (ya respondido, humano, tope de créditos) para no
                 // pagar transcripciones que no se van a usar; si falla o está apagado queda la
                 // repregunta de ConstruirAclaracionMediaSinTexto ("no puedo escucharlo").
-                if (config.AsistenteTranscribeAudios && EsAudioSinTexto(texto))
+                // Todos los audios de la tanda, en orden (2026-11-25): cada "[audio]" se cambia por lo que dijo.
+                if (config.AsistenteTranscribeAudios && TieneAudioSinTexto(texto))
                 {
-                    var transcripcion = await TranscribirUltimoAudioEntranteAsync(idConversacion, token).ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(transcripcion))
+                    var transcripciones = await TranscribirAudiosSinResponderAsync(idConversacion, token).ConfigureAwait(false);
+                    if (transcripciones.Count > 0)
                     {
-                        texto = transcripcion;
-                        await AddInternalEventCoreAsync(idConversacion, $"🎙️ Transcripción del audio: «{Truncar(transcripcion, 1500)}»", null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                        texto = ReemplazarAudios(texto, transcripciones);
+                        foreach (var transcripcion in transcripciones)
+                            await AddInternalEventCoreAsync(idConversacion, $"🎙️ Transcripción del audio: «{Truncar(transcripcion, 1500)}»", null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
 
                         if (!esUrgente && ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras))
                         {
@@ -9714,15 +9804,15 @@ public sealed partial class ConversacionesService(
                 // Imagen (F07, 2026-10-27): se le pasa al modelo la imagen del último mensaje (foto,
                 // captura de error). Sin texto propio se reemplaza "[image]" para que no corte la
                 // repregunta fija y lo que vio queda como nota interna (ej. un ID de AnyDesk).
+                // Con varias fotos en la tanda (o foto + "me sale este cartel") la IA las ve todas (2026-11-25).
                 IReadOnlyList<string>? imagenesBot = null;
                 if (config.AsistenteLeeImagenes)
                 {
-                    var imagen = await CargarImagenUltimoEntranteAsync(idConversacion, token).ConfigureAwait(false);
-                    if (imagen is not null)
+                    var imagenes = await CargarImagenesSinResponderAsync(idConversacion, token).ConfigureAwait(false);
+                    if (imagenes.Count > 0)
                     {
-                        imagenesBot = [imagen];
-                        if (EsImagenSinTexto(texto))
-                            texto = TextoImagenSinTexto;
+                        imagenesBot = imagenes;
+                        texto = ReemplazarImagenes(texto);
                     }
                 }
 
@@ -9966,6 +10056,9 @@ public sealed partial class ConversacionesService(
                     resueltoSoloPorKnowledge = false;
 
                 ConversacionAsistenteRespuesta? result;
+                // Resumen del caso que arma la IA: título del ticket aunque después se cambie la respuesta
+                // (p. ej. "nunca dos aclaraciones seguidas").
+                var resumenCasoIa = string.Empty;
                 if (correccionDirecta is not null)
                 {
                     result = correccionDirecta.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
@@ -10020,6 +10113,7 @@ public sealed partial class ConversacionesService(
                         linkCatalogoParaLead: linkCatalogoParaLead,
                         imagenesDataUri: imagenesBot,
                         ct: token).ConfigureAwait(false);
+                    resumenCasoIa = result?.ResumenCaso ?? string.Empty;
 
                     if (imagenesBot is not null && !string.IsNullOrWhiteSpace(result?.ImagenDescripcion))
                     {
@@ -10234,7 +10328,7 @@ public sealed partial class ConversacionesService(
 
                 if (tipo == "DERIVA" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && abrirTicketSegunIa)
                 {
-                    numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, config.BotTicketEtiqueta, token).ConfigureAwait(false);
+                    numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, resumenCasoIa, config.BotTicketEtiqueta, token).ConfigureAwait(false);
                     if (numeroTicketBot is int numero)
                         respuesta = $"{respuesta}\n\nRegistramos tu consulta con el número de ticket #{numero.ToString(CultureInfo.InvariantCulture)}.";
                 }
@@ -11119,7 +11213,15 @@ public sealed partial class ConversacionesService(
     /// registrado sin cortar la respuesta al cliente). TicketsService se resuelve en el momento porque
     /// depende de este servicio.
     /// </summary>
-    private async Task<int?> TryCrearTicketBotAsync(long idConversacion, string texto, string? etiqueta, CancellationToken ct)
+    /// <summary>Título del ticket del bot: el resumen de la IA o, si no vino, lo que escribió el cliente.</summary>
+    internal static string TituloTicketBot(string? texto, string? resumenCaso)
+    {
+        var tema = string.IsNullOrWhiteSpace(resumenCaso) ? texto ?? string.Empty : resumenCaso;
+        // Varios mensajes seguidos llegan unidos por renglón: en el título van en una sola línea.
+        return $"Consulta sin resolver: {Truncar(Regex.Replace(tema, @"\s*\r?\n\s*", " / ").Trim(), 80)}";
+    }
+
+    private async Task<int?> TryCrearTicketBotAsync(long idConversacion, string texto, string? resumenCaso, string? etiqueta, CancellationToken ct)
     {
         if (serviceProvider?.GetService(typeof(ITicketsService)) is not ITicketsService ticketsService)
             return null;
@@ -11180,9 +11282,10 @@ public sealed partial class ConversacionesService(
 
             var idTicket = await ticketsService.CreateAsync(new TicketCreateRequest
             {
-                // Varios mensajes seguidos llegan unidos por renglón: en el título van en una sola línea.
-                Titulo = $"Consulta sin resolver: {Truncar(Regex.Replace(texto ?? string.Empty, @"\s*\r?\n\s*", " / ").Trim(), 80)}",
-                Descripcion = $"El asistente no encontró respuesta a esta consulta.\n\nMensaje del cliente:\n{texto}",
+                Titulo = TituloTicketBot(texto, resumenCaso),
+                Descripcion = string.IsNullOrWhiteSpace(resumenCaso)
+                    ? $"El asistente no encontró respuesta a esta consulta.\n\nMensaje del cliente:\n{texto}"
+                    : $"El asistente no encontró respuesta a esta consulta.\n\nDe qué se trata: {resumenCaso.Trim()}\n\nÚltimo mensaje del cliente:\n{texto}",
                 Prioridad = 1,
                 IdConversacion = idConversacion,
                 IdMensajes = idMensaje is long id && id > 0 ? [id] : [],

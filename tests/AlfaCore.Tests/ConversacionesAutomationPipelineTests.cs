@@ -1493,9 +1493,34 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Equal(string.Empty, ConversacionesService.UnirMensajesSinResponder([]));
     }
 
+    // Charlas reales de ALFANET repetidas (2026-11-25): "[foto] / me sale este cartel" perdía la foto y
+    // "hola / [audio]" perdía el texto. Ahora va todo, en orden, y el bot mira y escucha cada archivo.
     [Fact]
-    public void UnirMensajesSinResponder_SiElUltimoEsAudioOImagen_UsaSoloEse()
-        => Assert.Equal("[audio]", ConversacionesService.UnirMensajesSinResponder([("TEXT", "hola"), ("AUDIO", "[audio]")]));
+    public void UnirMensajesSinResponder_IncluyeFotosYAudiosEnOrden()
+    {
+        Assert.Equal("hola\n[audio]", ConversacionesService.UnirMensajesSinResponder([("TEXT", "hola"), ("AUDIO", "[audio]")]));
+        Assert.Equal("[image]\nme pone este msj", ConversacionesService.UnirMensajesSinResponder([("IMAGE", "[image]"), ("TEXT", "me pone este msj")]));
+    }
+
+    [Fact]
+    public void ReemplazarAudios_CadaAudioPorLoQueDijo()
+    {
+        Assert.Equal("no factura la caja 2", ConversacionesService.ReemplazarAudios("[audio]", ["no factura la caja 2"]));
+        Assert.Equal("hola\nprimero\nsegundo", ConversacionesService.ReemplazarAudios("hola\n[audio]\n[audio]", ["primero", "segundo"]));
+        Assert.Equal("primero\n[audio]", ConversacionesService.ReemplazarAudios("[audio]\n[audio]", ["primero"]));
+        Assert.True(ConversacionesService.TieneAudioSinTexto("hola\n[audio]"));
+        Assert.False(ConversacionesService.TieneAudioSinTexto("mandé un audio ayer"));
+    }
+
+    [Fact]
+    public void ReemplazarImagenes_SoloFotos_O_FotoConTexto()
+    {
+        Assert.Equal(ConversacionesService.TextoImagenSinTexto, ConversacionesService.ReemplazarImagenes("[image]"));
+        Assert.Equal(ConversacionesService.TextoImagenSinTexto, ConversacionesService.ReemplazarImagenes("[image]\n[image]"));
+        Assert.Equal($"{ConversacionesService.TextoImagenEnTanda}\nme pone este msj",
+            ConversacionesService.ReemplazarImagenes("[image]\nme pone este msj"));
+        Assert.Equal("Apareció este cartel", ConversacionesService.ReemplazarImagenes("Apareció este cartel"));
+    }
 
     [Fact]
     public void FormatearResultadoPrecio_SinCoincidencias_Prioriza_LaInformacionDelNegocio()

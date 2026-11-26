@@ -115,6 +115,32 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.DoesNotContain("?", ConversacionesService.RespuestaTemaResuelto, StringComparison.Ordinal);
     }
 
+    // Charlas reales repetidas (2026-11-25): después de derivar, el bot callaba a propósito y cada mensaje
+    // nuevo se juntaba con la consulta vieja; la IA volvía a derivar y ya no contestaba ni un "gracias".
+    [Fact]
+    public void LoPendiente_ArrancaDespuesDeLoQueElBotYaAtendio_AunqueNoHayaContestado()
+    {
+        var source = Fuente();
+        Assert.Contains("IF @Atendido > @Desde SET @Desde = @Atendido;", source, StringComparison.Ordinal);
+        Assert.Matches(@"await ResponderConReintentoAsync\(texto, null\)\.ConfigureAwait\(false\);\s*MarcarEntranteAtendidoBot\(idConversacion, ultimoAtendido\);", source);
+        Assert.Matches(@"await ResponderConReintentoAsync\(textoNuevo, automaticoConocido\)\.ConfigureAwait\(false\);\s*MarcarEntranteAtendidoBot\(idConversacion, ultimoAtendido\);", source);
+        // Fotos y audios de la tanda salen del mismo corte que el texto.
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(source, @"\{SqlDesdeSinResponder\}").Count);
+    }
+
+    // Tickets "4", "Ok", "En bariloche" (charlas reales repetidas, 2026-11-26): el título lo arma la IA con la charla.
+    [Fact]
+    public void TicketDelBot_TituloConElResumenDeLaIa()
+    {
+        Assert.Contains("\"resumen_caso\": \"...\"", Prompt(), StringComparison.Ordinal);
+        Assert.Equal("Cajas 2, 3 y 4 no actualizan precios",
+            ConversacionAsistenteService.ParseRespuesta("""{"tipo":"DERIVA","puede_responder":false,"resumen_caso":" Cajas 2, 3 y 4 no actualizan precios ","respuesta":"Le paso"}""")!.ResumenCaso);
+        Assert.Equal("Consulta sin resolver: Cajas 2, 3 y 4 no actualizan precios",
+            ConversacionesService.TituloTicketBot("2,3y4", "Cajas 2, 3 y 4 no actualizan precios"));
+        Assert.Equal("Consulta sin resolver: no anda / la caja", ConversacionesService.TituloTicketBot("no anda\nla caja", ""));
+        Assert.Contains("resumenCasoIa = result?.ResumenCaso ?? string.Empty;", Fuente(), StringComparison.Ordinal);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

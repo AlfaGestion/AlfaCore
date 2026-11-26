@@ -588,6 +588,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si el cliente avisa que el problema que había consultado ya se resolvió: no es SEGUIMIENTO ni DERIVA. tipo=\"RESUELVE\", \"puede_responder\": true, \"tema_resuelto\": true, y en \"respuesta\" un agradecimiento breve que cierre la charla, sin hacer preguntas. En cualquier otro caso \"tema_resuelto\": false.");
         sb.AppendLine("- DERIVA es sólo cuando hace falta que una persona del equipo tome el tema. Si vos le hacés una pregunta para poder ayudarlo, eso es ACLARA.");
         sb.AppendLine("- Cuando derivás, decidí en \"abrir_ticket\" si hace falta registrar un ticket, leyendo el mensaje junto con toda la conversación. Un ticket es para un tema que el equipo tiene que trabajar y al que hay que hacerle seguimiento. Si con lo que hay en la charla basta con que una persona del equipo lo lea y le conteste por acá, no hace falta ticket: \"abrir_ticket\": false. Si dudás, true.");
+        sb.AppendLine("- En \"resumen_caso\" poné en una línea corta de qué se trata lo que plantea el cliente, juntando lo que dijo en toda la charla (qué le pasa, dónde, con qué), escrito para que alguien del equipo lo entienda sin leer el chat. Si sólo saluda o agradece, dejalo vacío.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 
         if (fueraDeHorario)
@@ -602,8 +603,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
         sb.AppendLine();
         sb.AppendLine(precioRequiereIdentificacion
-            ? "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"tema_resuelto\": true/false, \"pide_precio\": true/false, \"respuesta\": \"...\"}."
-            : "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"tema_resuelto\": true/false, \"respuesta\": \"...\"}.");
+            ? "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"tema_resuelto\": true/false, \"pide_precio\": true/false, \"resumen_caso\": \"...\", \"respuesta\": \"...\"}."
+            : "Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false, \"tema_resuelto\": true/false, \"resumen_caso\": \"...\", \"respuesta\": \"...\"}.");
         return sb.ToString().Trim();
     }
 
@@ -746,7 +747,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             var temaResuelto = root.TryGetProperty("tema_resuelto", out var tr)
                 && (tr.ValueKind == JsonValueKind.True
                     || (tr.ValueKind == JsonValueKind.String && bool.TryParse(tr.GetString(), out var btr) && btr));
-            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen, AbrirTicket = abrirTicket, PidePrecio = pidePrecio, TemaResuelto = temaResuelto };
+            var resumenCaso = root.TryGetProperty("resumen_caso", out var rc) && rc.ValueKind == JsonValueKind.String
+                ? (rc.GetString() ?? string.Empty).Trim()
+                : string.Empty;
+            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen, AbrirTicket = abrirTicket, PidePrecio = pidePrecio, TemaResuelto = temaResuelto, ResumenCaso = resumenCaso };
         }
         catch (JsonException)
         {

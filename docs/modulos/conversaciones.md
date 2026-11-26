@@ -302,6 +302,33 @@ se dan datos privados; tope de créditos; nunca dos aclaraciones seguidas; filtr
 siguen siendo configuración de cada empresa. `EsMensajeSocial` queda sólo para no buscar en manuales y
 AlfaKnowledge ante un saludo (no decide la respuesta).
 
+### Prueba con charlas reales de ALFANET (2026-11-25/26)
+
+Se repitieron contra la base de pruebas (copia local, IA real, configuración del asistente de ALFANET copiada
+por un rato) 550 tramos de charlas reales del último mes: 1077 intervenciones del cliente con 339 fotos y
+audios, hasta la primera respuesta de una persona del equipo. Salieron dos fallas, corregidas:
+
+- **Fotos y audios de una tanda.** "[foto] / me sale este cartel" se contestaba "¿qué mensaje te aparece?":
+  la IA sólo veía el adjunto del último mensaje, y si el último era una foto se perdía el texto anterior.
+  Ahora lo pendiente va completo y en orden (`UnirMensajesSinResponder`), la IA ve hasta 4 fotos de la
+  tanda (`CargarImagenesSinResponderAsync`) y cada "[audio]" se cambia por su transcripción
+  (`ReemplazarAudios`).
+- **Bot mudo después de derivar.** Con el tema ya en manos del equipo el bot calla a propósito, pero sin
+  respuesta no quedaba marca de lo atendido: cada mensaje nuevo se juntaba con la consulta vieja, la IA
+  volvía a derivar y no contestaba más, ni un "gracias". Ahora lo pendiente arranca después del último
+  mensaje que el bot ya atendió, contestara o no (`MarcarEntranteAtendidoBot`, en memoria del proceso).
+- **Tickets con títulos sueltos** ("4", "Ok", "En bariloche"): el título era el último mensaje. Ahora la IA
+  devuelve `resumen_caso` (de qué se trata, con toda la charla) y es el título del ticket
+  (`TituloTicketBot`); si viene vacío, queda el mensaje como antes.
+
+Lo que sigue igual a propósito: con el tema ya en manos del equipo, si el cliente agrega datos (una foto
+del error, "te dejo acceso") el bot no repite la contención; el equipo los ve en la conversación.
+
+Para leer los resultados: cada tramo arranca como charla nueva del chat web, sin el historial ni el ticket
+abierto que tenía el cliente real. Por eso hay más tickets nuevos que en la realidad (en 166 de 219 casos el
+cliente ya tenía uno abierto) y algunos "¿a qué consulta te referís?". El reconocimiento por celular,
+videos y documentos no se pueden repetir por el chat web.
+
 ## Issues pendientes
 
 ### Issue 8. Completar flujo de envío WhatsApp

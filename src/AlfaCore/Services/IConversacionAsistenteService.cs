@@ -77,4 +77,10 @@ public sealed class ConversacionAsistenteRespuesta
     /// conversación (antes, una lista de frases como "ya anda"); false si no lo informa.
     /// </summary>
     public bool TemaResuelto { get; set; }
+
+    /// <summary>
+    /// De qué se trata el caso en una línea, armado por la IA con toda la charla. Es el título del ticket
+    /// que abre el bot: antes era el último mensaje y quedaban tickets "4" u "Ok" (charlas reales, 2026-11-26).
+    /// </summary>
+    public string ResumenCaso { get; set; } = string.Empty;
 }
