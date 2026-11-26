@@ -237,7 +237,8 @@ public sealed class PaymentFlowController(
             PaymentMethodId = approved ? order?.PaymentMethodId ?? string.Empty : string.Empty,
             Installments = approved ? order?.Installments ?? 0 : 0,
             ApprovedAmount = approved ? order?.ApprovedAmount ?? 0d : 0d,
-            StatusDetail = approved ? order?.StatusDetail ?? string.Empty : string.Empty
+            StatusDetail = approved ? order?.StatusDetail ?? string.Empty : string.Empty,
+            RawResponse = approved ? order?.Raw?.ToJsonString() ?? string.Empty : string.Empty
         };
 
     private static string MaskTerminalId(string terminalId)

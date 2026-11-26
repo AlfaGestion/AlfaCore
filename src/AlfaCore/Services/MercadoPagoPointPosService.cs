@@ -79,7 +79,12 @@ public sealed class MercadoPagoPointPosService(
             Approved = ordersService.IsApprovedStatus(order.Status),
             PaymentId = order.PaymentId,
             PaymentMethodType = order.PaymentMethodType,
-            CardType = order.CardType
+            CardType = order.CardType,
+            PaymentMethodId = order.PaymentMethodId,
+            Installments = order.Installments,
+            ApprovedAmount = order.ApprovedAmount,
+            StatusDetail = order.StatusDetail,
+            RawResponse = order.Raw?.ToJsonString() ?? string.Empty
         };
 
         await PersistirResultadoFinalAsync(order.Id, order.ExternalReference, (decimal)order.ApprovedAmount, result, ct);
@@ -130,12 +135,18 @@ public sealed class MercadoPagoPointPosService(
             await using var cmd = new SqlCommand("""
                 IF EXISTS (SELECT 1 FROM dbo.MP_POINT_ORDENES WHERE ExternalReference = @ExternalReference)
                     UPDATE dbo.MP_POINT_ORDENES
-                    SET Estado = @Estado, PaymentId = @PaymentId, MedioPago = @MedioPago, TipoTarjeta = @TipoTarjeta,
+                    SET Estado = @Estado, PaymentId = @PaymentId, MedioPago = @MedioPago, MedioPagoId = @MedioPagoId,
+                        TipoTarjeta = @TipoTarjeta, Cuotas = @Cuotas, ImporteAprobado = @ImporteAprobado,
+                        StatusDetail = @StatusDetail, RawUltimaRespuesta = @RawUltimaRespuesta,
                         FechaActualizacionUtc = GETUTCDATE()
                     WHERE ExternalReference = @ExternalReference;
                 ELSE
-                    INSERT INTO dbo.MP_POINT_ORDENES (IdOrderMp, ExternalReference, Estado, Importe, PaymentId, MedioPago, TipoTarjeta)
-                    VALUES (@IdOrderMp, @ExternalReference, @Estado, @Importe, @PaymentId, @MedioPago, @TipoTarjeta);
+                    INSERT INTO dbo.MP_POINT_ORDENES
+                        (IdOrderMp, ExternalReference, Estado, Importe, PaymentId, MedioPago, MedioPagoId,
+                         TipoTarjeta, Cuotas, ImporteAprobado, StatusDetail, RawUltimaRespuesta)
+                    VALUES
+                        (@IdOrderMp, @ExternalReference, @Estado, @Importe, @PaymentId, @MedioPago, @MedioPagoId,
+                         @TipoTarjeta, @Cuotas, @ImporteAprobado, @StatusDetail, @RawUltimaRespuesta);
                 """, cn);
             cmd.Parameters.AddWithValue("@IdOrderMp", (object?)idOrderMp ?? externalReference);
             cmd.Parameters.AddWithValue("@ExternalReference", externalReference);
@@ -143,7 +154,12 @@ public sealed class MercadoPagoPointPosService(
             cmd.Parameters.AddWithValue("@Importe", importe);
             cmd.Parameters.AddWithValue("@PaymentId", (object?)result.PaymentId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@MedioPago", (object?)result.PaymentMethodType ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@MedioPagoId", (object?)result.PaymentMethodId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@TipoTarjeta", (object?)result.CardType ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Cuotas", result.Installments);
+            cmd.Parameters.AddWithValue("@ImporteAprobado", result.ApprovedAmount);
+            cmd.Parameters.AddWithValue("@StatusDetail", (object?)result.StatusDetail ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@RawUltimaRespuesta", (object?)result.RawResponse ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(ct);
         }
         catch (Exception ex)
