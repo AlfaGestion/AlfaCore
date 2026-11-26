@@ -444,6 +444,10 @@ public sealed class ActualizacionesService(
         // 2026-11-26: la 003 la usó también archivos_tabla_comprobantes_menu_web (aplicado en ALFANET desde una copia
         // local) y el historial de la ayuda no corría nunca ahí; pasó a 010.
         ["2026-11-26-003__ayuda_ia_historial.sql"] = "2026-11-26-010__ayuda_ia_historial.sql",
+        // Ese mismo día otros dos scripts usaron la 003; las bases que ya pasaron la 003 no los corrían nunca.
+        ["2026-11-26-003__ventas_pos_catalogo_top.sql"] = "2026-11-26-011__ventas_pos_catalogo_top.sql",
+        // Aplicado en ALFANET desde una copia local con la 003 y todavía no publicado: se publica como 012.
+        ["2026-11-26-003__archivos_tabla_comprobantes_menu_web.sql"] = "2026-11-26-012__archivos_tabla_comprobantes_menu_web.sql",
     };
 
     /// <summary>
