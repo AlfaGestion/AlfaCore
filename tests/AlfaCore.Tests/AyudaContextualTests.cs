@@ -91,6 +91,59 @@ public sealed class AyudaContextualTests
         Assert.DoesNotContain(AyudaManuales.Temas.SelectMany(t=>AyudaManuales.Obtener(t.Clave).Articulos),a=>a.Id=="indice" || a.Contenido.Length==0);
     }
 
+    // "DE DONDE DOY DE ALTA LOS" no encontraba nada: se exigían todas las palabras (2026-11-26).
+    [Fact]
+    public void ElBuscadorIgnoraPalabrasVaciasYOrdenaPorCoincidencias()
+    {
+        Assert.Equal(new[]{"alta"},AyudaManuales.TerminosBusqueda("DE DONDE DOY DE ALTA LOS"));
+        var resultados=AyudaManuales.BuscarEnTodo("de dónde doy de alta un cliente","general");
+        Assert.NotEmpty(resultados);
+        Assert.Equal("dar-de-alta-un-cliente",resultados[0].Articulo.Id);
+        Assert.Empty(AyudaManuales.BuscarEnTodo("de donde los"));
+        // La introducción del manual también es un artículo: "¿Cómo cargo una factura de compra?" no encontraba nada.
+        var compra=AyudaIaService.Recuperar("¿Cómo cargo una factura de compra?","general");
+        Assert.Contains(compra,f=>f.Tema=="carga-compras" && f.Articulo=="carga-y-consulta-de-comprobantes-de-compras");
+        // La respuesta de la IA se muestra con formato (Markdown sin HTML): negritas y listas, sin asteriscos sueltos.
+        Assert.Contains("<strong>Nuevo cliente</strong>",AyudaManuales.Html("Pulsá **Nuevo cliente**."),StringComparison.Ordinal);
+        Assert.DoesNotContain("<script>",AyudaManuales.Html("<script>alert(1)</script>"),StringComparison.Ordinal);
+        // El historial sólo devuelve fuentes que siguen en los manuales.
+        var fuentes=AyudaIaService.Recuperar("como doy de alta un cliente","archivos");
+        var guardadas=AyudaHistorialService.LeerFuentes($$"""[{"Tema":"{{fuentes[0].Tema}}","Articulo":"{{fuentes[0].Articulo}}","Titulo":"x"},{"Tema":"nada","Articulo":"y","Titulo":"z"}]""");
+        Assert.Single(guardadas);
+        Assert.Equal(fuentes[0].Id,guardadas[0].Id);
+        // El campo no recibe el texto de vuelta mientras se escribe y busca al hacer una pausa.
+        var dialogo=File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","Shared","AyudaContextualDialog.razor"));
+        Assert.Contains("@oninput=\"AlEscribir\"",dialogo,StringComparison.Ordinal);
+        Assert.DoesNotContain("Value=\"@_buscar\"",dialogo,StringComparison.Ordinal);
+        // Seleccionar texto y soltar el mouse fuera de una ventana no la cierra (todas las ventanas).
+        Assert.Contains("alfa-seleccion-sin-cerrar.js",File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","App.razor")),StringComparison.Ordinal);
+    }
+
+    // "¿Cómo hago el cierre de caja?" desde el inicio respondía "Desde el menú ☰…" sin decir que primero hay que
+    // entrar al punto de venta (2026-11-26): la IA recibe dónde está el usuario y el camino del menú a cada fuente.
+    [Fact]
+    public void LaAyudaConIaSabeDondeEstaElUsuarioYComoSeLlegaACadaPantalla()
+    {
+        var menu=new List<AlfaCore.Models.ShellMenuSearchItemDto>{
+            new(){ModuloNombre="Ventas",SeccionNombre="Operación",Nombre="Punto de Venta",RutaWeb="/ventas/punto-venta"},
+            new(){ModuloNombre="Archivos",SeccionNombre="Maestros",Nombre="Clientes",RutaWeb="/clientes"},
+            new(){ModuloNombre="Compras",SeccionNombre="Compras",Nombre="Carga de comprobantes",RutaWeb="/compras/carga"} };
+        Assert.Equal("/ventas/punto-venta/mostrador",AyudaIaService.RutaRelativa("http://localhost:5065/ALFANET/106/ventas/punto-venta/mostrador?x=1"));
+        Assert.Equal("/",AyudaIaService.RutaRelativa("http://localhost:5065/"));
+        Assert.Equal(AyudaIaService.UbicacionInicio,AyudaIaService.Ubicacion("/",menu));
+        Assert.Equal("la pantalla Ventas → Operación → Punto de Venta",AyudaIaService.Ubicacion("/ventas/punto-venta/mostrador",menu));
+        // Secciones repetidas no se duplican ("Compras → Compras").
+        Assert.Equal("Compras → Carga de comprobantes",AyudaIaService.CaminoMenu("/compras/carga",menu));
+        var cierre=AyudaIaService.Recuperar("¿Cómo hago el cierre de caja del mostrador?","general").First(f=>f.Tema=="mostrador");
+        Assert.Equal("Ventas → Operación → Punto de Venta",AyudaIaService.ComoLlegar(cierre,menu));
+        Assert.Null(AyudaIaService.CaminoMenu("/no-existe",menu));
+    }
+
+    private sealed class NavegacionDePrueba:NavigationManager
+    {
+        public NavegacionDePrueba()=>Initialize("http://localhost/","http://localhost/");
+    }
+
     private static string RepoRoot()
     {
         var dir=new DirectoryInfo(AppContext.BaseDirectory);
@@ -108,6 +161,15 @@ public sealed class AyudaContextualTests
             Task.FromResult(new AyudaRespuesta("Revisá la cuenta corriente antes de cobrar.",
                 [new AyudaFuente("cobranzas","registrar-una-cobranza","Cobranzas · Registrar una cobranza","")]));
         services.AddSingleton(ia);
+        // Historial de la ayuda: vacío y sin guardar nada.
+        var historial=DispatchProxy.Create<IAyudaHistorialService,CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)historial).Handler=(m,a)=>m.Name switch {
+            "ListarAsync"=>Task.FromResult<IReadOnlyList<AyudaConversacionResumen>>([]),
+            "CargarAsync"=>Task.FromResult<IReadOnlyList<AyudaTurnoGuardado>>([]),
+            "DiasAsync"=>Task.FromResult(60),
+            _=>Task.CompletedTask };
+        services.AddSingleton(historial);
+        services.AddSingleton<NavigationManager>(new NavegacionDePrueba());
         var capture=new Capture();services.AddSingleton<IComponentActivator>(capture);
         using var provider=services.BuildServiceProvider();
         await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());

@@ -210,6 +210,10 @@
                         </AlfaCheckbox>
                     </div>
                     <p class="cfg-hint">Si la conversación ya tiene un ticket abierto, no se crea otro.</p>
+                    <ConversacionesConfigTexto Id="bot-ticket-criterio" Label="Cuándo abrir un ticket" Filas="3"
+                                               HelpText="El asistente lo lee para decidir si el caso necesita ticket. Si lo dejás vacío, abre ticket sólo cuando hace falta trabajar el problema a fondo; lo demás lo contesta una persona por el chat."
+                                               Placeholder="@AlfaCore.Services.ConversacionAsistenteService.CriterioTicketPorDefecto"
+                                               Value="@Config.BotTicketCriterio" ValueChanged="@((string? v) => Config.BotTicketCriterio = v ?? string.Empty)" />
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfigTarjeta Titulo="Chat del sitio web" Descripcion="Los visitantes del chat web son anónimos: el asistente puede pedirles datos para saber quién escribe.">
@@ -236,14 +240,63 @@
                     <p class="cfg-hint">El horario de atención se configura en Automatización → Horario y mensaje fijo.</p>
                 </ConversacionesConfigTarjeta>
 
+                <ConversacionesConfigTarjeta Titulo="Modelo de IA" Descripcion="Define la capacidad del asistente para interpretar las conversaciones. Cada respuesta consume créditos del plan de IA de tu empresa.">
+                    <div class="cfg-modelos" role="radiogroup" aria-label="Modelo de IA">
+                        @foreach (var modelo in ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
+                        {
+                            var elegido = string.Equals(modelo.Codigo, Config.AsistenteModeloEfectivo, StringComparison.OrdinalIgnoreCase);
+                            <button type="button" role="radio" aria-checked="@(elegido ? "true" : "false")"
+                                    class="cfg-modelos__opcion @(elegido ? "is-elegido" : string.Empty)"
+                                    @onclick="() => ElegirModelo(modelo)">
+                                <span class="cfg-modelos__marca" aria-hidden="true"></span>
+                                <span class="cfg-modelos__texto">
+                                    <span class="cfg-modelos__titulo">
+                                        <strong>@modelo.Nombre</strong>
+                                        @if (modelo.Codigo == ConversacionAutomatizacionesConfigDto.AsistenteModeloPorDefecto)
+                                        {
+                                            <AlfaTag Tone="AlfaTagTone.Success">Recomendado</AlfaTag>
+                                        }
+                                    </span>
+                                    <span class="cfg-modelos__descripcion">@modelo.Descripcion</span>
+                                    <span class="cfg-modelos__consumo">@modelo.ConsumoTexto</span>
+                                </span>
+                            </button>
+                        }
+                    </div>
+                    <p class="cfg-hint">El consumo por respuesta es aproximado y varía según la extensión de cada conversación. El cambio se aplica al guardar.</p>
+                </ConversacionesConfigTarjeta>
+
+                <AlfaConfirmDialog Open="@(_modeloAConfirmar is not null)"
+                                   Tone="AlfaConfirmDialogTone.Primary"
+                                   Icon="bi-stars"
+                                   Title="@($"Cambiar al modelo {_modeloAConfirmar?.Nombre}")"
+                                   Message="@MensajeConfirmarModelo"
+                                   SecondaryMessage="Los créditos se descuentan del plan de IA contratado. El consumo que supere los créditos incluidos en el plan se factura al cierre del mes; en los planes sin excedente, el asistente se pausa al alcanzar el límite."
+                                   ConfirmLabel="Confirmar cambio"
+                                   CancelLabel="Cancelar"
+                                   OnConfirm="ConfirmarModelo"
+                                   OnCancel="() => _modeloAConfirmar = null" />
+
                 <ConversacionesConfigTarjeta Titulo="Límites" Columnas="2" Descripcion="Evitan que el asistente se extienda o que se adelante a tu equipo.">
                     <AlfaInput Id="bot-max" Label="Máximo de respuestas por conversación" Type="number"
                                Value="@Config.BotMaxRespuestas.ToString(CultureInfo.InvariantCulture)"
                                ValueChanged="@((string? v) => Config.BotMaxRespuestas = ParseEntero(v, Config.BotMaxRespuestas, minimo: 1))" />
-                    <AlfaInput Id="bot-espera" Label="Minutos de espera antes de responder" Type="number"
+                    <AlfaInput Id="bot-espera" Label="Minutos de espera en horario de atención" Type="number"
                                Value="@Config.BotEsperaMinutos.ToString(CultureInfo.InvariantCulture)"
                                ValueChanged="@((string? v) => Config.BotEsperaMinutos = ParseEntero(v, Config.BotEsperaMinutos, minimo: 0))"
-                               HelpText="Le da tiempo a tu equipo a responder primero. 0 = responde de inmediato." />
+                               HelpText="En horario le da tiempo a tu equipo a responder primero: si alguien contesta o se asigna la charla, el asistente no se mete. Fuera de horario responde enseguida. 0 = responde de inmediato." />
+                    <AlfaInput Id="bot-contexto" Label="Horas de charla que lee" Type="number"
+                               Value="@Config.BotContextoHoras.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotContextoHoras = Math.Min(2160, ParseEntero(v, Config.BotContextoHoras, minimo: 0)))"
+                               HelpText="Lee la charla desde que se cerró la conversación por última vez, y como mucho estas horas hacia atrás, para no mezclar temas viejos. 0 = todo desde el último cierre." />
+                    <AlfaInput Id="bot-agrupar" Label="Segundos para que el cliente termine de escribir" Type="number"
+                               Value="@Config.BotAgruparSegundos.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotAgruparSegundos = Math.Min(60, ParseEntero(v, Config.BotAgruparSegundos, minimo: 0)))"
+                               HelpText="Si manda varios mensajes seguidos, se contestan juntos en una sola respuesta. 0 = contesta cada mensaje apenas llega." />
+                    <AlfaInput Id="bot-pausa-tecnico" Label="Horas que se calla cuando contesta alguien del equipo" Type="number"
+                               Value="@Config.BotPausaTrasTecnicoHoras.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotPausaTrasTecnicoHoras = Math.Min(720, ParseEntero(v, Config.BotPausaTrasTecnicoHoras, minimo: 0)))"
+                               HelpText="Si una persona del equipo le contestó al cliente o se asignó la charla, el caso es suyo y el asistente no se mete. Vuelve a responder pasado ese tiempo, si se cierra la conversación o si alguien lo reactiva desde la charla. 0 = sólo se calla con el mensaje que ya contestó la persona." />
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfiguracionAsistenteConsumo />
@@ -289,6 +342,43 @@
     [Parameter] public EventCallback<string> OnIrASeccion { get; set; }
 
     private bool IsDirty => !ConversacionesConfiguracion.AutomatizacionesEquals(Config, Original);
+
+    // Elegir un modelo que consume más créditos pide confirmación (2026-11-26): el cliente tiene que saber que
+    // se descuenta de su plan y que el excedente se factura.
+    private AsistenteModeloOpcion? _modeloAConfirmar;
+
+    private AsistenteModeloOpcion? ModeloActual
+        => ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles
+            .FirstOrDefault(m => string.Equals(m.Codigo, Config.AsistenteModeloEfectivo, StringComparison.OrdinalIgnoreCase));
+
+    private void ElegirModelo(AsistenteModeloOpcion modelo)
+    {
+        var actual = ModeloActual;
+        if (actual is not null && modelo.CreditosPorRespuesta > actual.CreditosPorRespuesta)
+            _modeloAConfirmar = modelo;
+        else
+            Config.AsistenteModelo = modelo.Codigo;
+    }
+
+    private void ConfirmarModelo()
+    {
+        if (_modeloAConfirmar is not null)
+            Config.AsistenteModelo = _modeloAConfirmar.Codigo;
+        _modeloAConfirmar = null;
+    }
+
+    private string MensajeConfirmarModelo
+    {
+        get
+        {
+            var actual = ModeloActual;
+            if (_modeloAConfirmar is null || actual is null || actual.CreditosPorRespuesta <= 0)
+                return string.Empty;
+            var veces = Math.Round(_modeloAConfirmar.CreditosPorRespuesta / actual.CreditosPorRespuesta, 0);
+            return $"El modelo {_modeloAConfirmar.Nombre} consume aproximadamente {_modeloAConfirmar.CreditosPorRespuesta.ToString("0.#", CultureInfo.GetCultureInfo("es-AR"))} créditos por respuesta, "
+                + $"unas {veces.ToString("0", CultureInfo.InvariantCulture)} veces más que el modelo {actual.Nombre}. ¿Confirmás el cambio?";
+        }
+    }
 
     private static readonly IReadOnlyList<AlfaSelectOption> PoliticaOptions =
     [

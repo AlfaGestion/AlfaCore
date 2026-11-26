@@ -2277,14 +2277,19 @@
 
     private static MarkupString TipoClienteHtml(TicketGridItemDto item)
     {
+        var nombre = System.Net.WebUtility.HtmlEncode(item.TipoClienteNombre.Trim());
         if (string.IsNullOrEmpty(item.EsperandoA) && !item.ClientePrioritario)
             return new MarkupString("-");
         if (!item.ClientePrioritario)
-            return new MarkupString(string.IsNullOrWhiteSpace(item.ClienteCodigo) ? "-" : "<span class=\"tk-tipo\">Normal</span>");
-        var texto = string.Equals(item.EstadoAbono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase)
-            ? "Con abono"
-            : "Prioritario";
-        return new MarkupString($"<span class=\"tk-chip tk-chip--violeta\"><i class=\"bi bi-star-fill\"></i> {texto}</span>");
+            return new MarkupString(string.IsNullOrWhiteSpace(item.ClienteCodigo) ? "-"
+                : $"<span class=\"tk-tipo\">{(nombre.Length > 0 ? nombre : "Normal")}</span>");
+        var texto = nombre.Length > 0 ? nombre : "Prioritario";
+        // El color es el de la clasificación en Alfa Gestión (ya convertido a #RRGGBB).
+        // Solo el borde y la estrella toman el color: el texto queda legible sobre fondo oscuro o claro.
+        var estilo = item.TipoClienteColor.Length > 0 ? $" style=\"border-color:{item.TipoClienteColor}\"" : string.Empty;
+        var estrella = item.TipoClienteColor.Length > 0 ? $" style=\"color:{item.TipoClienteColor}\"" : string.Empty;
+        var titulo = item.NivelesCliente == 1 ? "Sube 1 nivel la prioridad" : $"Sube {item.NivelesCliente} niveles la prioridad";
+        return new MarkupString($"<span class=\"tk-chip tk-chip--violeta\"{estilo} title=\"{titulo}\"><i class=\"bi bi-star-fill\"{estrella}></i> {texto}</span>");
     }
 
     private static RenderFragment RenderPlazo(TicketGridItemDto item) => b => b.AddContent(0, PlazoHtml(item));

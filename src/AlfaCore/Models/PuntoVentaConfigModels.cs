@@ -32,6 +32,15 @@ public sealed class PuntoVentaCatalogosDto
     public IReadOnlyList<PuntoVentaCatalogoOpcionDto> Rubros { get; init; } = [];
 }
 
+public sealed class PuntoVentaTopArticuloDto
+{
+    public int Posicion { get; set; }
+    public string IdArticulo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public decimal CantidadVendida { get; set; }
+    public decimal TotalVendido { get; set; }
+}
+
 public sealed class PuntoVentaEntidadDto
 {
     public int Id { get; set; }

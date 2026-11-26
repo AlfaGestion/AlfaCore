@@ -59,6 +59,24 @@ IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
     VALUES (N'gpt-4o-mini', '2024-07-18', 0.15, 0.075, 0.60, N'Precio de lista OpenAI. Modelo por defecto si no hay OPENAI_MODEL.');
 
+-- Modelos que se pueden elegir para el asistente (CONV_ASISTENTE_MODELO, 2026-11-26; gpt-4.1 y gpt-4.1-mini se probaron y quedan con precio por si alguno los usa). Sin su fila el consumo
+-- quedaría sin precio y no contaría en el tope de créditos. "gpt-4.1-mini" gana sobre "gpt-4.1" (prefijo más largo).
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-4.1', '2025-04-14', 2.00, 0.50, 8.00, N'Precio de lista OpenAI. Asistente "Avanzado".');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1-mini')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-4.1-mini', '2025-04-14', 0.40, 0.10, 1.60, N'Precio de lista OpenAI. Asistente "Intermedio".');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6-luna')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-6-luna', '2026-01-01', 0.10, 0.01, 0.50, N'Precio de lista OpenAI (26/11/2026). Asistente "Recomendado".');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6.1-terra')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-6.1-terra', '2026-01-01', 1.00, 0.05, 5.00, N'Precio de lista OpenAI (26/11/2026). Asistente "Avanzado".');
+
 -- Sin esta fila, el prefijo "gpt-4o-mini" lo cobraría con la tarifa de texto (los tokens de entrada son de audio).
 IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini-transcribe')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
@@ -224,14 +242,22 @@ GO
 """;
 
     /// <summary>Objetos que tienen que existir para considerar aplicado el esquema.</summary>
+    // También los precios de los modelos que se pueden elegir (2026-11-26): si falta alguno se vuelve a
+    // aplicar el script (idempotente) y se cargan.
     internal const string VerificacionSql = """
-        SELECT CASE WHEN OBJECT_ID(N'dbo.IA_USO', N'U') IS NOT NULL
-                     AND OBJECT_ID(N'dbo.IA_PRECIO_MODELO', N'U') IS NOT NULL
-                     AND OBJECT_ID(N'dbo.IA_CONFIG', N'U') IS NOT NULL
-                     AND OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NOT NULL
-                     AND OBJECT_ID(N'dbo.IA_SOLICITUD_PLAN', N'U') IS NOT NULL
-                     AND OBJECT_ID(N'dbo.V_IA_USO_DIARIO', N'V') IS NOT NULL
-                    THEN 1 ELSE 0 END;
+        IF OBJECT_ID(N'dbo.IA_USO', N'U') IS NOT NULL
+           AND OBJECT_ID(N'dbo.IA_PRECIO_MODELO', N'U') IS NOT NULL
+           AND OBJECT_ID(N'dbo.IA_CONFIG', N'U') IS NOT NULL
+           AND OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NOT NULL
+           AND OBJECT_ID(N'dbo.IA_SOLICITUD_PLAN', N'U') IS NOT NULL
+           AND OBJECT_ID(N'dbo.V_IA_USO_DIARIO', N'V') IS NOT NULL
+            SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1')
+                         AND EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1-mini')
+                         AND EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6-luna')
+                         AND EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6.1-terra')
+                        THEN 1 ELSE 0 END;
+        ELSE
+            SELECT 0;
         """;
 
     /// <summary>Lotes separados por GO, en orden.</summary>

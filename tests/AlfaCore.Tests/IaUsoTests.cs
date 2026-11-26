@@ -15,6 +15,15 @@ public sealed class IaUsoTests
     private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
     [Fact]
+    public void ArchivoImportado_NoVuelveAEntrarComoPendiente()
+    {
+        var nombre = Path.GetFileName(IaUsoFlushService.NombreArchivoImportado(
+            Path.Combine("App_Data", "ia-uso", "ia-uso-pendiente-202611.jsonl"), new DateTime(2026, 11, 24, 18, 32, 17)));
+        Assert.Equal("ia-uso-importado-202611-20261124183217.jsonl", nombre);
+        Assert.DoesNotMatch("^ia-uso-pendiente-.*\\.jsonl$", nombre);
+    }
+
+    [Fact]
     public void Tokens_FormatoChatCompletions()
     {
         var tokens = IaUsoTokens.Desde(Json("""

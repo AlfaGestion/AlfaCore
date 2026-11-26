@@ -1,22 +1,75 @@
 .ayuda-contextual-host ::deep .alfa-dialog__backdrop { justify-items: end; }
 .ayuda-contextual-host ::deep .ayuda-contextual-dialog { width: min(920px, calc(100vw - 32px)); height: calc(100dvh - 32px); max-height: calc(100dvh - 32px); }
-.ayuda-contextual-host ::deep .alfa-dialog__body { display: flex; flex-direction: column; gap: var(--alfa-space-12); overflow: hidden; }
-.ayuda-contextual__layout { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr); gap: var(--alfa-space-16); flex: 1; min-height: 0; }
-.ayuda-contextual__indice { display: flex; flex-direction: column; align-items: stretch; gap: var(--alfa-space-4); overflow: auto; padding-right: var(--alfa-space-8); border-right: 1px solid var(--alfa-border-default); }
-.ayuda-contextual__indice ::deep button { height: auto; min-height: 36px; white-space: normal; text-align: left; justify-content: flex-start; }
-.ayuda-contextual__contenido { min-width: 0; overflow: auto; padding-right: var(--alfa-space-8); color: var(--alfa-text-primary); font-size: var(--alfa-font-body); line-height: 1.6; overflow-wrap: anywhere; }
-.ayuda-contextual__contenido h2 { font-size: 20px; margin-top: 0; }
-.ayuda-contextual__contenido ::deep h1 { font-size: 22px; }
-.ayuda-contextual__contenido ::deep h2 { font-size: 20px; }
-.ayuda-contextual__contenido ::deep h3 { font-size: 17px; }
-.ayuda-contextual__contenido ::deep pre { overflow-x: auto; }
-.ayuda-contextual__fuente, .ayuda-contextual__indice small { font-size: var(--alfa-font-small); color: var(--alfa-text-secondary); }
-@media(max-width:700px) { .ayuda-contextual__layout { grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(70px,140px) minmax(0,1fr); } .ayuda-contextual__indice { border-right: 0; border-bottom: 1px solid var(--alfa-border-default); } }
+.ayuda-contextual-host ::deep .alfa-dialog__body { display: flex; flex-direction: column; gap: var(--alfa-space-16); overflow: hidden; }
 
-.ayuda-contextual__modos { display:flex; gap:8px; }
-.ayuda-contextual__chat:not([hidden]) { display:flex; flex:1; min-height:0; }
-.ayuda-contextual__chat[hidden] { display:none; }
+/* Barra: manual a la izquierda, modo (Guías / Preguntar a IA) a la derecha como control segmentado. */
 .ayuda-contextual__barra { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:var(--alfa-space-12); flex-shrink:0; }
 .ayuda-contextual__barra ::deep .ayuda-contextual__manual { flex:1 1 260px; max-width:420px; }
-.ayuda-contextual__item { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
-.ayuda-contextual__item small { font-size:var(--alfa-font-small); color:var(--alfa-text-secondary); }
+.ayuda-contextual__modos { display:inline-flex; gap:2px; padding:3px; border:1px solid var(--alfa-border-default); border-radius:10px; background:var(--alfa-bg-surface); }
+.ayuda-contextual__modo {
+    display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px; border:0; border-radius:7px;
+    background:transparent; color:var(--alfa-text-secondary); font:inherit; font-size:13px; font-weight:500; cursor:pointer;
+}
+.ayuda-contextual__modo:hover { color:var(--alfa-text-primary); }
+.ayuda-contextual__modo.is-activo { background:var(--alfa-bg-input); color:var(--alfa-text-primary); }
+
+.ayuda-contextual__chat:not([hidden]) { display:flex; flex:1; min-height:0; }
+.ayuda-contextual__chat[hidden] { display:none; }
+
+/* Buscador con ícono, a todo el ancho. */
+.ayuda-contextual__buscador {
+    display:flex; align-items:center; gap:10px; flex-shrink:0; height:40px; padding:0 14px;
+    border:1px solid var(--alfa-border-default); border-radius:10px; background:var(--alfa-bg-input); color:var(--alfa-text-secondary);
+}
+.ayuda-contextual__buscador:focus-within { border-color:var(--alfa-accent); }
+.ayuda-contextual__buscador input {
+    flex:1; min-width:0; height:100%; border:0; outline:0; background:transparent;
+    color:var(--alfa-text-primary); font:inherit; font-size:14px; font-weight:400;
+}
+.ayuda-contextual__buscador input::placeholder { color:var(--alfa-text-secondary); }
+
+/* Índice: lista simple, la tarea elegida resaltada con fondo suave y una barra de acento. */
+.ayuda-contextual__layout { display:grid; grid-template-columns:minmax(200px, 1fr) minmax(0, 2.2fr); gap:var(--alfa-space-24); flex:1; min-height:0; }
+.ayuda-contextual__indice { display:flex; flex-direction:column; gap:1px; overflow:auto; padding-right:var(--alfa-space-8); border-right:1px solid var(--alfa-border-subtle); }
+.ayuda-contextual__indice > small { padding:0 10px 6px; font-size:12px; color:var(--alfa-text-secondary); }
+.ayuda-contextual__item {
+    display:flex; flex-direction:column; align-items:flex-start; gap:1px; width:100%; padding:7px 10px;
+    border:0; border-left:2px solid transparent; border-radius:0 6px 6px 0; background:transparent;
+    color:var(--alfa-text-secondary); font:inherit; font-size:13px; font-weight:400; line-height:1.4; text-align:left; cursor:pointer;
+}
+.ayuda-contextual__item:hover { background:var(--alfa-state-hover); color:var(--alfa-text-primary); }
+.ayuda-contextual__item.is-activo { border-left-color:var(--alfa-accent); background:var(--alfa-bg-input); color:var(--alfa-text-primary); font-weight:500; }
+.ayuda-contextual__item small { font-size:11.5px; font-weight:400; color:var(--alfa-text-secondary); }
+
+/* Texto del manual: ancho de lectura cómodo, interlineado amplio y títulos con peso medio. */
+.ayuda-contextual__contenido {
+    min-width:0; overflow:auto; padding-right:var(--alfa-space-8);
+    /* Texto largo en un gris muy claro (no blanco puro): con Manrope sobre fondo oscuro se veía grueso. */
+    color:color-mix(in srgb, var(--alfa-text-primary) 84%, var(--alfa-bg-surface));
+    font-size:14.5px; font-weight:400; line-height:1.7; letter-spacing:.005em; overflow-wrap:anywhere;
+}
+.ayuda-contextual__contenido h2, .ayuda-contextual__contenido ::deep h1, .ayuda-contextual__contenido ::deep h2,
+.ayuda-contextual__contenido ::deep h3, .ayuda-contextual__contenido ::deep strong { color:var(--alfa-text-primary); }
+.ayuda-contextual__contenido > * { max-width:72ch; }
+.ayuda-contextual__contenido h2 { margin:0 0 12px; font-size:19px; font-weight:600; line-height:1.3; }
+.ayuda-contextual__contenido ::deep h1 { margin:0 0 12px; font-size:21px; font-weight:600; }
+.ayuda-contextual__contenido ::deep h2 { margin:22px 0 10px; font-size:18px; font-weight:600; }
+.ayuda-contextual__contenido ::deep h3 { margin:18px 0 8px; font-size:15.5px; font-weight:600; }
+.ayuda-contextual__contenido ::deep p { margin:0 0 12px; }
+.ayuda-contextual__contenido ::deep ul, .ayuda-contextual__contenido ::deep ol { margin:0 0 12px; padding-left:22px; }
+.ayuda-contextual__contenido ::deep li { margin:4px 0; }
+.ayuda-contextual__contenido ::deep strong { font-weight:600; }
+.ayuda-contextual__contenido ::deep hr { border:0; border-top:1px solid var(--alfa-border-subtle); margin:18px 0; }
+.ayuda-contextual__contenido ::deep code { padding:1px 5px; border-radius:4px; background:var(--alfa-bg-input); font-size:13px; }
+.ayuda-contextual__contenido ::deep pre { overflow-x:auto; }
+.ayuda-contextual__contenido ::deep table { border-collapse:collapse; margin:0 0 12px; font-size:13.5px; }
+.ayuda-contextual__contenido ::deep th, .ayuda-contextual__contenido ::deep td { padding:6px 10px; border:1px solid var(--alfa-border-subtle); text-align:left; }
+
+.ayuda-contextual__fuente { font-size:12px; color:var(--alfa-text-secondary); }
+
+@media(max-width:700px) {
+    .ayuda-contextual__layout { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(70px,160px) minmax(0,1fr); gap:var(--alfa-space-12); }
+    .ayuda-contextual__indice { border-right:0; border-bottom:1px solid var(--alfa-border-subtle); }
+    .ayuda-contextual__modos { width:100%; }
+    .ayuda-contextual__modo { flex:1; justify-content:center; }
+}

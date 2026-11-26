@@ -24,7 +24,13 @@ public sealed record TicketAtencionDatos
     /// <summary>Períodos en estados de espera del cliente (Hasta null = sigue en espera).</summary>
     public IReadOnlyList<(DateTime Desde, DateTime? Hasta)> PeriodosEspera { get; init; } = [];
     public bool ClientePrioritario { get; init; }
+    /// <summary>Niveles que sube la prioridad por el tipo de cliente. Null = 1 si <see cref="ClientePrioritario"/>.</summary>
+    public int? NivelesCliente { get; init; }
+    /// <summary>Nombre del tipo de cliente para los motivos (ej. la descripción de su clasificación).</summary>
+    public string TipoClienteNombre { get; init; } = string.Empty;
     public string EstadoAbono { get; init; } = string.Empty;
+
+    public int NivelesEfectivos => Math.Clamp(NivelesCliente ?? (ClientePrioritario ? 1 : 0), 0, 3);
     public int CasosAbiertosCliente { get; init; }
 }
 
@@ -40,7 +46,10 @@ public static class TicketsAtencionCalculo
         var estadosEspera = EstadosEspera(config);
         var motivos = new List<string>();
 
-        ticket.ClientePrioritario = d.ClientePrioritario;
+        var prioritario = d.NivelesEfectivos > 0;
+        ticket.ClientePrioritario = prioritario;
+        ticket.NivelesCliente = d.NivelesEfectivos;
+        ticket.TipoClienteNombre = d.TipoClienteNombre;
         ticket.EstadoAbono = d.EstadoAbono;
         ticket.CasosAbiertosCliente = d.CasosAbiertosCliente;
         ticket.FechaSeguimiento = d.FechaSeguimiento;
@@ -88,8 +97,8 @@ public static class TicketsAtencionCalculo
         }
         ticket.HorasHabilesEsperando = ticket.EsperandoDesde is DateTime esp ? horario.HorasHabilesEntre(esp, ahora) : 0;
 
-        // 2. Prioridad efectiva: la urgencia (estrellas) sube un nivel si el cliente es prioritario.
-        ticket.PrioridadEfectiva = Math.Clamp(d.Prioridad + (d.ClientePrioritario ? 1 : 0), 0, 3);
+        // 2. Prioridad efectiva: la urgencia (estrellas) sube los niveles que tenga el tipo de cliente.
+        ticket.PrioridadEfectiva = Math.Clamp(d.Prioridad + d.NivelesEfectivos, 0, 3);
 
         // 3. Plazo: primera respuesta mientras nadie respondió; después, resolución. El tiempo en espera del
         // cliente no cuenta. Vencido se muestra aunque ahora esté frenado (no se esconde).
@@ -153,12 +162,14 @@ public static class TicketsAtencionCalculo
             if (ticket.PrioridadEfectiva >= 3) motivos.Add("Urgente");
             else if (ticket.PrioridadEfectiva == 2) motivos.Add("Prioridad alta");
 
-            if (d.ClientePrioritario)
+            if (prioritario)
             {
-                puntaje += config.PesoClientePrioritario;
-                motivos.Add(string.Equals(d.EstadoAbono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase)
-                    ? "Cliente con abono"
-                    : "Cliente prioritario");
+                puntaje += config.PesoClientePrioritario * d.NivelesEfectivos;
+                motivos.Add(!string.IsNullOrWhiteSpace(d.TipoClienteNombre)
+                    ? $"Cliente {d.TipoClienteNombre.Trim()}"
+                    : string.Equals(d.EstadoAbono, ConversacionAbonoEstados.Abonado, StringComparison.OrdinalIgnoreCase)
+                        ? "Cliente con abono"
+                        : "Cliente prioritario");
             }
 
             if (config.VariosCasosDesde > 1 && d.CasosAbiertosCliente >= config.VariosCasosDesde)
@@ -194,6 +205,26 @@ public static class TicketsAtencionCalculo
     }
 
     /// <summary>Orden "Atender primero": primero lo que nos toca (mayor puntaje y más viejo), después lo que espera.</summary>
+    /// <summary>
+    /// Tipo de cliente: los niveles de su clasificación (configurados en Tickets → Configuración) o, si tiene abono
+    /// activo, como mínimo los niveles del abono. El nombre es la descripción de la clasificación; sin clasificación
+    /// con niveles, «Con abono» si corresponde.
+    /// </summary>
+    public static (int Niveles, string Nombre, string Color) TipoCliente(TicketsAtencionConfigDto config, string? clasificacion, bool abonoActivo)
+    {
+        var codigo = (clasificacion ?? string.Empty).Trim();
+        var tipo = codigo.Length == 0
+            ? null
+            : config.TiposCliente.FirstOrDefault(t => string.Equals(t.Codigo.Trim(), codigo, StringComparison.OrdinalIgnoreCase));
+        var porAbono = abonoActivo ? Math.Max(0, config.AbonoActivoNiveles) : 0;
+        var niveles = Math.Clamp(Math.Max(tipo?.Niveles ?? 0, porAbono), 0, 3);
+        var nombre = tipo is not null && tipo.Descripcion.Trim().Length > 0 && (tipo.Niveles > 0 || !abonoActivo)
+            ? tipo.Descripcion.Trim()
+            : abonoActivo ? "Con abono" : tipo?.Descripcion.Trim() ?? string.Empty;
+        var color = tipo is not null && nombre == tipo.Descripcion.Trim() ? tipo.ColorHex : string.Empty;
+        return (niveles, nombre, color);
+    }
+
     public static IOrderedEnumerable<TicketGridItemDto> Ordenar(IEnumerable<TicketGridItemDto> tickets)
         => tickets
             .OrderBy(t => t.EsperandoA switch
@@ -232,7 +263,7 @@ public static class TicketsAtencionCalculo
     public static (bool? RespuestaEnPlazo, bool? ResolucionEnPlazo, double HorasResolucion) EvaluarCerrado(
         TicketAtencionDatos d, DateTime cierre, TicketsAtencionConfigDto config, HorarioLaboral horario)
     {
-        var prioridad = Math.Clamp(d.Prioridad + (d.ClientePrioritario ? 1 : 0), 0, 3);
+        var prioridad = Math.Clamp(d.Prioridad + d.NivelesEfectivos, 0, 3);
         var plazo = config.Plazos.FirstOrDefault(p => p.Prioridad == prioridad);
         var espera = d.PeriodosEspera.Sum(p =>
         {

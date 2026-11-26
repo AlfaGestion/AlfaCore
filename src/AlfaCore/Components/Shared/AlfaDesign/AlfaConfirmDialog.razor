@@ -12,8 +12,8 @@
                  @ref="_dialog"
                  @onclick:stopPropagation="true">
             <header class="alfa-confirm-dialog__header">
-                <span class="alfa-confirm-dialog__icon alfa-confirm-dialog__icon--danger" aria-hidden="true">
-                    <i class="bi bi-person-dash"></i>
+                <span class="alfa-confirm-dialog__icon alfa-confirm-dialog__icon--@ToneClass" aria-hidden="true">
+                    <i class="bi @Icon"></i>
                 </span>
                 <div>
                     <span class="alfa-confirm-dialog__eyebrow">Confirmación</span>
@@ -45,7 +45,7 @@
                     @CancelLabel
                 </button>
                 <button type="button"
-                        class="alfa-confirm-dialog__button alfa-confirm-dialog__button--danger"
+                        class="alfa-confirm-dialog__button alfa-confirm-dialog__button--@ToneClass"
                         disabled="@Loading"
                         @onclick="ConfirmAsync">
                     @if (Loading)
@@ -71,6 +71,12 @@
     [Parameter] public bool Loading { get; set; }
     [Parameter] public EventCallback OnConfirm { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
+    /// <summary>Ícono de Bootstrap Icons. Por defecto el de las bajas (uso original del diálogo).</summary>
+    [Parameter] public string Icon { get; set; } = "bi-person-dash";
+    /// <summary>Danger (bajas, por defecto) o Primary (confirmar un cambio que no destruye nada).</summary>
+    [Parameter] public AlfaConfirmDialogTone Tone { get; set; } = AlfaConfirmDialogTone.Danger;
+
+    private string ToneClass => Tone == AlfaConfirmDialogTone.Primary ? "primary" : "danger";
 
     private readonly string _titleId = $"alfa-confirm-title-{Guid.NewGuid():N}";
     private readonly string _descriptionId = $"alfa-confirm-description-{Guid.NewGuid():N}";

@@ -191,21 +191,53 @@ public static class AyudaManuales
     public static string Html(string contenido)=>Markdown.ToHtml(contenido,Pipeline);
     public static IReadOnlyList<AyudaArticulo> Buscar(AyudaManual manual,string consulta)
     {
-        var terminos=Terminos(consulta);
-        return manual.Articulos.Where(a=>terminos.All(t=>Normalizar(a.Titulo+" "+a.Contenido).Contains(t,StringComparison.Ordinal))).ToArray();
+        var terminos=TerminosBusqueda(consulta);
+        return manual.Articulos.Select(a=>(a,puntos:Puntaje(a,terminos))).Where(x=>x.puntos>0)
+            .OrderByDescending(x=>x.puntos).Select(x=>x.a).ToArray();
     }
-    /// <summary>Busca en todos los manuales: primero el manual actual, después lo que más coincide en el título.</summary>
+    /// <summary>
+    /// Busca en todos los manuales, ordenado por cuántas palabras coinciden (más en el título); a igual puntaje,
+    /// primero el manual actual. Antes exigía TODAS las palabras: "de dónde doy de alta los…" no encontraba nada
+    /// porque "dónde", "doy" y "los" no están en ningún artículo (2026-11-26).
+    /// </summary>
     public static IReadOnlyList<AyudaResultado> BuscarEnTodo(string consulta,string? temaActual=null,int maximo=40)
     {
-        var terminos=Terminos(consulta);
-        return Temas.SelectMany(t=>Buscar(Obtener(t.Clave),consulta).Select(a=>new AyudaResultado(t,a)))
-            .OrderByDescending(r=>r.Tema.Clave==temaActual)
-            .ThenByDescending(r=>terminos.Count(x=>Normalizar(r.Articulo.Titulo).Contains(x,StringComparison.Ordinal)))
-            .Take(maximo).ToArray();
+        var terminos=TerminosBusqueda(consulta);
+        if(terminos.Length==0)return [];
+        // El manual en el que se está tiene 2 puntos de ventaja: lo que se busca desde una pantalla suele ser de ella.
+        const int ventajaManualActual=2;
+        return Temas.SelectMany(t=>Obtener(t.Clave).Articulos.Select(a=>(r:new AyudaResultado(t,a),puntos:Puntaje(a,terminos))))
+            .Where(x=>x.puntos>0)
+            .OrderByDescending(x=>x.puntos+(x.r.Tema.Clave==temaActual?ventajaManualActual:0))
+            .ThenByDescending(x=>x.r.Tema.Clave==temaActual)
+            .Take(maximo).Select(x=>x.r).ToArray();
     }
-    private static string[] Terminos(string consulta)=>Regex.Matches(Normalizar(consulta),@"[\p{L}\p{N}]+")
-        .Select(m=>m.Value).Where(t=>t.Length>1)
-        .Select(t=>t.EndsWith("ciones",StringComparison.Ordinal) ? t[..^2] : t.Length>4 && t.EndsWith('s') ? t[..^1] : t).ToArray();
+
+    // Palabras que no dicen de qué trata la consulta: con ellas un artículo no es más relevante.
+    private static readonly HashSet<string> PalabrasVacias=new(("a al alfacore como con cual cuales cuando de del desde donde doy el en es esta estan este esto favor hacer hago hay la las lo los mas me mi mis necesito o para por porque puede puedo que quiero saber se ser seria si sistema su sus tengo un una unas uno unos usar y ya").Split(' '));
+
+    /// <summary>Palabras de la consulta que sirven para buscar: sin acentos, sin palabras vacías y sin plural.
+    /// La usan el buscador de la ayuda y la ayuda con IA.</summary>
+    internal static string[] TerminosBusqueda(string consulta)=>Regex.Matches(Normalizar(consulta),@"[\p{L}\p{N}]+")
+        .Select(m=>m.Value).Where(t=>t.Length>1 && !PalabrasVacias.Contains(t))
+        .Select(t=>t.EndsWith("ciones",StringComparison.Ordinal) ? t[..^2] : t.Length>4 && t.EndsWith('s') ? t[..^1] : t)
+        .Distinct().ToArray();
+
+    /// <summary>3 puntos por palabra en el título, 1 si sólo está en el texto.</summary>
+    internal static int Puntaje(AyudaArticulo articulo,IReadOnlyCollection<string> terminos)
+    {
+        var (titulo,texto)=TextoNormalizado(articulo);
+        return terminos.Sum(t=>titulo.Contains(t,StringComparison.Ordinal) ? 3 : texto.Contains(t,StringComparison.Ordinal) ? 1 : 0);
+    }
+
+    // El texto sin acentos de cada artículo se calcula una vez: antes se normalizaban todos los manuales en cada
+    // tecla del buscador, y la pantalla tardaba tanto en contestar que se perdían letras al escribir.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AyudaArticulo,Tuple<string,string>> Normalizados=new();
+    private static (string Titulo,string Texto) TextoNormalizado(AyudaArticulo articulo)
+    {
+        var t=Normalizados.GetValue(articulo,a=>Tuple.Create(Normalizar(a.Titulo),Normalizar(a.Titulo+" "+a.Contenido)));
+        return (t.Item1,t.Item2);
+    }
     private static AyudaManual Cargar(AyudaTema tema)
     {
         using var stream=typeof(AyudaManuales).Assembly.GetManifestResourceStream(tema.Recurso)
@@ -216,7 +248,9 @@ public static class AyudaManuales
         void Guardar()
         {
             // Un título sin texto propio (solo agrupa subsecciones) o el índice del documento no es una tarea.
-            if(titulo is null || texto.ToString().Trim().Length==0 || IdArticulo(titulo)=="indice") { texto.Clear();return; }
+            // Tampoco si sólo tiene una línea divisoria ("---"): "Alfa Gestión · Guía principal de uso" salía vacío.
+            var propio=Regex.Replace(texto.ToString(),@"^\s*([-*_])(\s*\1){2,}\s*$","",RegexOptions.Multiline).Trim();
+            if(titulo is null || propio.Length==0 || IdArticulo(titulo)=="indice") { texto.Clear();return; }
             var id=IdArticulo(titulo);
             var unico=id;var n=2;while(!ids.Add(unico))unico=id+"-"+n++;
             articulos.Add(new(unico,titulo,texto.ToString().Trim()));texto.Clear();
@@ -225,6 +259,9 @@ public static class AyudaManuales
         {
             var encabezado=Regex.Match(linea,@"^#{2,3}\s+(.+)$");
             if(encabezado.Success) { Guardar();titulo=encabezado.Groups[1].Value.Trim(); }
+            // La introducción (texto antes del primer ##) también es un artículo, con el título del manual: ahí
+            // están los pasos de "Carga de comprobantes de compras" y la ayuda no los encontraba (2026-11-26).
+            else if(titulo is null && Regex.Match(linea,@"^#\s+(.+)$") is { Success: true } principal) titulo=principal.Groups[1].Value.Trim();
             else if(titulo is not null)texto.AppendLine(linea);
         }
         Guardar();return new(tema,contenido,articulos.AsReadOnly());

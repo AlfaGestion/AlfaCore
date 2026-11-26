@@ -379,7 +379,7 @@ public sealed class ConversacionesAutomationPipelineTests
     public void Bot_BotEsperaMinutos_QueuesInsteadOfRespondingImmediately()
     {
         var method = ServiceSource.IndexOf("private async Task TryAutoReplyBotAsync", StringComparison.Ordinal);
-        var wait = ServiceSource.IndexOf("if (config.BotEsperaMinutos > 0)", method, StringComparison.Ordinal);
+        var wait = ServiceSource.IndexOf("if (config.BotEsperaMinutos > 0 && ", method, StringComparison.Ordinal);
         var encolar = ServiceSource.IndexOf("await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct)", method, StringComparison.Ordinal);
         Assert.True(method >= 0 && wait > method && encolar > wait);
     }
@@ -867,21 +867,6 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains(herramientas, h => h.Nombre == "consultar_saldo_total");
     }
 
-    [Theory]
-    [InlineData("Sí", true, false)]
-    [InlineData("si, soy yo", true, false)]
-    [InlineData("correcto", true, false)]
-    [InlineData("Soy yo", true, false)]
-    [InlineData("No", false, true)]
-    [InlineData("no, soy Juan de otra empresa", false, true)]
-    [InlineData("Te equivocaste de persona", false, true)]
-    [InlineData("cuánto debo?", false, false)]
-    public void Identidad_DetectaRespuestasSiYNo(string mensaje, bool esSi, bool esNo)
-    {
-        Assert.Equal(esSi, ConversacionesService.EsRespuestaIdentidadSi(mensaje));
-        Assert.Equal(esNo, ConversacionesService.EsRespuestaIdentidadNo(mensaje));
-    }
-
     [Fact]
     public void Identidad_SoloLasHerramientasDeLaCuentaPidenConfirmacion()
     {
@@ -907,20 +892,6 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("como viene mi pedido?", true)]
     public void MensajeConsultaPedidos_ExcluyeTemasDeSoporte(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
-
-    [Fact]
-    public void PedidoOTicket_SoloLosPedidosEnCursoCompitenConElTicket()
-    {
-        const string terminados = "- Pedido 0001X del 01/10/2026: Finalizado — $ 1.000,00\n- Pedido 0002X del 02/10/2026: Anulado — $ 500,00";
-        const string enCurso = "- Pedido 0001X del 01/10/2026: Finalizado — $ 1.000,00\n- Pedido 0003X del 27/10/2026: Aprobado (en preparación) — $ 7.000,00";
-
-        Assert.Null(ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(terminados));
-        Assert.Equal("0003X", ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(enCurso));
-        Assert.True(ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido("NP 999900000001X"));
-        Assert.False(ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido("como viene mi pedido?"));
-        Assert.Equal("¿Me preguntás por tu pedido 0003X o por tu consulta en curso (ticket #1)?",
-            ConversacionesService.PreguntaPedidoOTicket("0003X", 1));
-    }
 
     [Fact]
     public void Prompt_LineaFechaActualLlevaDiaYHora()
@@ -1175,7 +1146,7 @@ public sealed class ConversacionesAutomationPipelineTests
         try
         {
             // "Necesito comunicarme con Favio" (base real, 2026-11-02): la IA decide que no hace falta ticket.
-            // Si no informa el campo, se abre como antes.
+            // Si no informa el campo, no se abre: el ticket es para trabajo a fondo (2026-11-26).
             var handler = new QueueHttpHandler(
                 """
                 {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"abrir_ticket\":false,\"respuesta\":\"Le paso tu mensaje a Favio.\"}"}}]}
@@ -1194,7 +1165,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
             Assert.False(sinTicket!.AbrirTicket);
             Assert.Equal("DERIVA", sinTicket.Tipo);
-            Assert.True(sinCampo!.AbrirTicket);
+            Assert.False(sinCampo!.AbrirTicket);
         }
         finally
         {
@@ -1368,27 +1339,6 @@ public sealed class ConversacionesAutomationPipelineTests
 
     // F05 (2026-10-27): pedidos por chat. La confirmación la decide el texto literal del cliente.
     [Theory]
-    [InlineData("Sí", true)]
-    [InlineData("si, confirmo", true)]
-    [InlineData("Dale!", true)]
-    [InlineData("ok", true)]
-    [InlineData("no", false)]
-    [InlineData("si pero cancelalo", false)]
-    [InlineData("sí, ¿cuánto tarda en llegar el pedido que les hice la semana pasada a la sucursal?", false)]
-    [InlineData("quiero 10 pilas", false)]
-    public void EsConfirmacion_SoloRespuestasCortasAfirmativas(string texto, bool esperado)
-        => Assert.Equal(esperado, ConversacionBotPedidosService.EsConfirmacion(texto));
-
-    [Theory]
-    [InlineData("No", true)]
-    [InlineData("mejor no", true)]
-    [InlineData("cancelalo", true)]
-    [InlineData("sí", false)]
-    [InlineData("noviembre", false)]
-    public void EsCancelacion_SoloRespuestasCortasNegativas(string texto, bool esperado)
-        => Assert.Equal(esperado, ConversacionBotPedidosService.EsCancelacion(texto));
-
-    [Theory]
     [InlineData("Pasame la lista de precios", true)]
     [InlineData("Me pasás lista de precios?", true)]
     [InlineData("Quiero hacer un pedido", false)]
@@ -1523,34 +1473,54 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Theory]
-    [InlineData("AA", true)]
-    [InlineData("Duracell", true)]
-    [InlineData("la de 9 V", true)]
-    [InlineData("AAA?", true)]
-    [InlineData("¿Qué es el código RECICLA10?", false)]
-    [InlineData("¿Cómo pago con transferencia?", false)]
-    [InlineData("Tienen envío a Córdoba?", false)]
-    [InlineData("necesito las pilas para el control remoto de la tele del living", false)]
-    [InlineData("", false)]
-    public void PuedeCompletarAclaracion_SoloRespuestasCortasNoPreguntasNuevas(string mensaje, bool esperado)
-        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(mensaje));
-
-    [Theory]
     [InlineData("Hola", true)]
     [InlineData("Buenas tardes!", true)]
     [InlineData("GRACIAS", true)]
     [InlineData("Hola, cuánto salen las pilas?", false)]
     [InlineData("Hola, se me cortó el sistema", false)]
+    [InlineData("2,3y4", false)]
+    [InlineData("y 2", false)]
+    [InlineData("Buen día\nBuenas tardes", true)]
     public void EsMensajeSocial_SoloSaludosYCierres(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionesService.EsMensajeSocial(mensaje));
 
-    [Theory]
-    [InlineData("Hola", "¡Hola! ¿En qué te puedo ayudar?")]
-    [InlineData("Buenos días", "¡Hola! ¿En qué te puedo ayudar?")]
-    [InlineData("Muchas gracias!", "¡De nada! Si necesitás algo más, escribime cuando quieras.")]
-    [InlineData("dale, perfecto", "¡Genial! Si necesitás algo más, avisame.")]
-    public void RespuestaSaludo_SegunElMensaje(string mensaje, string esperada)
-        => Assert.Equal(esperada, ConversacionesService.RespuestaSaludo(mensaje));
+    [Fact]
+    public void UnirMensajesSinResponder_JuntaLosMensajesSeguidosEnOrden()
+    {
+        Assert.Equal("No me actualizan los precios en las cajas\n2,3y4",
+            ConversacionesService.UnirMensajesSinResponder([("TEXT", " No me actualizan los precios en las cajas "), ("TEXT", ""), ("TEXT", "2,3y4")]));
+        Assert.Equal("Buen día", ConversacionesService.UnirMensajesSinResponder([("TEXT", "Buen día")]));
+        Assert.Equal(string.Empty, ConversacionesService.UnirMensajesSinResponder([]));
+    }
+
+    // Charlas reales de ALFANET repetidas (2026-11-25): "[foto] / me sale este cartel" perdía la foto y
+    // "hola / [audio]" perdía el texto. Ahora va todo, en orden, y el bot mira y escucha cada archivo.
+    [Fact]
+    public void UnirMensajesSinResponder_IncluyeFotosYAudiosEnOrden()
+    {
+        Assert.Equal("hola\n[audio]", ConversacionesService.UnirMensajesSinResponder([("TEXT", "hola"), ("AUDIO", "[audio]")]));
+        Assert.Equal("[image]\nme pone este msj", ConversacionesService.UnirMensajesSinResponder([("IMAGE", "[image]"), ("TEXT", "me pone este msj")]));
+    }
+
+    [Fact]
+    public void ReemplazarAudios_CadaAudioPorLoQueDijo()
+    {
+        Assert.Equal("no factura la caja 2", ConversacionesService.ReemplazarAudios("[audio]", ["no factura la caja 2"]));
+        Assert.Equal("hola\nprimero\nsegundo", ConversacionesService.ReemplazarAudios("hola\n[audio]\n[audio]", ["primero", "segundo"]));
+        Assert.Equal("primero\n[audio]", ConversacionesService.ReemplazarAudios("[audio]\n[audio]", ["primero"]));
+        Assert.True(ConversacionesService.TieneAudioSinTexto("hola\n[audio]"));
+        Assert.False(ConversacionesService.TieneAudioSinTexto("mandé un audio ayer"));
+    }
+
+    [Fact]
+    public void ReemplazarImagenes_SoloFotos_O_FotoConTexto()
+    {
+        Assert.Equal(ConversacionesService.TextoImagenSinTexto, ConversacionesService.ReemplazarImagenes("[image]"));
+        Assert.Equal(ConversacionesService.TextoImagenSinTexto, ConversacionesService.ReemplazarImagenes("[image]\n[image]"));
+        Assert.Equal($"{ConversacionesService.TextoImagenEnTanda}\nme pone este msj",
+            ConversacionesService.ReemplazarImagenes("[image]\nme pone este msj"));
+        Assert.Equal("Apareció este cartel", ConversacionesService.ReemplazarImagenes("Apareció este cartel"));
+    }
 
     [Fact]
     public void FormatearResultadoPrecio_SinCoincidencias_Prioriza_LaInformacionDelNegocio()

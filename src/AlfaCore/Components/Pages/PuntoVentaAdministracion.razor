@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/ventas/puntos-venta"
 @using AlfaCore.Models
 @using AlfaCore.Services
+@using System.Globalization
 @inject IPuntoVentaConfigService PosConfigSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
@@ -76,6 +77,90 @@
         font-size: 0.82rem;
         font-weight: 700;
         cursor: pointer;
+    }
+
+    .pv-admin-field-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+    }
+
+    .pv-admin-subfield-label {
+        display: block;
+        margin-top: .8rem;
+        color: var(--color-text);
+        font-size: .82rem;
+        font-weight: 700;
+    }
+
+    .pv-admin-inline-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        min-height: 2.1rem;
+        padding: .35rem .7rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--color-primary) 10%, var(--color-panel));
+        color: var(--color-primary);
+        cursor: pointer;
+        font-weight: 800;
+    }
+
+    .pv-admin-inline-edit:hover { border-color: var(--color-primary); }
+
+    .pv-admin-field-heading { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+    .pv-admin-catalog-summary { display:flex; flex-wrap:wrap; gap:.45rem .8rem; margin-top:.5rem; color:var(--color-muted); font-size:.82rem; }
+    .pv-admin-catalog-summary span { display:inline-flex; align-items:center; gap:.35rem; }
+    .pv-admin-catalog-summary i { color:var(--color-primary); }
+    .pv-admin-catalog-modal__card { width: min(900px, calc(100vw - 2rem)); }
+
+    .pv-admin-catalog-modal__top {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        margin-bottom: 1rem;
+        padding: .75rem;
+        border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--color-primary) 8%, var(--color-panel));
+    }
+
+    .pv-admin-catalog-modal__top > i { color: var(--color-primary); font-size: 1.1rem; }
+    .pv-admin-catalog-modal__top div { display: grid; gap: .15rem; }
+    .pv-admin-catalog-modal__top small { color: var(--color-muted); }
+
+    .pv-admin-catalog-modal__rubros {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .55rem;
+        max-height: min(45vh, 360px);
+        overflow: auto;
+        padding: .25rem;
+    }
+
+    .pv-admin-catalog-modal__empty { color: var(--color-muted); padding: 1rem 0; }
+    .pv-admin-catalog-modal__toolbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.7rem .8rem; border:1px solid var(--color-border); border-radius:.7rem; background:var(--color-surface-subtle); }
+    .pv-admin-catalog-modal__toolbar > div { display:grid; gap:.15rem; }
+    .pv-admin-catalog-modal__detect { display:flex !important; align-items:end; gap:.45rem; white-space:nowrap; }
+    .pv-admin-catalog-modal__detect label { color:var(--color-muted); font-size:.78rem; }
+    .pv-admin-catalog-modal__detect input { width:4.5rem; padding:.45rem .5rem; border:1px solid var(--color-border); border-radius:.4rem; background:var(--color-input); color:var(--color-text); font:inherit; }
+    .pv-admin-catalog-modal__toolbar small, .pv-admin-catalog-modal__note { color:var(--color-muted); }
+    .pv-admin-catalog-modal__feedback { margin-top:.65rem; padding:.55rem .7rem; border-radius:.55rem; font-size:.86rem; }
+    .pv-admin-catalog-modal__feedback.is-ok { color:var(--color-success); background:color-mix(in srgb, var(--color-success) 12%, transparent); }
+    .pv-admin-catalog-modal__feedback.is-error { color:var(--color-danger); background:color-mix(in srgb, var(--color-danger) 12%, transparent); }
+    .pv-admin-catalog-modal__grid-wrap { max-height: min(48vh, 430px); overflow:auto; margin-top:.7rem; border:1px solid var(--color-border); border-radius:.65rem; }
+    .pv-admin-catalog-modal__grid { width:100%; border-collapse:collapse; font-size:.86rem; }
+    .pv-admin-catalog-modal__grid th, .pv-admin-catalog-modal__grid td { padding:.48rem .55rem; border-bottom:1px solid var(--color-border); text-align:left; }
+    .pv-admin-catalog-modal__grid th { position:sticky; top:0; z-index:1; background:var(--color-surface); color:var(--color-text); }
+    .pv-admin-catalog-modal__grid .numeric { text-align:right; white-space:nowrap; }
+    .pv-admin-catalog-modal__grid .empty { padding:1.4rem; text-align:center; color:var(--color-muted); }
+    .pv-admin-catalog-modal__code-input { width:8rem; min-width:6rem; padding:.35rem .45rem; border:1px solid var(--color-border); border-radius:.35rem; background:var(--color-input); color:var(--color-text); font:inherit; }
+
+    @@media (max-width: 560px) {
+        .pv-admin-catalog-modal__rubros { grid-template-columns: 1fr; }
+        .pv-admin-catalog-modal__toolbar { align-items:stretch; flex-direction:column; }
     }
 
     .pv-admin-switch {
@@ -331,7 +416,18 @@
                         </select>
                     </div>
                     <div class="field">
-                        <label>Rubros que vende</label>
+                        <div class="pv-admin-field-heading">
+                            <label>Catálogo de artículos</label>
+                            <button type="button" class="pv-admin-inline-edit" @onclick="AbrirEditorCatalogo">
+                                <i class="bi bi-pencil-square"></i> Editar
+                            </button>
+                        </div>
+                        <small>Configurá el catálogo gráfico como en Alfa Gestión. La lista Top usa la configuración legacy <code>GOUR_TOPVTAS</code>.</small>
+                        <div class="pv-admin-catalog-summary">
+                            <span><i class="bi bi-star-fill"></i> Artículos destacados: lista Top</span>
+                            <span>Rubros por punto de venta: @(_puntoVentaForm.Rubros.Count == 0 ? "todos" : $"{_puntoVentaForm.Rubros.Count} configurados")</span>
+                        </div>
+                        <label class="pv-admin-subfield-label">Rubros que vende</label>
                         @if (_catalogos.Rubros.Count == 0)
                         {
                             <small>No hay rubros cargados: se venden todos los artículos.</small>
@@ -360,7 +456,7 @@
                                     @(_mostrarTodosRubros ? "Ver menos" : $"Ver todos ({_catalogos.Rubros.Count})")
                                 </button>
                             }
-                            <small>Limita los artículos del Mostrador y de la carta QR. Sin marcar ninguno = todos.</small>
+                            <small>Sin marcar ningún rubro = todos los artículos.</small>
                         }
                     </div>
                     <section class="field">
@@ -434,6 +530,73 @@
                 <footer class="pv-admin-quick-modal__actions">
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditorIngresoRapido">Cancelar</button>
                     <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarEditorIngresoRapido">Aplicar</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (_showCatalogoModal)
+    {
+        <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="catalogo-config-title">
+            <section class="pv-admin-quick-modal__card pv-admin-catalog-modal__card">
+                <header class="pv-admin-quick-modal__header">
+                    <div>
+                        <h3 id="catalogo-config-title">Catálogo de artículos</h3>
+                        <small>Administrá los artículos que aparecen primero en el catálogo gráfico.</small>
+                    </div>
+                    <button type="button" class="pv-admin-quick-modal__close" @onclick="CerrarEditorCatalogo" aria-label="Cerrar">×</button>
+                </header>
+
+                <div class="pv-admin-catalog-modal__toolbar">
+                    <div>
+                        <strong>Artículos más vendidos</strong>
+                        <small>Elegí cuántos artículos detectar de los últimos 12 meses.</small>
+                    </div>
+                    <div class="pv-admin-catalog-modal__detect">
+                        <label for="top-articulos-limite">Cantidad</label>
+                        <input id="top-articulos-limite" type="number" min="1" max="100" step="1" @bind="_topLimiteDraft" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="DetectarTopArticulosAsync" disabled="@_detectandoTop">
+                            <i class="bi bi-stars"></i> @(_detectandoTop ? "Detectando..." : $"Detectar Top {_topLimiteDraft}")
+                        </button>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_catalogoFeedback))
+                {
+                    <div class="pv-admin-catalog-modal__feedback @(_catalogoFeedbackOk ? "is-ok" : "is-error")">@_catalogoFeedback</div>
+                }
+
+                <div class="pv-admin-catalog-modal__grid-wrap">
+                    <table class="pv-admin-catalog-modal__grid">
+                        <thead>
+                            <tr><th>Pos.</th><th>Código</th><th>Descripción</th><th class="numeric">Cantidad</th><th class="numeric">Total</th></tr>
+                        </thead>
+                        <tbody>
+                            @if (_topArticulos.Count == 0)
+                            {
+                                <tr><td colspan="5" class="empty">No hay artículos Top configurados. Presioná “Detectar Top 100”.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var articulo in _topArticulos)
+                                {
+                                    <tr>
+                                        <td>@articulo.Posicion</td>
+                                        <td><input class="pv-admin-catalog-modal__code-input" @bind="articulo.IdArticulo" aria-label="Código del artículo @articulo.Posicion" /></td>
+                                        <td>@articulo.Descripcion</td>
+                                        <td class="numeric">@articulo.CantidadVendida.ToString("N2")</td>
+                                        <td class="numeric">@articulo.TotalVendido.ToString("C2", _culturaAr)</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <small class="pv-admin-catalog-modal__note">Al guardar se actualiza la lista legacy global <code>GOUR_TOPVTAS</code>, que también utiliza Alfa Gestión.</small>
+
+                <footer class="pv-admin-quick-modal__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditorCatalogo">Cancelar</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="GuardarCatalogoAsync" disabled="@_guardandoTop">@(_guardandoTop ? "Guardando..." : "Guardar lista")</button>
                 </footer>
             </section>
         </div>
@@ -645,10 +808,18 @@
     private PuntoVentaEntidadDto? _selectedPuntoVenta;
     private bool _showPuntoVentaForm;
     private bool _showIngresoRapidoModal;
+    private bool _showCatalogoModal;
+    private bool _detectandoTop;
+    private bool _guardandoTop;
+    private int _topLimiteDraft = 100;
     private PuntoVentaEntidadSaveRequest _puntoVentaForm = new();
     private PuntoVentaCatalogosDto _catalogos = new();
     private string _comprobanteHabitual = "FC";
     private bool _mostrarTodosRubros;
+    private IReadOnlyList<PuntoVentaTopArticuloDto> _topArticulos = [];
+    private string? _catalogoFeedback;
+    private bool _catalogoFeedbackOk;
+    private static readonly CultureInfo _culturaAr = CultureInfo.GetCultureInfo("es-AR");
 
     private IEnumerable<PuntoVentaCatalogoOpcionDto> RubrosVisibles
         => _mostrarTodosRubros
@@ -784,6 +955,61 @@
             _puntoVentaForm.Rubros.Add(idRubro);
         else
             _puntoVentaForm.Rubros.Remove(existente);
+    }
+
+    private async Task AbrirEditorCatalogo()
+    {
+        _catalogoFeedback = null;
+        _showCatalogoModal = true;
+        var result = await UiOps.RunAsync(() => PosConfigSvc.GetTopArticulosAsync(), "No se pudo cargar la lista Top.");
+        if (result.Success && result.Value is not null)
+            _topArticulos = result.Value;
+        else if (!result.Success)
+        {
+            _catalogoFeedbackOk = false;
+            _catalogoFeedback = result.Feedback?.Message ?? "No se pudo cargar la lista Top.";
+        }
+    }
+
+    private void CerrarEditorCatalogo() => _showCatalogoModal = false;
+
+    private async Task DetectarTopArticulosAsync()
+    {
+        _detectandoTop = true;
+        _catalogoFeedback = null;
+        _topLimiteDraft = Math.Clamp(_topLimiteDraft, 1, 100);
+        var result = await UiOps.RunAsync(() => PosConfigSvc.DetectarTopArticulosAsync(_topLimiteDraft), "No se pudieron detectar los artículos más vendidos.");
+        if (result.Success && result.Value is not null)
+        {
+            _topArticulos = result.Value;
+            _catalogoFeedbackOk = true;
+            _catalogoFeedback = $"Se detectaron {_topArticulos.Count} artículos. Revisá la lista y guardala para usarla en el catálogo.";
+        }
+        else if (!result.Success)
+        {
+            _catalogoFeedbackOk = false;
+            _catalogoFeedback = result.Feedback?.Message ?? "No se pudieron detectar los artículos más vendidos.";
+        }
+        _detectandoTop = false;
+    }
+
+    private async Task GuardarCatalogoAsync()
+    {
+        _guardandoTop = true;
+        var result = await UiOps.RunAsync(
+            () => PosConfigSvc.SaveTopArticulosAsync(_topArticulos.Select(x => x.IdArticulo).ToList()),
+            "No se pudo guardar la lista Top.");
+        if (result.Success)
+        {
+            _showCatalogoModal = false;
+            _feedback = AppUiMessage.Success("Catálogo actualizado", "La lista Top del catálogo se guardó correctamente.");
+        }
+        else
+        {
+            _catalogoFeedbackOk = false;
+            _catalogoFeedback = result.Feedback?.Message ?? "No se pudo guardar la lista Top.";
+        }
+        _guardandoTop = false;
     }
 
     private void OnIngresoRapidoEnabledChanged(ChangeEventArgs args)

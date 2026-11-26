@@ -7,9 +7,13 @@
             {
                 <div class="ayuda-contextual__barra">
                     <AlfaSelect Label="Manual" Value="@manual.Tema.Clave" ValueChanged="CambiarTema" Options="@Temas" Class="ayuda-contextual__manual" />
-                    <div class="ayuda-contextual__modos">
-                        <AlfaButton Variant="@(!_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>_chat=false">Guías</AlfaButton>
-                        <AlfaButton Variant="@(_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" Icon="bi bi-stars" OnClick="AbrirChat">Preguntar a IA</AlfaButton>
+                    <div class="ayuda-contextual__modos" role="tablist" aria-label="Modo de la ayuda">
+                        <button type="button" role="tab" aria-selected="@(!_chat ? "true" : "false")" class="ayuda-contextual__modo @(!_chat ? "is-activo" : string.Empty)" @onclick="()=>_chat=false">
+                            <i class="bi bi-journal-text" aria-hidden="true"></i> Guías
+                        </button>
+                        <button type="button" role="tab" aria-selected="@(_chat ? "true" : "false")" class="ayuda-contextual__modo @(_chat ? "is-activo" : string.Empty)" @onclick="AbrirChat">
+                            <i class="bi bi-stars" aria-hidden="true"></i> Preguntar a IA
+                        </button>
                     </div>
                 </div>
                 @if (Open && _chatIniciado)
@@ -20,21 +24,26 @@
                 }
                 @if (!_chat)
                 {
-                <AlfaInput Label="Buscar en toda la ayuda" Placeholder="Qué querés hacer: facturar, dar de alta un cliente, cerrar la caja…" Value="@_buscar" ValueChanged="Buscar" MaxLength="200" />
+                @* El texto no vuelve del servidor al campo mientras se escribe (antes se pisaban letras, 2026-11-26):
+                   el campo sólo se vacía al cambiar de manual, recreándolo con @key. *@
+                <div class="ayuda-contextual__buscador">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                    <input id="ayuda-buscar" @key="_versionBuscador" type="search" maxlength="200" aria-label="Buscar en toda la ayuda"
+                           placeholder="Buscá en toda la ayuda: facturar, dar de alta un cliente, cerrar la caja…"
+                           @oninput="AlEscribir" />
+                </div>
                 <div class="ayuda-contextual__layout">
                     <nav class="ayuda-contextual__indice" aria-label="Tareas del manual">
                         <small>@ResumenIndice</small>
                         @foreach (var r in Resultados)
                         {
-                            <AlfaButton Variant="@(EsElegido(r) ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>ElegirResultado(r.Tema.Clave,r.Articulo.Id)">
-                                <span class="ayuda-contextual__item">
-                                    <span>@r.Articulo.Titulo</span>
-                                    @if (Buscando && r.Tema.Clave!=manual.Tema.Clave)
-                                    {
-                                        <small>@r.Tema.Nombre</small>
-                                    }
-                                </span>
-                            </AlfaButton>
+                            <button type="button" class="ayuda-contextual__item @(EsElegido(r) ? "is-activo" : string.Empty)" aria-current="@(EsElegido(r) ? "true" : null)" @onclick="()=>ElegirResultado(r.Tema.Clave,r.Articulo.Id)">
+                                <span>@r.Articulo.Titulo</span>
+                                @if (Buscando && r.Tema.Clave!=manual.Tema.Clave)
+                                {
+                                    <small>@r.Tema.Nombre</small>
+                                }
+                            </button>
                         }
                     </nav>
                     <article class="ayuda-contextual__contenido" aria-label="Contenido de la ayuda" @key="(_manual.Tema.Clave,_completo,Elegido?.Tema.Clave,Elegido?.Articulo.Id)">
@@ -83,10 +92,36 @@
     private bool _completo,_estabaAbierto,_chat,_chatIniciado;
     private bool Buscando=>!string.IsNullOrWhiteSpace(_buscar);
     private string ResumenIndice=>Buscando ? $"{Resultados.Count} resultado(s) en toda la ayuda" : $"{Resultados.Count} tarea(s)";
-    // Sin texto: las tareas del manual elegido. Con texto: lo que coincide en toda la ayuda, primero el manual elegido.
-    private IReadOnlyList<AyudaResultado> Resultados=>_manual is null ? []
-        : Buscando ? AyudaManuales.BuscarEnTodo(_buscar,_manual.Tema.Clave)
-        : _manual.Articulos.Select(a=>new AyudaResultado(_manual.Tema,a)).ToArray();
+    // Sin texto: las tareas del manual elegido. Con texto: lo que coincide en toda la ayuda.
+    // Se calcula una vez por búsqueda: antes se recalculaba varias veces en cada dibujo de la pantalla.
+    private IReadOnlyList<AyudaResultado> _resultados=[];
+    private (string? Tema,string Buscar) _resultadosDe;
+    private IReadOnlyList<AyudaResultado> Resultados
+    {
+        get
+        {
+            if(_manual is null)return [];
+            if(_resultadosDe!=(_manual.Tema.Clave,_buscar))
+            {
+                _resultados=Buscando ? AyudaManuales.BuscarEnTodo(_buscar,_manual.Tema.Clave)
+                    : _manual.Articulos.Select(a=>new AyudaResultado(_manual.Tema,a)).ToArray();
+                _resultadosDe=(_manual.Tema.Clave,_buscar);
+            }
+            return _resultados;
+        }
+    }
+    private int _versionBuscador;
+    private CancellationTokenSource? _esperaBusqueda;
+    // Busca cuando se deja de escribir un momento, no en cada tecla.
+    private async Task AlEscribir(ChangeEventArgs e)
+    {
+        _esperaBusqueda?.Cancel();
+        var espera=_esperaBusqueda=new CancellationTokenSource();
+        var texto=e.Value?.ToString() ?? "";
+        try { await Task.Delay(250,espera.Token); }
+        catch(TaskCanceledException) { return; }
+        Buscar(texto);
+    }
     private AyudaResultado? Elegido=>Resultados.FirstOrDefault(r=>r.Articulo.Id==_seleccion && (_temaSeleccion.Length==0 || r.Tema.Clave==_temaSeleccion)) ?? Resultados.FirstOrDefault();
     private bool EsElegido(AyudaResultado r)=>!_completo && Elegido is { } e && e.Tema.Clave==r.Tema.Clave && e.Articulo.Id==r.Articulo.Id;
     protected override void OnParametersSet()
@@ -102,6 +137,7 @@
     {
         _manual=AyudaManuales.Obtener(AyudaManuales.Temas.Any(t=>t.Clave==tema) ? tema! : "general");
         _buscar="";_seleccion="";_temaSeleccion="";_completo=false;
+        _esperaBusqueda?.Cancel();_versionBuscador++;
     }
     private void AbrirChat() { _chatIniciado=true;_chat=true; }
     private void AbrirFuente(AyudaFuente fuente) { CambiarTema(fuente.Tema);Elegir(fuente.Articulo);_chat=false; }

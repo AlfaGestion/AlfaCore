@@ -55,6 +55,11 @@ public class TicketGridItemDto
     public double HorasHabilesEsperando { get; set; }
     public bool ClientePrioritario { get; set; }
     public string ClienteClasificacion { get; set; } = string.Empty;
+    /// <summary>Nombre del tipo de cliente (descripción de su clasificación, o «Con abono»). Vacío = sin tipo.</summary>
+    public string TipoClienteNombre { get; set; } = string.Empty;
+    public string TipoClienteColor { get; set; } = string.Empty;
+    /// <summary>Niveles que sube la prioridad por el tipo de cliente (0 = cliente normal).</summary>
+    public int NivelesCliente { get; set; }
     public string EstadoAbono { get; set; } = string.Empty;
     public int CasosAbiertosCliente { get; set; }
     public DateTime? FechaSeguimiento { get; set; }
@@ -139,6 +144,19 @@ public sealed class TicketsAtencionConfigDto
     public int VariosCasosDesde { get; set; } = 3;
     /// <summary>Estados en los que se espera al cliente (separados por coma): el plazo se frena.</summary>
     public string EstadosEsperaCliente { get; set; } = TicketEstadoKeys.EnEspera;
+    /// <summary>Clasificaciones de clientes de la base (TA_CLASIFICACIONES) y cuántos niveles sube cada una.</summary>
+    public List<TicketTipoClienteDto> TiposCliente { get; set; } = [];
+    /// <summary>Niveles que sube como mínimo un cliente con abono activo (facturación automática), tenga o no clasificación.</summary>
+    public int AbonoActivoNiveles { get; set; } = 1;
+}
+
+/// <summary>Una clasificación de clientes y cuánto pesa en Tickets (TICKETS-CLASIFICACION-NIVELES-{Codigo}).</summary>
+public sealed class TicketTipoClienteDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public string ColorHex { get; set; } = string.Empty;
+    public int Niveles { get; set; }
 }
 
 public sealed class TicketSeguimientoRequest
@@ -476,6 +494,8 @@ public sealed class TicketsClienteCasosDto
     public int CreadosPeriodo { get; set; }
     public bool Prioritario { get; set; }
     public string EstadoAbono { get; set; } = string.Empty;
+    public string TipoClienteNombre { get; set; } = string.Empty;
+    public string TipoClienteColor { get; set; } = string.Empty;
 }
 
 // ── Avisos automáticos y prioridad sugerida por IA (2026-11-24) ─────────────────────────────

@@ -135,6 +135,23 @@
     background: #dc4654;
 }
 
+.alfa-confirm-dialog__icon--primary {
+    color: var(--alfa-accent, #2dd4bf);
+    background: rgb(20 184 166 / 14%);
+}
+
+.alfa-confirm-dialog__button--primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+    background: #0d9488;
+}
+
+.alfa-confirm-dialog__button--primary:hover:not(:disabled) {
+    background: #0f766e;
+}
+
 .alfa-confirm-dialog__spinner {
     width: 13px;
     height: 13px;

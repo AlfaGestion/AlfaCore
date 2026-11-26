@@ -98,7 +98,7 @@ public sealed class AlfaKnowledgeSuggestionService(
                     (message.Direction == "ENTRANTE" || message.Direction == "SALIENTE")
                     && !string.IsNullOrWhiteSpace(message.Texto))
                 .OrderBy(static message => message.FechaHora)
-                .TakeLast(60)
+                .TakeLast(Math.Max(1, settings.MensajesContexto))
                 .Select(static message => new
                 {
                     role = message.Direction == "ENTRANTE" ? "user" : "assistant",
@@ -483,7 +483,8 @@ public sealed class AlfaKnowledgeSuggestionService(
             ApiKey = ReadValue(values, "CONV_ALFAKNOWLEDGE_API_KEY", string.Empty),
             KnowledgeBaseId = ReadValue(values, "CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID", string.Empty),
             Instrucciones = ReadValue(values, "CONV_ALFAKNOWLEDGE_INSTRUCCIONES", string.Empty),
-            TimeoutSeconds = ReadIntValue(values, "CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", 0, 15)
+            TimeoutSeconds = ReadIntValue(values, "CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", 0, 15),
+            MensajesContexto = Math.Min(60, ReadIntValue(values, "CONV_ALFAKNOWLEDGE_MENSAJES_CONTEXTO", 0, AlfaKnowledgeOptions.DefaultMensajesContexto))
         };
     }
 
@@ -559,7 +560,8 @@ public sealed class AlfaKnowledgeSuggestionService(
                 'CONV_ALFAKNOWLEDGE_API_KEY',
                 'CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID',
                 'CONV_ALFAKNOWLEDGE_INSTRUCCIONES',
-                'CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS'
+                'CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS',
+                'CONV_ALFAKNOWLEDGE_MENSAJES_CONTEXTO'
             )
             """;
 

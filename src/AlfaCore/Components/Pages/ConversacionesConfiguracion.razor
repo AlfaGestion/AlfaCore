@@ -4668,8 +4668,13 @@ else
             BotMaxRespuestas = source.BotMaxRespuestas,
             BotSoloFueraHorario = source.BotSoloFueraHorario,
             BotEsperaMinutos = source.BotEsperaMinutos,
+            BotAgruparSegundos = source.BotAgruparSegundos,
+            BotPausaTrasTecnicoHoras = source.BotPausaTrasTecnicoHoras,
+            BotContextoHoras = source.BotContextoHoras,
+            AsistenteModelo = source.AsistenteModelo,
             BotCanales = [.. source.BotCanales],
             BotGeneraTicket = source.BotGeneraTicket,
+            BotTicketCriterio = source.BotTicketCriterio,
             BotWebPideDatos = source.BotWebPideDatos,
             AutoCierreActivo = source.AutoCierreActivo,
             AutoCierreHorasAviso = source.AutoCierreHorasAviso,
@@ -4729,6 +4734,11 @@ else
            && left.BotMaxRespuestas == right.BotMaxRespuestas
            && left.BotSoloFueraHorario == right.BotSoloFueraHorario
            && left.BotEsperaMinutos == right.BotEsperaMinutos
+           && left.BotAgruparSegundos == right.BotAgruparSegundos
+           && left.BotPausaTrasTecnicoHoras == right.BotPausaTrasTecnicoHoras
+           && left.BotContextoHoras == right.BotContextoHoras
+           && string.Equals(left.AsistenteModelo, right.AsistenteModelo, StringComparison.Ordinal)
+           && string.Equals(left.BotTicketCriterio, right.BotTicketCriterio, StringComparison.Ordinal)
            && left.BotCanales.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).SequenceEqual(right.BotCanales.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase)
            && left.BotGeneraTicket == right.BotGeneraTicket
            && left.BotWebPideDatos == right.BotWebPideDatos

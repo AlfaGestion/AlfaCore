@@ -81,7 +81,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/AyudaManuales.cs`
 - Propósito: catálogo cerrado de manuales embebidos (`src/AlfaCore/Docs/manual_*.md`) y mapa pantalla → manual y artículo que abre el ícono de ayuda (`Pantallas`, `TemaParaRuta`, `SeccionParaRuta`).
 - Datos que usa: recursos Markdown embebidos; no lee base de datos ni rutas aportadas por el usuario.
-- Observaciones: un manual por módulo (`AyudaTema.Grupo` = módulo del menú; la ventana de ayuda los muestra en un selector agrupado). Cada `##`/`###` con texto propio es un artículo (los títulos que solo agrupan y el «Índice» no). `BuscarEnTodo` busca en todos los manuales (primero el actual). Al crear una pantalla, documentarla en el manual de su módulo y agregar su ruta a `Pantallas` (lo específico antes que lo general; `$` al final = la ruta termina ahí). `AyudaContextualTests` falla si el artículo no existe o si una pestaña de módulo o una entrada del engranaje no tiene ayuda. El chat con IA (`AyudaIaService`) usa los mismos manuales.
+- Observaciones: un manual por módulo (`AyudaTema.Grupo` = módulo del menú; la ventana de ayuda los muestra en un selector agrupado). Cada `##`/`###` con texto propio es un artículo (los títulos que solo agrupan y el «Índice» no). `BuscarEnTodo` busca en todos los manuales ordenado por coincidencias, con ventaja para el manual actual; `TerminosBusqueda` (sin acentos, sin palabras vacías ni plural) y `Puntaje` (3 por palabra en el título, 1 en el texto) son compartidos con `AyudaIaService.Recuperar`. Al crear una pantalla, documentarla en el manual de su módulo y agregar su ruta a `Pantallas` (lo específico antes que lo general; `$` al final = la ruta termina ahí). `AyudaContextualTests` falla si el artículo no existe o si una pestaña de módulo o una entrada del engranaje no tiene ayuda. El chat con IA (`AyudaIaService`) usa los mismos manuales.
+
+### AyudaHistorialService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/AyudaHistorialService.cs`
+- Propósito: historial de la ayuda con IA por usuario y conversación (guardar, listar, abrir y borrar).
+- Datos que usa: `dbo.AYUDA_IA_MENSAJES` (script `2026-11-26-010__ayuda_ia_historial.sql`) y `TA_CONFIGURACION.AYUDA_IA_HISTORIAL_DIAS` (60 por defecto): al guardar borra lo más viejo.
+- Observaciones: sin la tabla (base sin actualizar) la ayuda funciona igual, sin historial. Las fuentes guardadas se vuelven a leer de los manuales y se descartan las que ya no existen.
 
 ### FiltroPeriodo
 
@@ -613,7 +621,7 @@ Criterio aplicado:
 
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/TicketsAtencionCalculo.cs`
-- Propósito: orden «Atender primero» de Tickets: a quién le toca (nosotros, cliente o seguimiento), prioridad efectiva, plazo en horas hábiles (frenado mientras se espera al cliente), puntaje, motivos visibles y bandejas.
+- Propósito: orden «Atender primero» de Tickets: a quién le toca (nosotros, cliente o seguimiento), tipo de cliente (niveles por clasificación de `TA_CLASIFICACIONES` y abono activo, `TipoCliente`), prioridad efectiva, plazo en horas hábiles (frenado mientras se espera al cliente), puntaje, motivos visibles y bandejas.
 - Datos que usa: `TicketAtencionDatos` (lo arma `TicketsService.Atencion.cs` con `TICK_TICKETS`, `TICK_ESTADOS_HIST`, `TICK_PLAZOS`, `CONV_MENSAJES`, `TICK_INFORMES`), `TicketsAtencionConfigDto` (`TA_CONFIGURACION` grupo `TICKETS`).
 - Observaciones: funciones puras con pruebas en `TicketsAtencionCalculoTests`; la configuración se edita en `/tickets/configuracion`.
 

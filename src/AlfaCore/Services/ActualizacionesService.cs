@@ -441,6 +441,9 @@ public sealed class ActualizacionesService(
         // 2026-11-03: dos sesiones usaron 002/003 el mismo día; los libros de IVA pasaron a 005/006.
         ["2026-11-03-002__ventas_libro_iva_menu_web.sql"] = "2026-11-03-005__ventas_libro_iva_menu_web.sql",
         ["2026-11-03-003__compras_libro_iva_menu_web.sql"] = "2026-11-03-006__compras_libro_iva_menu_web.sql",
+        // 2026-11-26: la 003 la usó también archivos_tabla_comprobantes_menu_web (aplicado en ALFANET desde una copia
+        // local) y el historial de la ayuda no corría nunca ahí; pasó a 010.
+        ["2026-11-26-003__ayuda_ia_historial.sql"] = "2026-11-26-010__ayuda_ia_historial.sql",
     };
 
     /// <summary>

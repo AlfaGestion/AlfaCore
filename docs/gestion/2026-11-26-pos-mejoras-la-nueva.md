@@ -5,7 +5,8 @@
 - El panel de ingreso rápido admite las modalidades `DESHABILITADO`, `COMPACTO` y `COMPLETO` por punto de venta. La modalidad compacta conserva el valor y el modo al mostrar u ocultar el teclado.
 - Las observaciones individuales de una NP se editan desde el detalle de cada línea del carrito y se guardan en `V_MV_CPTEINSUMOS.OBSERVACIONES`, la estructura legacy existente. No se creó una tabla AlfaCore.
 - Las líneas de NP con observaciones no se agrupan automáticamente con otra línea del mismo artículo, para conservar instrucciones diferentes.
-- El catálogo incorpora la categoría `Top`, que lee `GOUR_TOPVTAS` y filtra por la lista legacy explícita, respetando además los rubros configurados para el punto de venta.
+- El catálogo incorpora un editor en modal, con grilla estilo VB6 y detección de hasta 100 artículos más vendidos. La detección usa la vista oficial `VT_DETALLEIVAPROFORMA` de los últimos 12 meses y, al guardar, actualiza la lista legacy `GOUR_TOPVTAS`.
+- La actualización `2026-11-26-003__ventas_pos_catalogo_top.sql` amplía `TA_CONFIGURACION.VALOR` a `nvarchar(max)`, conservando la misma clave legacy y evitando una tabla paralela para el catálogo Top.
 - Se agregaron scripts idempotentes para la modalidad del panel y para el valor predeterminado de condición de venta de NP cuando la base contiene clientes con condición vacía.
 
 ## Equivalencia VB6 verificada
@@ -21,7 +22,7 @@ En `C:\NETSISTEMAS\SISTEMAS\NwSistemas\NMC_CONT_DEV\V_mv_vtaPDVG.frm`:
 
 ## Pendientes con evidencia
 
-- `GOUR_TOPVTAS` conserva su alcance global legacy y se consulta en modo lectura desde AlfaCore; todavía no se modela como edición por punto de venta porque VB6 no lo guarda con ese alcance.
+- `GOUR_TOPVTAS` conserva su alcance global legacy: el editor de AlfaCore muestra y guarda la misma lista que utiliza VB6. Los rubros continúan siendo una configuración independiente del punto de venta; no se repiten dentro del editor de artículos Top.
 - La impresión específica del recibo de anticipo todavía debe conectarse al renderizador/reporte de `CBCT` existente. La creación del anticipo y su acción `A` ya usan el circuito real; no se agrega una impresión ficticia ni se registra nuevamente la cobranza ante un error de impresión.
 - La preparación, entrega, sectores y transformaciones de NP requieren continuar el relevamiento de las rutinas que escriben `MV_PREPARACION` y `MV_PREPARACION_DETALLES`; en esta etapa no se habilitaron escrituras nuevas.
 

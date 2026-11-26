@@ -177,9 +177,6 @@ public sealed class ConversacionAsistenteHerramientasService(
     internal const string InstruccionPedidosEncontrados =
         "(Respondé tipo RESUELVE con el estado de estos pedidos. No es un seguimiento de soporte.)";
 
-    internal static bool MensajeTraeNumeroDePedido(string? mensajeCliente)
-        => Regex.IsMatch(NormalizarTexto(mensajeCliente), @"\bnp\s*-?\s*\d+[a-z]?\b");
-
     /// <summary>Primer pedido pendiente o en preparación del resultado de consultar_pedidos; null si todos
     /// están finalizados o anulados (un pedido viejo no compite con un ticket abierto).</summary>
     internal static string? PrimerPedidoEnCurso(string? resultadoPedidos)
@@ -217,22 +214,6 @@ public sealed class ConversacionAsistenteHerramientasService(
         "que ", "como ", "cual ", "cuales ", "donde ", "cuando ", "quien ", "por que ", "porque ",
         "tienen ", "tenes ", "hacen ", "haces ", "venden ", "aceptan ", "puedo ", "se puede "
     ];
-
-    /// <summary>
-    /// Si el mensaje puede ser la respuesta a una aclaración de precio ("AA", "Duracell", "la de 9 V").
-    /// Una pregunta nueva ("¿Qué es el código RECICLA10?") no completa la consulta anterior y no debe
-    /// forzar consultar_precio con el artículo del mensaje previo (2026-10-06).
-    /// </summary>
-    internal static bool PuedeCompletarAclaracion(string? mensajeCliente)
-    {
-        var texto = Regex.Replace(NormalizarTexto(mensajeCliente), @"[¿?¡!.,;:]", " ").Trim();
-        if (texto.Length == 0)
-            return false;
-
-        var palabras = texto.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var conEspacio = string.Join(' ', palabras) + " ";
-        return palabras.Length <= 6 && !InicioPreguntaNueva.Any(conEspacio.StartsWith);
-    }
 
     // Palabras que el cliente/modelo suele incluir pero nunca forman parte de la descripción de un
     // artículo. Van sin tildes (se comparan contra el texto ya normalizado).

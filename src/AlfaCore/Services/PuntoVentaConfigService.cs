@@ -157,6 +157,116 @@ public sealed class PuntoVentaConfigService(
             return affected;
         }, "No se pudo guardar el comprobante habitual del punto de venta.", ct);
 
+    public Task<IReadOnlyList<PuntoVentaTopArticuloDto>> GetTopArticulosAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetTopArticulos", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var configuracion = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
+                SELECT TOP (1) ISNULL(VALOR, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'GOUR_TOPVTAS';
+                """, cancellationToken: token));
+            var ids = ParseTopArticuloIds(configuracion);
+            if (ids.Count == 0)
+                return (IReadOnlyList<PuntoVentaTopArticuloDto>)[];
+
+            var rows = (await cn.QueryAsync<PuntoVentaTopArticuloDto>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(IDARTICULO)) AS IdArticulo,
+                       LTRIM(RTRIM(ISNULL(DESCRIPCION, ''))) AS Descripcion
+                FROM dbo.V_MA_ARTICULOS
+                WHERE LTRIM(RTRIM(IDARTICULO)) IN @Ids;
+                """, new { Ids = ids }, cancellationToken: token))).ToDictionary(x => x.IdArticulo, StringComparer.OrdinalIgnoreCase);
+
+            return (IReadOnlyList<PuntoVentaTopArticuloDto>)ids
+                .Where(rows.ContainsKey)
+                .Select((id, index) => new PuntoVentaTopArticuloDto
+                {
+                    Posicion = index + 1,
+                    IdArticulo = rows[id].IdArticulo,
+                    Descripcion = rows[id].Descripcion
+                })
+                .ToList();
+        }, "No se pudo leer la lista Top de artículos.", ct);
+
+    public Task<IReadOnlyList<PuntoVentaTopArticuloDto>> DetectarTopArticulosAsync(int limite = 100, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "DetectarTopArticulos", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var cantidad = Math.Clamp(limite, 1, 1000);
+            var rows = (await cn.QueryAsync<PuntoVentaTopArticuloDto>(new CommandDefinition("""
+                SELECT TOP (@Limite)
+                       CONVERT(varchar(50), d.Articulo) AS IdArticulo,
+                       LTRIM(RTRIM(ISNULL(d.DESCRIPCION, ''))) AS Descripcion,
+                       CONVERT(decimal(18, 4), SUM(ISNULL(d.Consumo, 0))) AS CantidadVendida,
+                       CONVERT(decimal(18, 2), SUM(ISNULL(d.ValorVenta, 0))) AS TotalVendido
+                FROM dbo.VT_DETALLEIVAPROFORMA d
+                WHERE d.FECHA >= DATEADD(month, -12, CONVERT(date, GETDATE()))
+                  AND d.FECHA < DATEADD(day, 1, CONVERT(date, GETDATE()))
+                GROUP BY d.Articulo, d.DESCRIPCION
+                ORDER BY SUM(ISNULL(d.Consumo, 0)) DESC,
+                         SUM(ISNULL(d.ValorVenta, 0)) DESC,
+                         d.DESCRIPCION;
+                """, new { Limite = cantidad }, cancellationToken: token))).ToList();
+
+            return (IReadOnlyList<PuntoVentaTopArticuloDto>)rows
+                .Select((row, index) => new PuntoVentaTopArticuloDto
+                {
+                    Posicion = index + 1,
+                    IdArticulo = row.IdArticulo,
+                    Descripcion = row.Descripcion,
+                    CantidadVendida = row.CantidadVendida,
+                    TotalVendido = row.TotalVendido
+                })
+                .ToList();
+        }, "No se pudo detectar los artículos más vendidos.", ct);
+
+    public Task SaveTopArticulosAsync(IReadOnlyList<string> idsArticulo, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveTopArticulos", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var ids = idsArticulo
+                .Select(x => x.Trim())
+                .Where(x => x.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var valor = ids.Count == 0 ? string.Empty : $"|{string.Join('|', ids)}|";
+            var limiteValor = await cn.ExecuteScalarAsync<int?>(new CommandDefinition("""
+                SELECT CHARACTER_MAXIMUM_LENGTH
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = 'dbo'
+                  AND TABLE_NAME = 'TA_CONFIGURACION'
+                  AND COLUMN_NAME = 'VALOR';
+                """, cancellationToken: token)) ?? 150;
+            if (limiteValor > 0 && valor.Length > limiteValor)
+            {
+                throw new InvalidOperationException(
+                    $"La configuración legacy GOUR_TOPVTAS admite hasta {limiteValor} caracteres y la lista actual ocupa {valor.Length}. Reducí la cantidad de artículos antes de guardar; ampliar esa columna requeriría una modificación de esquema no autorizada.");
+            }
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.TA_CONFIGURACION
+                SET VALOR = @Valor, FechaHora_Modificacion = GETDATE()
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'GOUR_TOPVTAS';
+
+                IF @@ROWCOUNT = 0
+                BEGIN
+                    INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, FechaHora_Grabacion)
+                    VALUES (N'DATOS', N'GOUR_TOPVTAS', @Valor, GETDATE());
+                END;
+                """, new { Valor = valor }, cancellationToken: token));
+            return 0;
+        }, "No se pudo guardar la lista Top de artículos.", ct);
+
+    private static List<string> ParseTopArticuloIds(string? value)
+        => (value ?? string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     private static string BuildComprobanteHabitualKey()
         => $"{Environment.MachineName.Trim()}_GOUR_CPTE_PC".ToUpperInvariant();
 

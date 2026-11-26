@@ -221,7 +221,7 @@ public sealed partial class TicketsService(
         {
             TicketViewColumnKeys.Esperando => t => t.EsperandoA == TicketEsperandoA.Nosotros ? t.HorasHabilesEsperando : -1,
             TicketViewColumnKeys.Plazo => t => string.IsNullOrEmpty(t.PlazoEstado) ? double.MaxValue : t.PlazoHorasRestantes,
-            TicketViewColumnKeys.TipoCliente => t => (t.ClientePrioritario ? 2 : 0) + (t.EstadoAbono == ConversacionAbonoEstados.Abonado ? 1 : 0),
+            TicketViewColumnKeys.TipoCliente => t => t.NivelesCliente * 2 + (t.EstadoAbono == ConversacionAbonoEstados.Abonado ? 1 : 0),
             TicketViewColumnKeys.CasosCliente => t => t.CasosAbiertosCliente,
             TicketViewColumnKeys.Seguimiento => t => t.FechaSeguimiento?.Ticks ?? double.MaxValue,
             _ => t => t.FechaHoraAlta.Ticks

@@ -16,6 +16,15 @@ public sealed class AlfaKnowledgeOptions
     public string Instrucciones { get; set; } = string.Empty;
     public int TimeoutSeconds { get; set; } = 15;
 
+    /// <summary>
+    /// Últimos mensajes de la charla que se le mandan a AlfaKnowledge (CONV_ALFAKNOWLEDGE_MENSAJES_CONTEXTO).
+    /// Con 60, ALFANET tardaba 31 s y AlfaCore cortaba a los 30: el bot se quedaba sin el conocimiento
+    /// (2026-11-26). Con 6 a 8 tarda unos 17 s y la búsqueda se centra en lo que se pregunta.
+    /// </summary>
+    public int MensajesContexto { get; set; } = DefaultMensajesContexto;
+
+    public const int DefaultMensajesContexto = 8;
+
     public bool IsConfigured
         => !string.IsNullOrWhiteSpace(BaseUrl) && !string.IsNullOrWhiteSpace(ApiKey);
 }

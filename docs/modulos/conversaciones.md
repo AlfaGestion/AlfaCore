@@ -266,6 +266,131 @@ punta a punta (primer caso: un reparto de agua):
 Borradores en `CONV_BOT_CLIENTES` y `CONV_BOT_PEDIDOS.DireccionEntrega` (script
 `2026-11-17-053__conversaciones_bot_alta_clientes.sql`). Código: `ConversacionBotClientesService`.
 
+## Bot: mensajes seguidos del cliente (2026-11-25)
+
+- El cliente suele escribir en varios mensajes ("Buen día" + "Buenas tardes", "no me actualizan los precios en
+  las cajas" + "2,3y4"). Antes el bot contestaba cada uno por separado: dos saludos, una pregunta ya contestada y
+  un saludo fijo a "2,3y4" (Supermercado Manantial, ALFANET).
+- Ahora espera `CONV_BOT_AGRUPAR_SEGUNDOS` (6 por defecto, 0 = no espera; Configuración → Asistente IA →
+  Límites, «Segundos para que el cliente termine de escribir»). Si en ese tiempo llega otro mensaje, contesta
+  el llamado de ese último, y a la IA le llega todo lo que el cliente escribió desde nuestra última respuesta,
+  un mensaje por renglón (`UnirMensajesSinResponder`; si el último es audio o imagen va solo ese). Lo mismo en
+  el job de «Minutos de espera antes de responder» y en los mensajes que llegan mientras el bot está contestando.
+- Un mensaje con números nunca es un saludo (`EsMensajeSocial`): "2,3y4" quedaba reducido a la "y".
+
+## Bot: interpreta la IA, no listas de palabras (2026-11-25, rama `bot-ia-decide`)
+
+Lo que quiere decir el cliente lo decide la IA leyendo la conversación completa. Se sacaron las reglas por
+palabras que pisaban su respuesta:
+
+| Antes (regla por palabras) | Ahora |
+|---|---|
+| Saludo / agradecimiento → texto fijo "¡Hola! ¿En qué te puedo ayudar?" | Lo contesta la IA (criterio en el prompt: no se deriva ni abre ticket) |
+| Mensaje de prueba, "sí"/"no" sueltos, mensajes sin contenido | La IA contesta o pregunta qué necesita (ACLARA) |
+| "¿Novedades?" por frases | Tipo `SEGUIMIENTO` que devuelve la IA |
+| "Ya se arregló" por frases | Campo `tema_resuelto` del JSON; la respuesta al cliente la redacta la IA |
+| "¿Tu pedido o tu consulta?": elección por palabras y reescritura del mensaje | La IA lee la conversación; sólo se evita repetir la pregunta |
+| Sí/no a "¿escribís por tal cuenta?" por listas | Herramienta `confirmar_identidad` (sólo si ya se le preguntó) |
+| Confirmar/cancelar pedido o alta de cliente por listas | Herramientas `confirmar_pedido` / `confirmar_alta_cliente` (sólo con borrador pendiente) |
+| Ticket sólo si el mensaje "parece consulta" | Lo decide `abrir_ticket` de la IA |
+| DERIVA sin nombrar al equipo y con "?" → ACLARA | Criterio en el prompt |
+
+Quedan, porque no interpretan al cliente sino que cuidan qué se graba o se muestra: un pedido o alta se graba
+sólo si existe el borrador y el cliente recibe el texto que devuelve la grabación; sin identidad confirmada no
+se dan datos privados; tope de créditos; nunca dos aclaraciones seguidas; filtros sobre lo que escribe la IA
+(no pedir que contacte a otro, no afirmar que algo no se vende). Las palabras de escalado y de urgencia
+siguen siendo configuración de cada empresa. `EsMensajeSocial` queda sólo para no buscar en manuales y
+AlfaKnowledge ante un saludo (no decide la respuesta).
+
+### Prueba con charlas reales de ALFANET (2026-11-25/26)
+
+Se repitieron contra la base de pruebas (copia local, IA real, configuración del asistente de ALFANET copiada
+por un rato) 550 tramos de charlas reales del último mes: 1077 intervenciones del cliente con 339 fotos y
+audios, hasta la primera respuesta de una persona del equipo. Salieron dos fallas, corregidas:
+
+- **Fotos y audios de una tanda.** "[foto] / me sale este cartel" se contestaba "¿qué mensaje te aparece?":
+  la IA sólo veía el adjunto del último mensaje, y si el último era una foto se perdía el texto anterior.
+  Ahora lo pendiente va completo y en orden (`UnirMensajesSinResponder`), la IA ve hasta 4 fotos de la
+  tanda (`CargarImagenesSinResponderAsync`) y cada "[audio]" se cambia por su transcripción
+  (`ReemplazarAudios`).
+- **Bot mudo después de derivar.** Con el tema ya en manos del equipo el bot calla a propósito, pero sin
+  respuesta no quedaba marca de lo atendido: cada mensaje nuevo se juntaba con la consulta vieja, la IA
+  volvía a derivar y no contestaba más, ni un "gracias". Ahora lo pendiente arranca después del último
+  mensaje que el bot ya atendió, contestara o no (`MarcarEntranteAtendidoBot`, en memoria del proceso).
+- **Tickets con títulos sueltos** ("4", "Ok", "En bariloche"): el título era el último mensaje. Ahora la IA
+  devuelve `resumen_caso` (de qué se trata, con toda la charla) y es el título del ticket
+  (`TituloTicketBot`); si viene vacío, queda el mensaje como antes.
+
+### Después de derivar y tickets (2026-11-26, pedido de ALFA NET)
+
+- **Si alguien del equipo tomó la charla, el bot se apaga.** Una respuesta de una persona o una asignación
+  hecha por una persona (las automáticas de reglas, SLA y el bot se graban "AlfaCore" y no cuentan) en las
+  últimas `CONV_BOT_PAUSA_TECNICO_HORAS` (24 por defecto; 0 = sólo calla ante el mensaje que ya contestó la
+  persona), sin cierre ni reactivación después, hace que el bot no responda (`GetEstadoAsistenteCoreAsync`,
+  evento `BotPausadoPorTecnico`). Se configura en Asistente IA → Límites.
+- **Pausar / reactivar a mano.** Botón "Asistente activo / Asistente pausado" en el encabezado de la charla
+  (en celular, en el menú ⋮). Deja el evento "X pausó / reactivó el asistente en esta conversación"; la pausa
+  dura hasta reactivarlo o cerrar la conversación. Reactivar también le devuelve la charla al bot aunque el
+  equipo la haya atendido (`SetAsistentePausadoAsync`, `GetEstadoAsistenteAsync`).
+- **En horario primero el equipo.** `CONV_BOT_ESPERA_MINUTOS` ahora vale sólo dentro del horario de atención
+  (sin horario cargado, siempre): el bot espera y contesta si nadie lo tomó. Fuera de horario, enseguida.
+- **Qué lee.** Desde el último cierre y como mucho `CONV_BOT_CONTEXTO_HORAS` (48 por defecto; 0 = sin límite).
+- **Modelo por base.** `CONV_ASISTENTE_MODELO` (Asistente IA → General → Modelo de IA): vacío = el del servidor
+  (`OPENAI_MODEL` o gpt-4o-mini), o gpt-4o-mini / gpt-4.1-mini / gpt-4.1. Sólo modelos de esa lista, porque cada
+  uno necesita su precio en `ALFA_CENTRAL.IA_PRECIO_MODELO` para contar en el tope de créditos; `CentralIaSchema`
+  carga los de gpt-4.1 y gpt-4.1-mini (precio de lista de OpenAI, verificar) y se vuelve a aplicar si faltan.
+
+**Cómo lo ve el cliente (2026-11-26):** dos opciones, "Estándar" (gpt-6-luna, recomendado, ≈ 0,4 créditos por
+respuesta) y "Avanzado" (gpt-6.1-terra, ≈ 3,3). Sin elegir, el asistente usa el Estándar
+(`AsistenteModeloPorDefecto`; `OPENAI_MODEL` ya no cambia el modelo del asistente, sí el de las otras funciones
+de IA). Pasar a un modelo que consume más pide confirmación (`AlfaConfirmDialog` con `Tone=Primary`) avisando
+que se descuenta del plan y que el excedente se factura al cierre del mes.
+
+**AlfaKnowledge (2026-11-26):** a AlfaKnowledge se le mandan sólo los últimos `CONV_ALFAKNOWLEDGE_MENSAJES_CONTEXTO`
+mensajes de la charla (8 por defecto; antes 60). En ALFANET, con 60 tardaba 31 s y AlfaCore corta a los
+`CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS` (30): el bot quedaba sin el conocimiento y contestaba "no tengo cargados los pasos".
+Con 6 a 8 mensajes tarda unos 17 s. Ojo: el endpoint externo (`/api/external/suggest-reply`) no elige los mismos
+documentos que el chat propio de AlfaKnowledge (para "cómo hago una nota de crédito" trae la guía del cajero del
+punto de venta, el chat trae "Manejo de Stock con Alfa Gestión - 04"); eso se corrige del lado de AlfaKnowledge.
+
+#### Comparación de modelos (2026-11-26)
+
+Mismas 6 charlas (impresora con datos sumados, pedido de desarrollo, "2,3y4", calculadora, foto de un error,
+charla social) con el bot completo en la copia local, 20 respuestas por modelo. Costo medido por respuesta
+(1 = gpt-4o-mini) y precios de lista de https://developers.openai.com/api/docs/pricing:
+
+| Modelo | Costo | Resultado |
+|---|---|---|
+| gpt-6-luna | 0,4 | El mejor: entiende datos sueltos, lee bien fotos, suma al caso, corto. **Recomendado.** |
+| gpt-6.1-terra | 3,3 | Igual de bien, más seco. Avanzado. |
+| gpt-4o-mini | 1 | Genérico; "2,3y4" lo tomó como módulos. Anterior. |
+| gpt-4.1 | 8,9 | Bien, pero se ofrece a "revisarlo con vos". Fuera de la lista. |
+| gpt-5-nano / gpt-5-mini | 0,2 / 1,2 | Respuestas largas con listas de preguntas; gpt-5-mini se ofrece a calcular. Fuera. |
+| gpt-5.4-nano | 0,8 | Al saludo responde con la lista de módulos. Fuera. |
+| gpt-5.6-luna | 0,8 | Bien, pero una respuesta salió con una palabra en cirílico. Fuera. |
+
+Los modelos que "piensan" (gpt-5, gpt-5-mini/nano, gpt-5.6, gpt-6) necesitan `reasoning_effort`
+(`EsfuerzoRazonamiento`): sin él tardaban 10-13 s y gastaban hasta 1.800 tokens de más, y gpt-5.6 / gpt-6
+rechazan las herramientas en chat/completions.
+- **Si derivó y todavía no contestó nadie, responde según lo nuevo.** Antes callaba todo. Ahora la IA recibe
+  que el caso ya está con el equipo (sección "CASO YA PASADO AL EQUIPO" del prompt) y contesta: confirma que
+  suma el dato al caso, agradece, resuelve lo que puede o deriva un tema distinto. Sólo calla si la IA no
+  respondió o si repite tal cual una contención ya mandada hoy.
+- **Ticket sólo para trabajo a fondo.** La IA decide `abrir_ticket` con el criterio de
+  `CONV_BOT_TICKET_CRITERIO` (Asistente IA → Si no encuentra respuesta; vacío =
+  `ConversacionAsistenteService.CriterioTicketPorDefecto`). Si duda, o si no informa el campo, no se abre.
+- **Menos textos fijos.** La mitad de las respuestas eran frases fijas o la frase de ejemplo del prompt copiada
+  tal cual. Ahora: la contención nombra de qué se trata; la IA recibe el "ESTADO DEL CASO" (ticket abierto,
+  alguien del equipo lo venía atendiendo, o nada pendiente, y si su último mensaje ya fue una pregunta) y
+  redacta ella la respuesta al "¿novedades?" (`ResponderSeguimientoAsync` usa su texto). Se permiten hasta
+  dos preguntas seguidas (`MaxAclaracionesSeguidas`, `ContarAclaracionesSeguidas`); recién en la tercera
+  sale la contención fija.
+
+Para leer los resultados: cada tramo arranca como charla nueva del chat web, sin el historial ni el ticket
+abierto que tenía el cliente real. Por eso hay más tickets nuevos que en la realidad (en 166 de 219 casos el
+cliente ya tenía uno abierto) y algunos "¿a qué consulta te referís?". El reconocimiento por celular,
+videos y documentos no se pueden repetir por el chat web.
+
 ## Issues pendientes
 
 ### Issue 8. Completar flujo de envío WhatsApp
