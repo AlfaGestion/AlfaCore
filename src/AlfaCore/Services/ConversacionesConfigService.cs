@@ -3189,7 +3189,7 @@ public sealed class ConversacionesConfigService(
     {
         var v = (value ?? string.Empty).Trim();
         return ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles
-            .FirstOrDefault(m => string.Equals(m.Codigo, v, StringComparison.OrdinalIgnoreCase)).Codigo ?? string.Empty;
+            .FirstOrDefault(m => string.Equals(m.Codigo, v, StringComparison.OrdinalIgnoreCase))?.Codigo ?? string.Empty;
     }
 
     internal static List<string> ParseBotCanales(string? value)

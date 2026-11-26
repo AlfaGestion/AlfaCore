@@ -69,6 +69,48 @@
     grid-column: 1 / -1;
 }
 
+/* Modelos de IA del asistente (2026-11-26). */
+.cfg-card__body ::deep .cfg-modelos {
+    display: grid;
+    gap: .5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cfg-card__body ::deep .cfg-modelos li {
+    padding: .6rem .75rem;
+    border: 1px solid var(--alfa-border, rgba(148, 163, 184, .22));
+    border-radius: 8px;
+}
+
+.cfg-card__body ::deep .cfg-modelos li.is-elegido {
+    border-color: var(--alfa-accent, #14b8a6);
+}
+
+.cfg-card__body ::deep .cfg-modelos__titulo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .45rem;
+}
+
+.cfg-card__body ::deep .cfg-modelos__titulo span,
+.cfg-card__body ::deep .cfg-modelos__datos,
+.cfg-card__body ::deep .cfg-modelos p {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+}
+
+.cfg-card__body ::deep .cfg-modelos p {
+    margin: .2rem 0 0;
+}
+
+.cfg-card__body ::deep .cfg-modelos__precio {
+    display: block;
+}
+
 .cfg-card__body ::deep .cfg-hint {
     margin: 0;
     color: var(--alfa-text-secondary, #a6abb5);

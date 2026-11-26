@@ -240,10 +240,36 @@
                     <p class="cfg-hint">El horario de atención se configura en Automatización → Horario y mensaje fijo.</p>
                 </ConversacionesConfigTarjeta>
 
-                <ConversacionesConfigTarjeta Titulo="Modelo de IA" Descripcion="Qué tan bien entiende la charla el asistente y cuánto consume. Los créditos se descuentan según el modelo elegido.">
+                <ConversacionesConfigTarjeta Titulo="Modelo de IA" Descripcion="El modelo de OpenAI con el que piensa el asistente. Uno mejor entiende mejor la charla, pero cada respuesta gasta más créditos del plan.">
                     <AlfaSelect Id="asis-modelo" Label="Modelo" Options="ModeloOptions"
                                 Value="@Config.AsistenteModelo"
                                 ValueChanged="@((string? v) => Config.AsistenteModelo = v ?? string.Empty)" />
+                    <ul class="cfg-modelos">
+                        @foreach (var modelo in ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
+                        {
+                            <li class="@(string.Equals(modelo.Codigo, Config.AsistenteModelo, StringComparison.OrdinalIgnoreCase) ? "is-elegido" : string.Empty)">
+                                <div class="cfg-modelos__titulo">
+                                    <strong>@modelo.Nombre</strong>
+                                    <span>@modelo.Codigo</span>
+                                </div>
+                                <div class="cfg-modelos__datos">
+                                    ≈ @Numero(modelo.CreditosPorRespuesta) crédito@(modelo.CreditosPorRespuesta == 1 ? "" : "s") por respuesta
+                                    · ≈ @Numero(modelo.CreditosPorRespuesta * 1000) créditos cada 1.000 respuestas
+                                    · @(modelo.VecesElEconomico == 1 ? "precio base" : $"{Numero(modelo.VecesElEconomico)} veces el Económico")
+                                </div>
+                                <p>@modelo.Descripcion</p>
+                            </li>
+                        }
+                    </ul>
+                    <p class="cfg-hint">
+                        Precios oficiales de OpenAI al 26/11/2026, en dólares por millón de tokens:
+                        @foreach (var modelo in ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
+                        {
+                            <span class="cfg-modelos__precio">@modelo.Nombre US$ @Numero(modelo.UsdEntrada, "0.00") lo que lee / US$ @Numero(modelo.UsdSalida, "0.00") lo que escribe.</span>
+                        }
+                        Lo que gasta una respuesta sale del consumo real del asistente de ALFA NET (1 crédito = US$ 0,001).
+                        Precios actualizados en <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noopener">la página de precios de OpenAI</a>.
+                    </p>
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfigTarjeta Titulo="Límites" Columnas="2" Descripcion="Evitan que el asistente se extienda o que se adelante a tu equipo.">
@@ -312,10 +338,13 @@
 
     private bool IsDirty => !ConversacionesConfiguracion.AutomatizacionesEquals(Config, Original);
 
+    private static string Numero(decimal valor, string formato = "#,0.#")
+        => valor.ToString(formato, CultureInfo.GetCultureInfo("es-AR"));
+
     private static readonly IReadOnlyList<AlfaSelectOption> ModeloOptions =
     [
-        new(string.Empty, "El del servidor (por defecto)"),
-        .. ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles.Select(m => new AlfaSelectOption(m.Codigo, m.Nombre))
+        new(string.Empty, "El que tenga el servidor (si no tiene ninguno, el Económico)"),
+        .. ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles.Select(m => new AlfaSelectOption(m.Codigo, m.Etiqueta))
     ];
 
     private static readonly IReadOnlyList<AlfaSelectOption> PoliticaOptions =

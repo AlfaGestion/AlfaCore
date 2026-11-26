@@ -403,14 +403,26 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// (variable OPENAI_MODEL) o gpt-4o-mini.</summary>
     public string AsistenteModelo { get; set; } = string.Empty;
 
-    /// <summary>Modelos que se pueden elegir. Cada uno necesita su precio en ALFA_CENTRAL.IA_PRECIO_MODELO
-    /// (CentralIaSchema) para que su consumo cuente en el tope de créditos.</summary>
-    public static readonly IReadOnlyList<(string Codigo, string Nombre)> AsistenteModelosDisponibles =
+    /// <summary>
+    /// Modelos que se pueden elegir. Cada uno necesita su precio en ALFA_CENTRAL.IA_PRECIO_MODELO
+    /// (CentralIaSchema) para que su consumo cuente en el tope de créditos. Precios de lista de OpenAI
+    /// (USD por millón de tokens, entrada / salida) verificados el 26/11/2026 en
+    /// https://developers.openai.com/api/docs/pricing. La comparación con el económico sale de esos precios;
+    /// lo que cuesta una respuesta, del consumo real del bot de ALFANET en noviembre de 2026
+    /// (976 respuestas, US$ 1,01: unos 1.000 créditos).
+    /// </summary>
+    public static readonly IReadOnlyList<AsistenteModeloOpcion> AsistenteModelosDisponibles =
     [
-        ("gpt-4o-mini", "Económico (gpt-4o-mini)"),
-        ("gpt-4.1-mini", "Intermedio (gpt-4.1-mini)"),
-        ("gpt-4.1", "Avanzado (gpt-4.1): entiende mejor la charla, cuesta unas 13 veces más")
+        new("gpt-4o-mini", "Económico", 0.15m, 0.60m,
+            "El de siempre. Resuelve bien lo simple; en charlas largas a veces repite frases o no termina de seguir el contexto."),
+        new("gpt-4.1-mini", "Intermedio", 0.40m, 1.60m,
+            "En nuestras pruebas con charlas reales no mejoró de forma clara al económico."),
+        new("gpt-4.1", "Avanzado", 2.00m, 8.00m,
+            "En nuestras pruebas fue el que mejor siguió la charla: suma los datos nuevos al caso, entiende la urgencia y no repite.")
     ];
+
+    /// <summary>Lo que gasta, en promedio, una respuesta del asistente con el modelo económico (créditos).</summary>
+    public const decimal CreditosPorRespuestaEconomico = 1.0m;
 
     /// <summary>Cuándo el bot abre un ticket al derivar (texto para la IA). Vacío = criterio por defecto
     /// (ConversacionAsistenteService.CriterioTicketPorDefecto): sólo trabajo a fondo.</summary>
@@ -679,4 +691,17 @@ public sealed class ConversacionReglaDto
 
     /// <summary>La regla solo dispara en el primer mensaje entrante de la conversación.</summary>
     public bool SoloPrimerContacto { get; set; }
+}
+
+/// <summary>Un modelo de OpenAI que se puede elegir para el asistente, con su precio de lista (USD por millón de tokens).</summary>
+public sealed record AsistenteModeloOpcion(string Codigo, string Nombre, decimal UsdEntrada, decimal UsdSalida, string Descripcion)
+{
+    /// <summary>Cuántas veces el costo del económico (gpt-4o-mini).</summary>
+    public decimal VecesElEconomico => Math.Round(UsdSalida / 0.60m, 1);
+
+    /// <summary>Créditos aproximados por respuesta del asistente.</summary>
+    public decimal CreditosPorRespuesta => Math.Round(ConversacionAutomatizacionesConfigDto.CreditosPorRespuestaEconomico * VecesElEconomico, 1);
+
+    /// <summary>Texto del desplegable.</summary>
+    public string Etiqueta => $"{Nombre} ({Codigo}) · ≈ {CreditosPorRespuesta.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))} crédito{(CreditosPorRespuesta == 1 ? string.Empty : "s")} por respuesta";
 }

@@ -231,8 +231,16 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.Contains("modelo: config.AsistenteModelo,", source, StringComparison.Ordinal);
         Assert.Equal("gpt-4.1", ConversacionesConfigService.NormalizarModeloAsistente(" GPT-4.1 "));
         Assert.Equal(string.Empty, ConversacionesConfigService.NormalizarModeloAsistente("gpt-5-turbo-inventado"));
-        foreach (var (codigo, _) in AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
-            Assert.Contains($"WHERE Modelo = N'{codigo}')", CentralIaSchema.Script, StringComparison.Ordinal);
+        foreach (var modelo in AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
+        {
+            Assert.Contains($"WHERE Modelo = N'{modelo.Codigo}')", CentralIaSchema.Script, StringComparison.Ordinal);
+            // El precio que muestra la pantalla es el mismo que cobra la central.
+            Assert.Contains($"VALUES (N'{modelo.Codigo}', ", CentralIaSchema.Script, StringComparison.Ordinal);
+            Assert.Contains(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{modelo.UsdEntrada:0.00}, "), CentralIaSchema.Script, StringComparison.Ordinal);
+        }
+        var avanzado = AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles.Single(m => m.Codigo == "gpt-4.1");
+        Assert.Equal(13.3m, avanzado.VecesElEconomico);
+        Assert.Equal("Avanzado (gpt-4.1) · ≈ 13,3 créditos por respuesta", avanzado.Etiqueta);
         Assert.Contains("N'gpt-4.1-mini')", CentralIaSchema.VerificacionSql, StringComparison.Ordinal);
         // No se ofrece a hacer lo que sólo hace una persona.
         Assert.Contains("No te ofrezcas a revisar, probar, verificar, configurar o ver algo junto con el cliente", Prompt(), StringComparison.Ordinal);
