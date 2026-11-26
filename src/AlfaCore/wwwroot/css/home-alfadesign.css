@@ -383,12 +383,14 @@
 
 .alfa-home__panel {
     position: absolute;
-    top: calc(100% + 6px);
+    top: auto;
+    bottom: calc(100% + 6px);
     left: 50%;
     z-index: 3;
     display: flex;
     flex-direction: column;
     width: min(300px, calc(100vw - 32px));
+    height: min(420px, 60vh);
     max-height: min(420px, 60vh);
     border: 1px solid var(--alfa-border-default, #333640);
     border-radius: var(--alfa-radius-md, 8px);
@@ -428,6 +430,8 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     padding: var(--alfa-space-4, 4px) 0;
 }
 

@@ -1159,7 +1159,8 @@ public sealed class PuntoVentaService(
                 : string.Empty;
             var familyFilter = filters.IdFamilia.Trim();
             var rubroFilter = filters.IdRubro.Trim();
-            var topArticuloIds = rubroFilter.Equals(PuntoVentaCatalogoKeys.Top, StringComparison.OrdinalIgnoreCase)
+            var esFiltroTop = rubroFilter.Equals(PuntoVentaCatalogoKeys.Top, StringComparison.OrdinalIgnoreCase);
+            var topArticuloIds = esFiltroTop
                 ? ParseTopArticuloIds(await TryReadConfigValueAsync(cn, "GOUR_TOPVTAS", token))
                 : [];
             var topFilter = topArticuloIds.Count > 0
@@ -1167,8 +1168,11 @@ public sealed class PuntoVentaService(
                 : rubroFilter.Equals(PuntoVentaCatalogoKeys.Top, StringComparison.OrdinalIgnoreCase)
                     ? "AND 1 = 0"
                     : string.Empty;
-            if (rubroFilter.Equals(PuntoVentaCatalogoKeys.Top, StringComparison.OrdinalIgnoreCase))
+            if (esFiltroTop)
                 rubroFilter = string.Empty;
+            var orderBy = esFiltroTop
+                ? "CHARINDEX('|' + LTRIM(RTRIM(a.IDARTICULO)) + '|', @TopOrder)"
+                : "a.DESCRIPCION, a.IDARTICULO";
             var search = filters.Texto.Trim();
             var take = filters.TamanioPagina <= 0 ? 24 : Math.Min(filters.TamanioPagina, 100);
             var pagina = filters.Pagina <= 0 ? 1 : filters.Pagina;
@@ -1203,6 +1207,8 @@ public sealed class PuntoVentaService(
             parameters.Add("Retail", pricing.Retail);
             parameters.Add("IdFamilia", familyFilter);
             parameters.Add("IdRubro", rubroFilter);
+            if (esFiltroTop)
+                parameters.Add("TopOrder", $"|{string.Join('|', topArticuloIds)}|");
             if (topArticuloIds.Count > 0)
                 parameters.Add("TopArticuloIds", topArticuloIds);
             if (puntoVenta.Rubros.Count > 0)
@@ -1260,7 +1266,7 @@ public sealed class PuntoVentaService(
                   {rubrosPvFilter}
                   {topFilter}
                   {wordFilters}
-                ORDER BY a.DESCRIPCION, a.IDARTICULO
+                ORDER BY {orderBy}
                 OFFSET @Skip ROWS
                 FETCH NEXT @Fetch ROWS ONLY;
                 """,
