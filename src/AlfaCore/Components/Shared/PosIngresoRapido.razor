@@ -3,12 +3,17 @@
 
 <style>
     .pos-ingreso-rapido { display:grid; gap:.45rem; padding:.6rem; border:1px solid var(--color-border); border-radius:14px; background:var(--color-panel-strong); color:var(--color-text); box-shadow:0 8px 20px rgba(0,0,0,.16); }
+    .pos-ingreso-rapido.is-compact { gap:.35rem; padding:.5rem; }
     .pos-ingreso-rapido__header h3 { margin:0; font-size:1.05rem; }
     .pos-ingreso-rapido__header span, .pos-ingreso-rapido__display-wrap label, .pos-ingreso-rapido__quick>span { color:var(--color-muted); font-size:.72rem; }
     .pos-ingreso-rapido__modes { display:grid; grid-template-columns:1fr 1fr; gap:.35rem; }
+    .pos-ingreso-rapido.is-compact .pos-ingreso-rapido__modes { grid-template-columns:1fr 1fr auto; }
     .pos-ingreso-rapido button { min-height:2.35rem; border:1px solid var(--color-border); border-radius:10px; background:rgba(148,163,184,.08); color:var(--color-text); font-weight:800; cursor:pointer; }
     .pos-ingreso-rapido button:hover:not(:disabled) { background:rgba(56,189,248,.14); }
     .pos-ingreso-rapido__modes button.is-active, .pos-ingreso-rapido__actions .is-primary { background:var(--color-primary); border-color:var(--color-primary); color:#fff; }
+    .pos-ingreso-rapido__keyboard-toggle { display:flex; justify-content:flex-end; }
+    .pos-ingreso-rapido__keyboard-toggle button { min-width:2.35rem; padding:.25rem .55rem; border-radius:999px; }
+    .pos-ingreso-rapido__keyboard-toggle button i { font-size:1rem; }
     .pos-ingreso-rapido__display-wrap { display:grid; gap:.2rem; }
     .pos-ingreso-rapido__display { width:100%; box-sizing:border-box; padding:.4rem .6rem; border:1px solid var(--color-border); border-radius:10px; background:var(--color-panel); color:var(--color-text); font-size:1.55rem; font-weight:900; text-align:right; }
     .pos-ingreso-rapido__body { display:grid; grid-template-columns:1fr 1.25fr; gap:.55rem; }
@@ -20,18 +25,34 @@
     .pos-ingreso-rapido__keypad-grid button { min-height:2.55rem; font-size:1.2rem; }
     .pos-ingreso-rapido__actions { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; }
     .pos-ingreso-rapido__error { color:var(--color-danger,#f87171); font-size:.76rem; }
-    .pos-ingreso-rapido__keyboard-toggle { display:flex; justify-content:flex-end; }
+    .pos-ingreso-rapido.is-compact .pos-ingreso-rapido__display { font-size:1.35rem; padding:.35rem .6rem; }
+    .pos-ingreso-rapido.is-compact .pos-ingreso-rapido__body { grid-template-columns:1fr; }
+    .pos-ingreso-rapido.is-compact .pos-ingreso-rapido__quick-grid { grid-template-columns:repeat(6, minmax(0, 1fr)); gap:.3rem; }
+    .pos-ingreso-rapido.is-compact .pos-ingreso-rapido__quick-grid button { min-height:2rem; padding:.2rem .25rem; font-size:.76rem; }
+    .pos-ingreso-rapido.is-compact .pos-ingreso-rapido__quick > button { min-height:2rem; }
+    .pos-ingreso-rapido.is-compact .pos-ingreso-rapido__keypad-grid button { min-height:2.35rem; }
     .pos-settings-modal__inline-fields { display:grid; grid-template-columns:repeat(3,1fr); gap:.35rem; }
 </style>
 
-<section class="pos-ingreso-rapido" aria-label="Panel de ingreso rápido">
-    <header class="pos-ingreso-rapido__header">
-        <h3>Ingreso rápido</h3>
-    </header>
+<section class="pos-ingreso-rapido @(Compacto ? "is-compact" : string.Empty)" aria-label="Panel de ingreso rápido">
+    @if (!Compacto)
+    {
+        <header class="pos-ingreso-rapido__header">
+            <h3>Ingreso rápido</h3>
+        </header>
+    }
 
     <div class="pos-ingreso-rapido__modes" role="tablist" aria-label="Modo de ingreso">
         <button type="button" class="@(Modo == PosIngresoRapidoModo.Importe ? "is-active" : string.Empty)" @onclick="() => CambiarModo(PosIngresoRapidoModo.Importe)">Importe</button>
         <button type="button" class="@(Modo == PosIngresoRapidoModo.Cantidad ? "is-active" : string.Empty)" @onclick="() => CambiarModo(PosIngresoRapidoModo.Cantidad)">Cantidad</button>
+        @if (Compacto)
+        {
+            <div class="pos-ingreso-rapido__keyboard-toggle">
+                <button type="button" @onclick="ToggleTeclado" aria-expanded="@_mostrarTeclado" aria-label="@(_mostrarTeclado ? "Ocultar teclado" : "Mostrar teclado")" title="@(_mostrarTeclado ? "Ocultar teclado" : "Mostrar teclado")">
+                    <i class="bi bi-calculator" aria-hidden="true"></i>
+                </button>
+            </div>
+        }
     </div>
 
     <div class="pos-ingreso-rapido__display-wrap">
@@ -50,8 +71,6 @@
         <div class="pos-ingreso-rapido__error" role="alert">@_error</div>
     }
 
-    @if (!Compacto || _mostrarTeclado)
-    {
     <div class="pos-ingreso-rapido__body">
         <div class="pos-ingreso-rapido__quick">
             <div class="pos-ingreso-rapido__quick-grid">
@@ -62,24 +81,18 @@
             </div>
             <button type="button" class="is-secondary" @onclick="LimpiarAsync">Limpiar</button>
         </div>
-        <div class="pos-ingreso-rapido__keypad">
-            <div class="pos-ingreso-rapido__keypad-grid">
-                @foreach (var tecla in new[] { "7", "8", "9", "4", "5", "6", "1", "2", "3", ",", "0", "⌫" })
-                {
-                    <button type="button" @onclick="() => PulsarTeclaAsync(tecla)" aria-label="@(tecla == "⌫" ? "Borrar último carácter" : tecla)">@tecla</button>
-                }
+        @if (!Compacto || _mostrarTeclado)
+        {
+            <div class="pos-ingreso-rapido__keypad">
+                <div class="pos-ingreso-rapido__keypad-grid">
+                    @foreach (var tecla in new[] { "7", "8", "9", "4", "5", "6", "1", "2", "3", ",", "0", "⌫" })
+                    {
+                        <button type="button" @onclick="() => PulsarTeclaAsync(tecla)" aria-label="@(tecla == "⌫" ? "Borrar último carácter" : tecla)">@tecla</button>
+                    }
+                </div>
             </div>
-        </div>
+        }
     </div>
-    }
-    @if (Compacto)
-    {
-        <div class="pos-ingreso-rapido__keyboard-toggle">
-            <button type="button" @onclick="ToggleTeclado" aria-expanded="@_mostrarTeclado">
-                <i class="bi bi-keyboard"></i> @(_mostrarTeclado ? "Ocultar teclado" : "Teclado")
-            </button>
-        </div>
-    }
 </section>
 
 @code {
