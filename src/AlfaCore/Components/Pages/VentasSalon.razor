@@ -7,6 +7,7 @@
 @inject IPuntoVentaSalonService SalonSvc
 @inject IPuntoVentaCartaService CartaSvc
 @inject IPuntoVentaService PuntoVentaSvc
+@inject IPuntoVentaConfigService PosConfigSvc
 @inject IAppUserSessionService AppUserSession
 @inject IRouteContextService RouteCtx
 @inject IPageHeaderService PageHeader
@@ -136,7 +137,7 @@
             {
                 <div class="editor-msg editor-msg--info">
                     <strong>Editando el plano</strong>
-                    <span>Arrastrá las mesas a su lugar y tocá "Guardar plano".</span>
+                    <span>Arrastrá, redimensioná o tocá una mesa para modificarla. También podés agregar mesas.</span>
                 </div>
             }
             <div class="salon-plano-scroll">
@@ -147,7 +148,7 @@
                         var pos = GetPosicion(mesa, indice++);
                         <button type="button"
                                 data-mesa-id="@mesa.Id"
-                                class="salon-mesa @GetMesaCss(mesa) @(mesa.IdPedido == _detalle?.IdPedido && _detalle is not null ? "salon-mesa--seleccionada" : string.Empty)"
+                                class="salon-mesa salon-mesa--@GetMesaFormatoCss(mesa) @GetMesaCss(mesa) @(!mesa.Activo ? "salon-mesa--inactiva" : string.Empty) @(mesa.IdPedido == _detalle?.IdPedido && _detalle is not null ? "salon-mesa--seleccionada" : string.Empty)"
                                 style="@pos"
                                 @onclick="() => OnMesaClickAsync(mesa)">
                             <span class="salon-mesa__nombre">@mesa.Nombre</span>
@@ -155,7 +156,7 @@
                             {
                                 <span class="salon-mesa__meta">@(mesa.Capacidad is > 0 ? $"{mesa.Capacidad} lugares" : "Libre")</span>
                             }
-                            else
+                            @if (!mesa.EstaLibre)
                             {
                                 <span class="salon-mesa__total">@FmtMoney(mesa.Total)</span>
                                 <span class="salon-mesa__meta">
@@ -188,6 +189,16 @@
                                     }
                                 </span>
                             }
+                            @if (_editandoPlano)
+                            {
+                                <span class="salon-mesa__resize" data-mesa-resize="true" title="Cambiar tamaño" aria-label="Cambiar tamaño"></span>
+                            }
+                        </button>
+                    }
+                    @if (_editandoPlano)
+                    {
+                        <button type="button" class="salon-plano__agregar" @onclick="NuevaMesaDesdePlanoAsync" disabled="@_busy" title="Agregar mesa" aria-label="Agregar mesa">
+                            <i class="bi bi-plus-lg"></i>
                         </button>
                     }
                 </div>
@@ -484,6 +495,49 @@
     </div>
 }
 
+@if (_editorMesaAbierto)
+{
+    <div class="salon-modal-backdrop" @onclick="CerrarEditorMesa">
+        <section class="salon-modal salon-modal--mesa-editor" role="dialog" aria-modal="true" @onclick:stopPropagation>
+            <h3>@(_editorMesaForm.Id.HasValue ? $"Modificar {_editorMesaForm.Nombre}" : "Agregar mesa")</h3>
+            <p class="salon-modal__hint">Configurá los datos y la forma. La posición y el tamaño también se pueden ajustar directamente en el plano.</p>
+            <div class="salon-modal__form-grid">
+                <div class="field">
+                    <label>Código</label>
+                    <input maxlength="4" @bind="_editorMesaForm.Codigo" placeholder="Ej: M08" />
+                </div>
+                <div class="field">
+                    <label>Nombre</label>
+                    <input maxlength="50" @bind="_editorMesaForm.Nombre" placeholder="Ej: Mesa 8" />
+                </div>
+                <div class="field">
+                    <label>Capacidad</label>
+                    <input type="number" min="1" max="99" @bind="_editorMesaForm.Capacidad" />
+                </div>
+                <div class="field">
+                    <label>Forma</label>
+                    <select @bind="_editorMesaForm.Formato">
+                        <option value="@PuntoVentaMesaFormatoKeys.Cuadrada">Cuadrada</option>
+                        <option value="@PuntoVentaMesaFormatoKeys.Circular">Circular</option>
+                        <option value="@PuntoVentaMesaFormatoKeys.Triangular">Triangular</option>
+                    </select>
+                </div>
+            </div>
+            <label class="salon-check">
+                <input type="checkbox" @bind="_editorMesaForm.Activo" /> Mesa activa
+            </label>
+            @if (_editorMesaError is not null)
+            {
+                <p class="salon-modal__error">@_editorMesaError</p>
+            }
+            <div class="salon-modal__acciones">
+                <button type="button" class="btn btn--ghost" @onclick="CerrarEditorMesa">Cancelar</button>
+                <button type="button" class="btn btn--primary" @onclick="GuardarMesaDesdePlanoAsync" disabled="@_busy">Guardar mesa</button>
+            </div>
+        </section>
+    </div>
+}
+
 @code {
     private enum ModalSalon { Ninguno, Abrir, Editar, Mover, Unir, AnularLinea, Liberar, Carta }
 
@@ -507,6 +561,9 @@
     private bool _loading = true;
     private bool _busy;
     private bool _editandoPlano;
+    private bool _editorMesaAbierto;
+    private string? _editorMesaError;
+    private PuntoVentaMesaSaveRequest _editorMesaForm = new();
     private int _idSectorActual;
     private int _planoVersion;
 
@@ -638,7 +695,7 @@
     {
         try
         {
-            _salon = await SalonSvc.GetSalonAsync(IdPuntoVentaQuery!.Value);
+            _salon = await SalonSvc.GetSalonAsync(IdPuntoVentaQuery!.Value, _editandoPlano);
             if (!silencioso)
                 _feedback = null;
             if (_idSectorActual == 0 || _salon.Sectores.All(s => s.Id != _idSectorActual))
@@ -729,7 +786,10 @@
     private async Task OnMesaClickAsync(PuntoVentaSalonMesaDto mesa)
     {
         if (_editandoPlano)
+        {
+            AbrirEditorMesa(mesa);
             return;
+        }
 
         _feedback = null;
         if (mesa.EstaLibre)
@@ -744,6 +804,89 @@
         }
 
         await LoadDetalleAsync(mesa.IdPedido!.Value);
+    }
+
+    private void AbrirEditorMesa(PuntoVentaSalonMesaDto mesa)
+    {
+        _editorMesaError = null;
+        _editorMesaForm = new PuntoVentaMesaSaveRequest
+        {
+            Id = mesa.Id,
+            Codigo = mesa.Codigo,
+            IdSector = mesa.IdSector,
+            Nombre = mesa.Nombre,
+            Capacidad = mesa.Capacidad,
+            PosX = mesa.PosX,
+            PosY = mesa.PosY,
+            Width = mesa.Width,
+            Height = mesa.Height,
+            Formato = PuntoVentaMesaFormatoKeys.Normalizar(mesa.Formato),
+            Icono = mesa.Icono,
+            Activo = true
+        };
+        _editorMesaAbierto = true;
+    }
+
+    private Task NuevaMesaDesdePlanoAsync()
+    {
+        var sector = SectorActual;
+        if (sector is null)
+            return Task.CompletedTask;
+
+        var numero = sector.Mesas.Count + 1;
+        while (sector.Mesas.Any(m => string.Equals(m.Codigo?.Trim(), $"M{numero}", StringComparison.OrdinalIgnoreCase)))
+            numero++;
+
+        _editorMesaError = null;
+        _editorMesaForm = new PuntoVentaMesaSaveRequest
+        {
+            IdSector = sector.Id,
+            Codigo = $"M{numero}",
+            Nombre = $"Mesa {numero}",
+            Capacidad = 2,
+            PosX = 25 + (sector.Mesas.Count % 7) * 140,
+            PosY = 25 + (sector.Mesas.Count / 7) * 140,
+            Width = 110,
+            Height = 110,
+            Formato = PuntoVentaMesaFormatoKeys.Cuadrada,
+            Activo = true
+        };
+        _editorMesaAbierto = true;
+        return Task.CompletedTask;
+    }
+
+    private void CerrarEditorMesa()
+    {
+        if (_busy)
+            return;
+        _editorMesaAbierto = false;
+        _editorMesaError = null;
+    }
+
+    private async Task GuardarMesaDesdePlanoAsync()
+    {
+        if (_busy)
+            return;
+
+        _busy = true;
+        _editorMesaError = null;
+        try
+        {
+            _editorMesaForm.UsuarioAccion = Usuario;
+            await PosConfigSvc.SaveMesaAsync(_editorMesaForm);
+            _editorMesaAbierto = false;
+            _planoVersion++;
+            await LoadSalonAsync(true);
+            _feedback = AppUiMessage.Success("Mesa guardada", "La mesa quedó actualizada en el plano.");
+        }
+        catch (Exception ex)
+        {
+            _editorMesaError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     private async Task ConfirmarAbrirAsync(bool cargar)
@@ -906,6 +1049,7 @@
     {
         CerrarDetalle();
         _editandoPlano = true;
+        await LoadSalonAsync(true);
         StateHasChanged();
         await Task.Yield();
         await Js.InvokeVoidAsync("alfaPosSalon.setEditing", CanvasId, true);
@@ -1041,6 +1185,8 @@
             return "salon-mesa--pendiente";
         return "salon-mesa--abierta";
     }
+
+    private static string GetMesaFormatoCss(PuntoVentaSalonMesaDto mesa) => PuntoVentaMesaFormatoKeys.Normalizar(mesa.Formato).ToLowerInvariant();
 
     private static string GetEstadoMesaTexto(string estado) => estado switch
     {

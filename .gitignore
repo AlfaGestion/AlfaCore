@@ -128,3 +128,8 @@ src/AlfaCore/App_Data/scripts/arca/python/
 # Descargas reales de ARCA (datos fiscales y capturas): nunca al repositorio
 src/AlfaCore/App_Data/arca_descargas/
 src/AlfaCore/App_Data/ia-uso/
+
+# Servidor MCP: claves privadas de firma OAuth y datos locales. NUNCA al repositorio.
+src/AlfaCore.Mcp/App_Data/
+src/AlfaCore.Mcp/**/*.pem
+**/*.totp-key

@@ -41,6 +41,16 @@ public sealed class ConfiguracionCatalogoTests
     }
 
     [Fact]
+    public void Visibles_ConfiguracionDeModuloSeOfreceSiHayAlgunaRutaDelModulo()
+    {
+        var visibles = ConfiguracionCatalogo.Visibles(["/shell/D60"], ["/ventas/puntos-venta", "/articulos"]);
+
+        Assert.Contains(visibles, e => e.Clave == "ventas-arca");
+        Assert.Contains(visibles, e => e.Clave == "articulos");
+        Assert.DoesNotContain(visibles, e => e.Clave == "gestion-contable");
+    }
+
+    [Fact]
     public void Visibles_SinMenuMuestraTodas()
         => Assert.Equal(ConfiguracionCatalogo.Entradas.Count, ConfiguracionCatalogo.Visibles([], []).Count);
 

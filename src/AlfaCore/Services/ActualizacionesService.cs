@@ -416,11 +416,13 @@ public sealed class ActualizacionesService(
         ["2026-11-03-011__compras_borradores_anulacion.sql"] = "2026-11-03-015__compras_borradores_anulacion.sql",
         ["2026-11-03-012__ventas_libro_iva_menu_web.sql"] = "2026-11-03-005__ventas_libro_iva_menu_web.sql",
         ["2026-11-03-013__compras_libro_iva_menu_web.sql"] = "2026-11-03-006__compras_libro_iva_menu_web.sql",
+        ["2026-11-24-001__ventas_pos_mesas_formato.sql"] = "2026-11-24-004__ventas_pos_mesas_formato.sql",
         ["2026-11-03-016__ventas_libro_iva_menu_web.sql"] = "2026-11-03-005__ventas_libro_iva_menu_web.sql",
         ["2026-11-03-018__compras_libro_iva_menu_web.sql"] = "2026-11-03-006__compras_libro_iva_menu_web.sql",
         ["2026-11-03-014__compras_recepcion_registrada.sql"] = "2026-11-03-019__compras_recepcion_registrada.sql",
         ["2026-11-03-005__compras_carga_servicios_menu_web.sql"] = "2026-11-03-020__compras_carga_servicios_menu_web.sql",
         ["2026-11-03-006__compras_registro_operaciones.sql"] = "2026-11-03-021__compras_registro_operaciones.sql",
+        ["2026-11-24-001__ventas_pos_mesas_formato.sql"] = "2026-11-24-004__ventas_pos_mesas_formato.sql",
 
         ["2026-10-30-001__caja_tarjetas_anular_importacion.sql"] = "2026-10-30-004__caja_tarjetas_anular_importacion.sql",
         ["2026-10-30-001__caja_conciliaciones_asistidas_ia_menu_web.sql"] = "2026-10-30-003__caja_conciliaciones_asistidas_ia_menu_web.sql",

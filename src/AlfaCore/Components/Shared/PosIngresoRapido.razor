@@ -1,0 +1,218 @@
+@using System.Globalization
+@using AlfaCore.Models
+
+<style>
+    .pos-ingreso-rapido { display:grid; gap:.45rem; padding:.6rem; border:1px solid var(--color-border); border-radius:14px; background:var(--color-panel-strong); color:var(--color-text); box-shadow:0 8px 20px rgba(0,0,0,.16); }
+    .pos-ingreso-rapido__header h3 { margin:0; font-size:1.05rem; }
+    .pos-ingreso-rapido__header span, .pos-ingreso-rapido__display-wrap label, .pos-ingreso-rapido__quick>span { color:var(--color-muted); font-size:.72rem; }
+    .pos-ingreso-rapido__modes { display:grid; grid-template-columns:1fr 1fr; gap:.35rem; }
+    .pos-ingreso-rapido button { min-height:2.35rem; border:1px solid var(--color-border); border-radius:10px; background:rgba(148,163,184,.08); color:var(--color-text); font-weight:800; cursor:pointer; }
+    .pos-ingreso-rapido button:hover:not(:disabled) { background:rgba(56,189,248,.14); }
+    .pos-ingreso-rapido__modes button.is-active, .pos-ingreso-rapido__actions .is-primary { background:var(--color-primary); border-color:var(--color-primary); color:#fff; }
+    .pos-ingreso-rapido__display-wrap { display:grid; gap:.2rem; }
+    .pos-ingreso-rapido__display { width:100%; box-sizing:border-box; padding:.4rem .6rem; border:1px solid var(--color-border); border-radius:10px; background:var(--color-panel); color:var(--color-text); font-size:1.55rem; font-weight:900; text-align:right; }
+    .pos-ingreso-rapido__body { display:grid; grid-template-columns:1fr 1.25fr; gap:.55rem; }
+    .pos-ingreso-rapido__quick, .pos-ingreso-rapido__keypad { display:grid; gap:.4rem; align-content:start; }
+    .pos-ingreso-rapido__quick-grid, .pos-ingreso-rapido__keypad-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:.35rem; }
+    .pos-ingreso-rapido__quick-grid { grid-template-columns:repeat(2,1fr); }
+    .pos-ingreso-rapido__quick-grid button { font-size:.82rem; }
+    .pos-ingreso-rapido__keypad { display:grid; grid-template-columns:1fr; gap:.35rem; align-content:stretch; }
+    .pos-ingreso-rapido__keypad-grid button { min-height:2.55rem; font-size:1.2rem; }
+    .pos-ingreso-rapido__actions { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; }
+    .pos-ingreso-rapido__error { color:var(--color-danger,#f87171); font-size:.76rem; }
+    .pos-ingreso-rapido__keyboard-toggle { display:flex; justify-content:flex-end; }
+    .pos-settings-modal__inline-fields { display:grid; grid-template-columns:repeat(3,1fr); gap:.35rem; }
+</style>
+
+<section class="pos-ingreso-rapido" aria-label="Panel de ingreso rápido">
+    <header class="pos-ingreso-rapido__header">
+        <h3>Ingreso rápido</h3>
+    </header>
+
+    <div class="pos-ingreso-rapido__modes" role="tablist" aria-label="Modo de ingreso">
+        <button type="button" class="@(Modo == PosIngresoRapidoModo.Importe ? "is-active" : string.Empty)" @onclick="() => CambiarModo(PosIngresoRapidoModo.Importe)">Importe</button>
+        <button type="button" class="@(Modo == PosIngresoRapidoModo.Cantidad ? "is-active" : string.Empty)" @onclick="() => CambiarModo(PosIngresoRapidoModo.Cantidad)">Cantidad</button>
+    </div>
+
+    <div class="pos-ingreso-rapido__display-wrap">
+        <input id="pos-ingreso-rapido-display"
+               class="pos-ingreso-rapido__display"
+               value="@DisplayValue"
+               readonly
+               @onclick="EnfocarAsync"
+               @onkeydown="HandleKeyDown"
+               @ref="_displayRef"
+               aria-label="Valor de ingreso rápido" />
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="pos-ingreso-rapido__error" role="alert">@_error</div>
+    }
+
+    @if (!Compacto || _mostrarTeclado)
+    {
+    <div class="pos-ingreso-rapido__body">
+        <div class="pos-ingreso-rapido__quick">
+            <div class="pos-ingreso-rapido__quick-grid">
+                @foreach (var valor in ValoresRapidos)
+                {
+                    <button type="button" @onclick="() => SumarAsync(valor)">@FormatoRapido(valor)</button>
+                }
+            </div>
+            <button type="button" class="is-secondary" @onclick="LimpiarAsync">Limpiar</button>
+        </div>
+        <div class="pos-ingreso-rapido__keypad">
+            <div class="pos-ingreso-rapido__keypad-grid">
+                @foreach (var tecla in new[] { "7", "8", "9", "4", "5", "6", "1", "2", "3", ",", "0", "⌫" })
+                {
+                    <button type="button" @onclick="() => PulsarTeclaAsync(tecla)" aria-label="@(tecla == "⌫" ? "Borrar último carácter" : tecla)">@tecla</button>
+                }
+            </div>
+        </div>
+    </div>
+    }
+    @if (Compacto)
+    {
+        <div class="pos-ingreso-rapido__keyboard-toggle">
+            <button type="button" @onclick="ToggleTeclado" aria-expanded="@_mostrarTeclado">
+                <i class="bi bi-keyboard"></i> @(_mostrarTeclado ? "Ocultar teclado" : "Teclado")
+            </button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<decimal> ImportesRapidos { get; set; } = Array.Empty<decimal>();
+    [Parameter] public IReadOnlyList<decimal> CantidadesRapidas { get; set; } = new[] { 0.1m, 0.25m, 0.5m, 1m, 6m, 12m };
+    [Parameter] public int Decimales { get; set; } = 2;
+    [Parameter] public bool Compacto { get; set; }
+    [Parameter] public EventCallback<PosIngresoRapidoConfirmado> OnConfirmed { get; set; }
+    [Parameter] public EventCallback<PosIngresoRapidoConfirmado?> OnPreparedChanged { get; set; }
+
+    private ElementReference _displayRef;
+    private PosIngresoRapidoModo Modo { get; set; } = PosIngresoRapidoModo.Importe;
+    private string _valueText = string.Empty;
+    private string? _error;
+    private bool _nuevaCarga = true;
+    private bool _mostrarTeclado;
+
+    private string DisplayValue => Modo == PosIngresoRapidoModo.Importe
+        ? (string.IsNullOrWhiteSpace(_valueText) ? "$ 0,00" : $"$ {FormatoImporte(_valueText)}")
+        : (string.IsNullOrWhiteSpace(_valueText) ? "0" : FormatoCantidad(_valueText));
+
+    private IReadOnlyList<decimal> ValoresRapidos => Modo == PosIngresoRapidoModo.Importe
+        ? ImportesRapidos.Where(x => x > 0m).Take(6).ToArray()
+        : CantidadesRapidas.Where(x => x > 0m).Take(6).ToArray();
+
+    private async Task CambiarModo(PosIngresoRapidoModo modo)
+    {
+        Modo = modo;
+        await LimpiarAsync();
+    }
+
+    private void ToggleTeclado() => _mostrarTeclado = !_mostrarTeclado;
+
+    private async Task AgregarAsync(string tecla)
+    {
+        _error = null;
+        if (_nuevaCarga)
+        {
+            _valueText = string.Empty;
+            _nuevaCarga = false;
+        }
+
+        if (tecla == ",")
+        {
+            if (_valueText.Contains(',') || _valueText.Contains('.')) return;
+            _valueText = string.IsNullOrEmpty(_valueText) ? "0," : _valueText + ",";
+            await NotificarPreparadoAsync();
+            return;
+        }
+
+        _valueText += tecla;
+        await NotificarPreparadoAsync();
+    }
+
+    private async Task SumarAsync(decimal valor)
+    {
+        _error = null;
+        var actual = PosIngresoRapidoCalculador.TryParse(_valueText, out var parsed) ? parsed : 0m;
+        _valueText = (actual + valor).ToString("0.####", CultureInfo.InvariantCulture);
+        _nuevaCarga = false;
+        await NotificarPreparadoAsync();
+    }
+
+    private async Task BorrarUltimoAsync()
+    {
+        _error = null;
+        if (_valueText.Length > 0) _valueText = _valueText[..^1];
+        await NotificarPreparadoAsync();
+    }
+
+    private async Task LimpiarAsync()
+    {
+        _valueText = string.Empty;
+        _error = null;
+        _nuevaCarga = true;
+        await NotificarPreparadoAsync();
+    }
+
+    public void Reiniciar()
+    {
+        _valueText = string.Empty;
+        _error = null;
+        _nuevaCarga = true;
+        _ = NotificarPreparadoAsync();
+    }
+
+    private async Task ConfirmarAsync()
+    {
+        if (!PosIngresoRapidoCalculador.TryParse(_valueText, out var value) || value <= 0m)
+        {
+            _error = "Ingresá un valor mayor que cero.";
+            return;
+        }
+
+        await OnConfirmed.InvokeAsync(new PosIngresoRapidoConfirmado(Modo, value));
+        _nuevaCarga = true;
+    }
+
+    private async Task EnfocarAsync() => await _displayRef.FocusAsync();
+
+    private async Task PulsarTeclaAsync(string tecla)
+    {
+        if (tecla == "⌫") await BorrarUltimoAsync();
+        else await AgregarAsync(tecla);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key?.Length == 1 && char.IsDigit(args.Key[0])) await AgregarAsync(args.Key);
+        else if (args.Key is "," or ".") await AgregarAsync(",");
+        else if (args.Key == "Backspace") await BorrarUltimoAsync();
+        else if (args.Key == "Escape") await LimpiarAsync();
+        else if (args.Key == "Enter") await ConfirmarAsync();
+    }
+
+    private Task NotificarPreparadoAsync()
+        => OnPreparedChanged.InvokeAsync(
+            PosIngresoRapidoCalculador.TryParse(_valueText, out var value) && value > 0m
+                ? new PosIngresoRapidoConfirmado(Modo, value)
+                : null);
+
+    private string FormatoImporte(string value)
+        => PosIngresoRapidoCalculador.TryParse(value, out var parsed)
+            ? parsed.ToString($"N{Math.Clamp(Decimales, 1, 4)}", CultureInfo.GetCultureInfo("es-AR"))
+            : value.Replace('.', ',');
+
+    private string FormatoCantidad(string value)
+        => PosIngresoRapidoCalculador.TryParse(value, out var parsed)
+            ? parsed.ToString($"N{Math.Clamp(Decimales, 1, 4)}", CultureInfo.GetCultureInfo("es-AR"))
+            : value.Replace('.', ',');
+
+    private string FormatoRapido(decimal value)
+        => Modo == PosIngresoRapidoModo.Importe
+            ? $"$ {value.ToString($"N{Math.Clamp(Decimales, 1, 4)}", CultureInfo.GetCultureInfo("es-AR"))}"
+            : value.ToString($"N{Math.Clamp(Decimales, 1, 4)}", CultureInfo.GetCultureInfo("es-AR"));
+}

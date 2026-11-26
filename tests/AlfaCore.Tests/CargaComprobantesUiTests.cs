@@ -27,6 +27,9 @@ public sealed class CargaComprobantesUiTests
         services.AddSingleton<IPageHeaderService, PageHeaderService>();
         services.AddSingleton<IAppUiOperationService, AppUiOperationService>(); services.AddSingleton<IPermissionService, PlanCuentasAbmSqlTests.Permisos>();
         services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime, EventOnlyProxy>());
+        services.AddSingleton<ICatalogosClienteSessionService>(DispatchProxy.Create<ICatalogosClienteSessionService, EventOnlyProxy>());
+        services.AddSingleton<IPortalClienteService>(DispatchProxy.Create<IPortalClienteService, EventOnlyProxy>());
+        services.AddSingleton<ICentralBasesService>(DispatchProxy.Create<ICentralBasesService, EventOnlyProxy>());
         var clientes = DispatchProxy.Create<ICuentasComercialesService, EventOnlyProxy>();
         CuentaComercialSaveRequest? alta = null;
         ((EventOnlyProxy)(object)clientes).Handler = (m, args) => m.Name switch
@@ -176,6 +179,9 @@ public sealed class CargaComprobantesUiTests
         services.AddSingleton<IPageHeaderService, PageHeaderService>();
         services.AddSingleton<IAppUiOperationService, AppUiOperationService>(); services.AddSingleton<IPermissionService, PlanCuentasAbmSqlTests.Permisos>();
         services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime, EventOnlyProxy>());
+        services.AddSingleton<ICatalogosClienteSessionService>(DispatchProxy.Create<ICatalogosClienteSessionService, EventOnlyProxy>());
+        services.AddSingleton<IPortalClienteService>(DispatchProxy.Create<IPortalClienteService, EventOnlyProxy>());
+        services.AddSingleton<ICentralBasesService>(DispatchProxy.Create<ICentralBasesService, EventOnlyProxy>());
         services.AddSingleton(DispatchProxy.Create<ICuentasComercialesService, EventOnlyProxy>());
         services.AddSingleton(DispatchProxy.Create<IArcaPadronService, EventOnlyProxy>());
         var activator = new CapturingActivator(); services.AddSingleton<IComponentActivator>(activator);
@@ -224,6 +230,9 @@ public sealed class CargaComprobantesUiTests
         services.AddSingleton<IPageHeaderService, PageHeaderService>();
         services.AddSingleton<IAppUiOperationService, AppUiOperationService>(); services.AddSingleton<IPermissionService, PlanCuentasAbmSqlTests.Permisos>();
         services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime, EventOnlyProxy>());
+        services.AddSingleton<ICatalogosClienteSessionService>(DispatchProxy.Create<ICatalogosClienteSessionService, EventOnlyProxy>());
+        services.AddSingleton<IPortalClienteService>(DispatchProxy.Create<IPortalClienteService, EventOnlyProxy>());
+        services.AddSingleton<ICentralBasesService>(DispatchProxy.Create<ICentralBasesService, EventOnlyProxy>());
         var activator = new CapturingActivator();
         services.AddSingleton<IComponentActivator>(activator);
         using var provider = services.BuildServiceProvider();

@@ -268,6 +268,8 @@ else
     private IReadOnlyList<CargaComprobantesGrabacionResultado> _recientes = [];
     private readonly CargaComprobantesFiltro _filtro = new();
     private CargaComprobantesFiltro _filtroAplicado = new();
+    [SupplyParameterFromQuery(Name = "buscar")]
+    private string? BuscarOrigenQuery { get; set; }
     private readonly Dictionary<int, string?> _cantidades = [];
     private readonly HashSet<int> _seleccionados = [];
     private List<CargaComprobantesOrigen> _documentos = [];
@@ -862,6 +864,11 @@ else
     {
         Sessions.SessionChanged += ContextChanged;
         Users.StateChanged += ContextChanged;
+        if (!string.IsNullOrWhiteSpace(BuscarOrigenQuery))
+        {
+            _filtro.TipoOrigen = "NP";
+            _filtro.Busqueda = BuscarOrigenQuery.Trim();
+        }
         UpdateHeader();
     }
     private Task? _inicio;
@@ -875,7 +882,7 @@ else
         UpdateHeader();
         var g = await FiltrosRecordados.LeerAsync<FiltrosGuardados>(Js, Sessions, Pantalla);
         if (_inicio is not null) await _inicio;
-        if (g is not null && !_disposed)
+        if (g is not null && !_disposed && string.IsNullOrWhiteSpace(BuscarOrigenQuery))
         {
             _filtro.TipoOrigen = g.TipoOrigen is "NP" or "RM" or CargaComprobantesFacturacionAutomatica.TipoOrigen ? g.TipoOrigen : "NP";
             _filtro.Vendedor = g.Vendedor ?? ""; _filtro.Zona = g.Zona ?? ""; _filtro.UnidadNegocio = g.UnidadNegocio ?? ""; _filtro.Deposito = g.Deposito ?? "";
@@ -921,7 +928,20 @@ else
         {
             var contexto = await Service.GetContextoAsync(_lifetime.Token);
             _contexto = contexto;
-            await ConsultarAsync(_filtroAplicado);
+            var consultaInicial = string.IsNullOrWhiteSpace(BuscarOrigenQuery)
+                ? _filtroAplicado
+                : CopiarFiltro(_filtro);
+            await ConsultarAsync(consultaInicial);
+            _filtroAplicado = consultaInicial;
+            // Cuando se llega desde Consultar pedidos con el comprobante completo,
+            // VB6 abre directamente la carga con sus renglones. Reutilizamos el
+            // mismo método del botón Cargar para evitar una segunda acción manual.
+            if (!string.IsNullOrWhiteSpace(BuscarOrigenQuery)
+                && _result?.Items.Count == 1
+                && string.Equals(_result.Items[0].Tc.Trim(), "NP", StringComparison.OrdinalIgnoreCase))
+            {
+                await CargarOrigenAsync(_result.Items[0].Id);
+            }
             _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
         });
     }
@@ -951,7 +971,9 @@ else
         _filtro.Busqueda = string.Empty; _filtro.FechaDesde = null; _filtro.FechaHasta = null; _filtro.FechaFacturacion = null;
         _filtro.Vendedor = string.Empty; _filtro.Zona = string.Empty; _filtro.UnidadNegocio = string.Empty; _filtro.Deposito = string.Empty;
     }
-    private Task CargarAsync(int id) => RunAsync(async () =>
+    private Task CargarAsync(int id) => RunAsync(() => CargarOrigenAsync(id));
+
+    private async Task CargarOrigenAsync(int id)
     {
         var doc = await Service.GetOrigenAsync(id, _lifetime.Token);
         var prueba = await Service.GetUltimaPruebaElectronicaAsync(id, _lifetime.Token);
@@ -964,7 +986,7 @@ else
         if (_grabacion is not null) _pruebaElectronica = null;
         if (prueba is not null) _operacionPrueba = prueba.Operacion;
         foreach (var line in doc.Lineas) _cantidades[line.Id] = line.Pendiente.ToString(System.Globalization.CultureInfo.InvariantCulture);
-    });
+    }
     private Task SimularAsync() => RunAsync(async () =>
     {
         _simulacion = null; _planGrabacion = null;

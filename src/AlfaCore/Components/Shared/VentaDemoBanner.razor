@@ -1,0 +1,74 @@
+@using AlfaCore.Models
+@inject AlfaCore.Services.IVentaDemoService VentaDemoSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject IConfiguration Configuration
+@implements IDisposable
+
+@* Barra "DEMO" que se ve mientras el usuario central es uno de ALFA_CENTRAL.dbo.VentaDemos
+   (docs/modulos/venta-online.md). Flotante para no mover el layout de ningún módulo. *@
+
+@if (_demo is not null && !_oculta)
+{
+    <HeadContent>
+        <link rel="stylesheet" href="/css/landing-rubros.css?v=20261123a" />
+    </HeadContent>
+    <aside class="venta-demo-banner" aria-label="Estás en una demo">
+        <span class="venta-demo-banner__tag">DEMO</span>
+        <span>
+            @(string.IsNullOrWhiteSpace(_demo.NegocioEjemplo) ? "Negocio de ejemplo" : _demo.NegocioEjemplo).
+            Tocá todo: a la noche se vuelve a cero.
+        </span>
+        <a href="/registrarme" target="_top">Contratar para mi negocio</a>
+        @if (!string.IsNullOrWhiteSpace(WhatsAppUrl))
+        {
+            <a href="@WhatsAppUrl" target="_blank" rel="noopener">WhatsApp</a>
+        }
+        <a href="/sistema#rubros" target="_top">Otro rubro</a>
+        <button type="button" class="venta-demo-banner__cerrar" aria-label="Ocultar aviso de demo" @onclick="() => _oculta = true">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+    </aside>
+}
+
+@code {
+    private VentaDemoDto? _demo;
+    private bool _oculta;
+    private string? _loginEvaluado;
+    private bool _suscripto;
+
+    private string? WhatsAppUrl => Configuration["VentaOnline:WhatsAppUrl"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Las demos son solo de la nube: en instalaciones propias de clientes no hay ALFA_CENTRAL.
+        if (!AppMode.IsSaaSMode)
+            return;
+
+        _suscripto = true;
+        AppUserSession.StateChanged += OnSessionChanged;
+        await EvaluarAsync();
+    }
+
+    private void OnSessionChanged() => _ = InvokeAsync(async () =>
+    {
+        await EvaluarAsync();
+        StateHasChanged();
+    });
+
+    private async Task EvaluarAsync()
+    {
+        var login = AppUserSession.IsAuthenticated ? AppUserSession.CurrentUser?.CentralLogin : null;
+        if (string.Equals(login, _loginEvaluado, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _loginEvaluado = login;
+        _demo = string.IsNullOrWhiteSpace(login) ? null : await VentaDemoSvc.GetDemoPorLoginAsync(login);
+    }
+
+    public void Dispose()
+    {
+        if (_suscripto)
+            AppUserSession.StateChanged -= OnSessionChanged;
+    }
+}

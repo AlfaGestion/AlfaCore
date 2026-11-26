@@ -7,12 +7,14 @@
 @inject AlfaCore.Services.IPuntoVentaCartStateService CartState
 @inject AlfaCore.Services.IPuntoVentaPedidoService PedidoSvc
 @inject AlfaCore.Services.IPuntoVentaAnticiposService AnticiposSvc
+@inject AlfaCore.Services.ICotizacionDocumentService CotizacionDocumentSvc
 @inject AlfaCore.Services.IPuntoVentaSalonService SalonSvc
 @inject AlfaCore.Services.IPuntoVentaConfigService PosConfigSvc
 @inject AlfaCore.Services.IPuntoVentaTurnoService TurnoSvc
 @inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
 @inject AlfaCore.Services.IMercadoPagoPointPosService MpPaymentSvc
 @inject AlfaCore.Services.IMercadoPagoPointConfigService MpConfigSvc
+@inject AlfaCore.Services.IArcaPadronService ArcaPadronSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteCtx
@@ -92,6 +94,11 @@
     .pos-shell .pos-loading {
         margin: 1rem;
     }
+
+    .pos-np-loading-overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; background: rgba(4, 12, 24, .58); backdrop-filter: blur(2px); }
+    .pos-np-loading { display: flex; align-items: center; gap: .7rem; padding: 1rem 1.25rem; border: 1px solid var(--color-border-strong, var(--color-border)); border-radius: .8rem; background: var(--color-panel-strong); color: var(--color-text); box-shadow: 0 1rem 3rem rgba(0,0,0,.28); font-weight: 700; }
+    .pos-np-loading i { color: var(--color-primary); font-size: 1.35rem; animation: pos-np-spin .8s linear infinite; }
+    @@keyframes pos-np-spin { to { transform: rotate(360deg); } }
 
     .pos-topbar {
         display: flex;
@@ -348,6 +355,10 @@
         min-height: 0;
     }
 
+    .pos-stage.pos-stage--quick {
+        grid-template-columns: minmax(28rem, 40%) minmax(0, 60%);
+    }
+
     .pos-sidebar {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
@@ -489,6 +500,7 @@
         font-weight: 700;
         color: #243447;
     }
+    .pos-line__observation { margin-top:.25rem; color:var(--color-primary); font-size:.78rem; line-height:1.25; overflow-wrap:anywhere; }
 
     .pos-sidebar__notes {
         padding: 0.65rem 0.7rem 0;
@@ -914,7 +926,7 @@
     .pos-sidebar__items {
         min-height: 0;
         height: 100%;
-        overflow: hidden;
+        overflow: auto;
         padding: 0;
     }
 
@@ -1103,6 +1115,19 @@
         color: var(--color-text);
     }
 
+    /* El menú nativo del comprobante tomaba el gris claro del sistema y
+       rompía el contraste del topbar oscuro. */
+    .pos-topbar__document .pos-select option {
+        background: var(--color-panel-strong);
+        color: var(--color-text);
+    }
+
+    .pos-topbar__document .pos-select option:checked,
+    .pos-topbar__document .pos-select option:hover {
+        background: var(--color-primary);
+        color: #ffffff;
+    }
+
     .pos-search-input::placeholder {
         color: var(--color-muted);
     }
@@ -1126,6 +1151,19 @@
 
     .pos-grid-status {
         color: var(--color-muted);
+    }
+
+    .pos-grid-status--warning {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        border-radius: 12px;
+        background: rgba(245, 158, 11, 0.1);
+        color: #fde68a;
+        font-size: 0.76rem;
+        line-height: 1.35;
     }
 
     .pos-grid {
@@ -1363,6 +1401,11 @@
         font-size: 1.2rem;
         font-weight: 900;
     }
+    .pos-item-modal__observation { display:grid; gap:.3rem; margin-top:.8rem; color:var(--color-muted); font-size:.82rem; }
+    .pos-item-modal__observation textarea { min-height:5rem; resize:vertical; }
+    .pos-item-modal__observation-actions { display:flex; gap:.45rem; margin-top:.45rem; }
+    .pos-item-modal__observation-actions button { min-height:2.2rem; padding:.4rem .7rem; border:1px solid var(--color-primary); border-radius:8px; background:var(--color-primary); color:#fff; cursor:pointer; }
+    .pos-item-modal__observation-actions button.is-muted { border-color:var(--color-border); background:transparent; color:var(--color-muted); }
 
     .pos-manual-article-modal {
         display: block;
@@ -1522,6 +1565,412 @@
         display: grid;
         grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
         gap: 1rem;
+    }
+
+    .pos-encargo-detail {
+        display: grid;
+        gap: 1rem;
+        min-width: 0;
+        overflow: auto;
+        padding-right: 0.15rem;
+    }
+
+    .pos-encargo-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) repeat(2, minmax(150px, 0.7fr));
+        gap: 0.8rem;
+        padding: 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(15, 23, 42, 0.28));
+    }
+
+    .pos-encargo-summary__main,
+    .pos-encargo-summary__status,
+    .pos-encargo-summary__metric {
+        display: grid;
+        align-content: center;
+        gap: 0.3rem;
+        min-width: 0;
+        padding: 0.2rem 0.35rem;
+    }
+
+    .pos-encargo-summary__main {
+        grid-row: span 2;
+        align-content: center;
+        padding-right: 1rem;
+        border-right: 1px solid var(--color-border);
+    }
+
+    .pos-encargo-summary__main strong {
+        overflow: hidden;
+        color: var(--color-text);
+        font-size: 1.1rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-summary__label,
+    .pos-encargo-summary__account,
+    .pos-encargo-cobranza__values span,
+    .pos-encargo-cobranza__bottom,
+    .pos-encargo-section__heading p {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+    }
+
+    .pos-encargo-summary__account {
+        font-size: 0.75rem;
+    }
+
+    .pos-encargo-summary__metric strong {
+        color: var(--color-text);
+        font-size: 1rem;
+    }
+
+    .pos-encargo-summary__metric--total {
+        padding: 0.65rem 0.8rem;
+        border-radius: 12px;
+        background: rgba(34, 211, 238, 0.1);
+    }
+
+    .pos-encargo-delivery {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.7rem;
+    }
+
+    .pos-encargo-delivery div {
+        display: grid;
+        gap: 0.25rem;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: rgba(148, 163, 184, 0.06);
+    }
+
+    .pos-encargo-delivery span,
+    .pos-encargo-item__description span,
+    .pos-encargo-item__description small,
+    .pos-encargo-item__numbers span,
+    .pos-encargo-item__progress span {
+        color: var(--color-muted);
+        font-size: 0.76rem;
+    }
+
+    .pos-encargo-delivery strong {
+        color: var(--color-text);
+        font-size: 0.86rem;
+    }
+
+    .pos-encargo-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid rgba(14, 165, 233, 0.25);
+        border-radius: 12px;
+        background: rgba(14, 165, 233, 0.06);
+    }
+
+    .pos-encargo-actions > span {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+    }
+
+    .pos-encargo-observations {
+        display: grid;
+        gap: 0.25rem;
+        padding: 0.75rem 0.8rem;
+        border-left: 3px solid var(--color-primary);
+        border-radius: 0 10px 10px 0;
+        background: rgba(14, 165, 233, 0.08);
+    }
+
+    .pos-encargo-observations span {
+        color: var(--color-muted);
+        font-size: 0.76rem;
+    }
+
+    .pos-encargo-observations strong {
+        color: var(--color-text);
+        font-size: 0.86rem;
+        font-weight: 600;
+        white-space: pre-wrap;
+    }
+
+    .pos-charge-modal__field {
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .pos-charge-modal__field-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(8rem, 0.75fr);
+        gap: 0.55rem;
+    }
+
+    .pos-charge-modal__field span {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .pos-charge-modal__field input,
+    .pos-charge-modal__field textarea {
+        width: 100%;
+        min-height: 2.7rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 0.65rem 0.75rem;
+        background: var(--color-panel);
+        color: var(--color-text);
+    }
+
+    .pos-charge-modal__field textarea {
+        min-height: 4.5rem;
+        resize: vertical;
+    }
+
+    .pos-encargo-status,
+    .pos-encargo-section__count {
+        width: fit-content;
+        padding: 0.25rem 0.55rem;
+        border: 1px solid rgba(34, 211, 238, 0.25);
+        border-radius: 999px;
+        background: rgba(34, 211, 238, 0.1);
+        color: #a5f3fc;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+    }
+
+    .pos-encargo-alert {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-radius: 12px;
+        background: rgba(245, 158, 11, 0.1);
+        color: #fde68a;
+        font-size: 0.82rem;
+    }
+
+    .pos-encargo-alert strong {
+        white-space: nowrap;
+    }
+
+    .pos-encargo-section {
+        display: grid;
+        gap: 0.7rem;
+        min-width: 0;
+    }
+
+    .pos-encargo-section__heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .pos-encargo-section__heading h4 {
+        margin: 0;
+        color: var(--color-text);
+        font-size: 1.05rem;
+    }
+
+    .pos-encargo-section__heading p {
+        margin: 0.15rem 0 0;
+    }
+
+    .pos-encargo-section__count {
+        flex: 0 0 auto;
+        color: var(--color-text);
+    }
+
+    .pos-encargo-cobranzas {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .pos-encargo-items {
+        display: grid;
+        gap: 0.55rem;
+    }
+
+    .pos-encargo-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.7rem 1rem;
+        padding: 0.8rem 0.9rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.32);
+    }
+
+    .pos-encargo-item__description,
+    .pos-encargo-item__numbers {
+        display: grid;
+        align-content: center;
+        gap: 0.2rem;
+        min-width: 0;
+    }
+
+    .pos-encargo-item__description strong,
+    .pos-encargo-item__numbers strong {
+        color: var(--color-text);
+    }
+
+    .pos-encargo-item__description span,
+    .pos-encargo-item__description small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-item__numbers {
+        grid-template-columns: auto auto auto;
+        align-items: center;
+        gap: 0.8rem;
+        text-align: right;
+    }
+
+    .pos-encargo-item__progress {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 0.25rem;
+    }
+
+    .pos-encargo-item__progress > div {
+        height: 0.35rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.16);
+    }
+
+    .pos-encargo-item__progress i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--color-primary), #22d3ee);
+    }
+
+    .pos-encargo-cobranza {
+        display: grid;
+        gap: 0.7rem;
+        padding: 0.85rem 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.42);
+    }
+
+    .pos-encargo-cobranza__top,
+    .pos-encargo-cobranza__bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    .pos-encargo-cobranza__top strong {
+        overflow: hidden;
+        color: var(--color-text);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-cobranza__values {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.8rem;
+    }
+
+    .pos-encargo-cobranza__values div {
+        display: grid;
+        gap: 0.2rem;
+    }
+
+    .pos-encargo-cobranza__values strong {
+        color: var(--color-text);
+        font-size: 0.95rem;
+    }
+
+    .pos-encargo-cobranza__values div:last-child {
+        text-align: right;
+    }
+
+    .pos-encargo-cobranza__bottom span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pos-encargo-action .pos-encargo-cobranza__bottom span:last-child {
+        flex: 1 1 auto;
+        text-align: right;
+    }
+
+    .pos-encargo-empty {
+        padding: 1rem;
+        border: 1px dashed var(--color-border);
+        border-radius: 12px;
+        color: var(--color-muted);
+        text-align: center;
+    }
+
+    @@media (max-width: 640px) {
+        .pos-encargo-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pos-encargo-summary__main {
+            grid-column: 1 / -1;
+            grid-row: auto;
+            padding-right: 0.35rem;
+            padding-bottom: 0.75rem;
+            border-right: 0;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .pos-encargo-cobranza__values {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pos-encargo-delivery {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-encargo-item {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-encargo-item__numbers {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            text-align: left;
+        }
+
+        .pos-encargo-cobranza__values div:last-child {
+            text-align: left;
+        }
+
+        .pos-encargo-cobranza__bottom {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pos-encargo-action .pos-encargo-cobranza__bottom span:last-child {
+            text-align: left;
+        }
+
+        .pos-encargo-alert {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
     }
 
     .pos-settings-modal__section {
@@ -2385,6 +2834,187 @@
         min-height: 0;
     }
 
+    .pos-charge-modal__body--np {
+        grid-template-columns: minmax(0, 1fr);
+        overflow: auto;
+        align-content: start;
+        gap: 0.55rem;
+    }
+
+    .pos-charge-modal__section--np-info {
+        align-content: start;
+        min-height: 0;
+        padding: 0.55rem 0.75rem;
+    }
+
+    .pos-charge-modal__section--np-form {
+        gap: 0.5rem;
+    }
+
+    .pos-charge-modal:has(.pos-charge-modal__body--np) {
+        width: min(720px, calc(100vw - 2rem));
+        gap: 0.7rem;
+    }
+
+    .pos-charge-modal:has(.pos-charge-modal__body--np) .pos-charge-modal__totals-head {
+        margin: 0;
+    }
+
+    .pos-charge-modal:has(.pos-charge-modal__body--np) .pos-charge-modal__section--np-form {
+        border-color: rgba(56, 189, 248, 0.25);
+        background: rgba(7, 20, 38, 0.42);
+    }
+
+    .pos-grid-status--np-summary {
+        display: block;
+        padding: 0.35rem 0.55rem;
+        border: 1px solid var(--color-border);
+        border-radius: 9px;
+        font-size: 0.76rem;
+    }
+
+    .pos-np-anticipo {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.7rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        border-radius: 10px;
+        background: rgba(56, 189, 248, 0.07);
+    }
+
+    .pos-np-anticipo--attention {
+        border-color: rgba(245, 158, 11, 0.75);
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0.06));
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.08);
+    }
+
+    .pos-np-anticipo__question {
+        display: grid;
+        gap: 0.1rem;
+        color: var(--color-text);
+        font-size: 0.8rem;
+        font-weight: 800;
+    }
+
+    .pos-np-anticipo__question small {
+        color: var(--color-muted);
+        font-size: 0.7rem;
+        font-weight: 500;
+    }
+
+    .pos-np-anticipo__options {
+        display: flex;
+        gap: 0.3rem;
+        flex: 0 0 auto;
+    }
+
+    .pos-np-anticipo__options button {
+        min-width: 3.5rem;
+        min-height: 2.2rem;
+        padding: 0.3rem 0.65rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-weight: 700;
+    }
+
+    .pos-np-anticipo__options button.is-active {
+        border-color: var(--color-primary);
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    .pos-np-anticipo__status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-top: 0.15rem;
+        color: #fcd34d;
+        font-size: 0.68rem;
+        font-weight: 800;
+    }
+
+    .pos-np-anticipo__payment {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+        gap: 0.55rem;
+        padding: 0.55rem 0.65rem 0;
+        border-left: 1px solid rgba(245, 158, 11, 0.35);
+        border-right: 1px solid rgba(245, 158, 11, 0.35);
+        background: rgba(245, 158, 11, 0.045);
+    }
+
+    .pos-np-anticipo__payment input,
+    .pos-np-anticipo__payment select {
+        min-height: 2.55rem;
+    }
+
+    .pos-np-observations {
+        margin-top: 0.1rem;
+        padding-top: 0.55rem;
+        border-top: 1px solid var(--color-border);
+    }
+
+    .pos-np-arca-search {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.55rem;
+        padding: 0.7rem;
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 14px;
+        background: rgba(14, 165, 233, 0.07);
+    }
+
+    .pos-np-arca-search label {
+        grid-column: 1 / -1;
+        color: var(--color-text);
+        font-size: 0.8rem;
+        font-weight: 800;
+    }
+
+    .pos-np-arca-search input {
+        min-width: 0;
+        min-height: 2.55rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        padding: 0.55rem 0.7rem;
+    }
+
+    .pos-np-arca-search button {
+        min-height: 2.55rem;
+        padding: 0.55rem 0.8rem;
+        border: 0;
+        border-radius: 10px;
+        background: var(--color-primary);
+        color: white;
+        font-weight: 800;
+    }
+
+    .pos-np-arca-message {
+        grid-column: 1 / -1;
+        margin: 0;
+        color: var(--color-muted);
+        font-size: 0.78rem;
+    }
+
+    .pos-np-arca-options {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .pos-np-arca-options button {
+        text-align: left;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+    }
+
     .pos-charge-modal__section {
         display: grid;
         gap: 0.7rem;
@@ -2563,6 +3193,24 @@
         flex-wrap: wrap;
     }
 
+    .pos-charge-modal__footer {
+        display: grid;
+        gap: 0.45rem;
+        padding-top: 0.25rem;
+        border-top: 1px solid var(--color-border);
+    }
+
+    .pos-charge-modal__footer .pos-charge-modal__actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(7rem, 0.7fr);
+        align-items: stretch;
+    }
+
+    .pos-charge-modal__footer .pos-charge-modal__actions > button {
+        min-width: 0;
+        white-space: normal;
+    }
+
     .pos-charge-modal__ghost,
     .pos-charge-modal__save,
     .pos-charge-modal__accept-print {
@@ -2601,6 +3249,10 @@
         .pos-stage {
             grid-template-columns: 21rem minmax(0, 1fr);
         }
+
+        .pos-stage.pos-stage--quick {
+            grid-template-columns: minmax(25rem, 40%) minmax(0, 60%);
+        }
     }
 
     @@media (max-width: 960px) {
@@ -2631,6 +3283,10 @@
         .pos-stage {
             grid-template-columns: 1fr;
             min-height: auto;
+        }
+
+        .pos-stage.pos-stage--quick {
+            grid-template-columns: 1fr;
         }
 
         .pos-sidebar {
@@ -3234,6 +3890,22 @@
         background: var(--color-panel);
     }
 
+    .pos-encargos-filters { display: grid; gap: 0.7rem; }
+    .pos-encargos-filters__primary { display: grid; grid-template-columns: minmax(18rem, 1fr); gap: 0.65rem; align-items: end; }
+    .pos-encargos-filters__secondary { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(9rem, 1fr) auto auto; gap: 0.65rem; align-items: end; }
+    .pos-encargos-filters .pos-settings-modal__check-field { position: relative; display: flex; align-items: center; min-height: 2.5rem; padding: 0 0.6rem; border: 1px solid var(--color-border); border-radius: 0.65rem; background: var(--color-input); }
+    .pos-encargos-switch__input { position: absolute; opacity: 0; pointer-events: none; }
+    .pos-encargos-switch { width: 2.15rem; height: 1.2rem; display: inline-flex; align-items: center; padding: 0.15rem; margin-right: 0.45rem; border-radius: 999px; background: var(--color-border); transition: background .15s ease; }
+    .pos-encargos-switch span { width: 0.9rem; height: 0.9rem; border-radius: 50%; background: var(--color-text-muted); transition: transform .15s ease, background .15s ease; }
+    .pos-encargos-switch__input:checked + .pos-encargos-switch { background: var(--color-primary); }
+    .pos-encargos-switch__input:checked + .pos-encargos-switch span { transform: translateX(0.95rem); background: white; }
+    .pos-encargos-switch__label { color: var(--color-text); font-size: 0.78rem; white-space: nowrap; }
+    .pos-encargo-state { display: inline-flex; align-items: center; padding: .22rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 700; letter-spacing: .03em; }
+    .pos-encargo-state--pending { color: #fbbf24; background: rgba(245, 158, 11, .15); border: 1px solid rgba(245, 158, 11, .3); }
+    .pos-encargo-state--closed, .pos-encargo-state--finished { color: #86efac; background: rgba(34, 197, 94, .14); border: 1px solid rgba(34, 197, 94, .28); }
+    .pos-encargo-state--cancelled, .pos-encargo-state--blocked { color: #fca5a5; background: rgba(239, 68, 68, .14); border: 1px solid rgba(239, 68, 68, .28); }
+    .pos-encargo-inline-state { color: var(--color-text); font-weight: 600; }
+
     .pos-reprint-filters label {
         display: grid;
         gap: 0.25rem;
@@ -3316,6 +3988,153 @@
     .pos-reprint-item__footer span {
         color: var(--color-muted);
     }
+
+    .pos-encargos-table-wrap {
+        min-height: 0;
+        overflow: auto;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: var(--color-panel);
+    }
+
+    .pos-encargos-table {
+        width: 100%;
+        min-width: 67rem;
+        border-collapse: collapse;
+        color: var(--color-text);
+        font-size: 0.78rem;
+    }
+
+    .pos-encargos-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 0.65rem 0.7rem;
+        background: var(--color-surface, var(--color-panel));
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-text-muted, var(--color-muted));
+        text-align: left;
+        white-space: nowrap;
+        font-weight: 600;
+    }
+
+    .pos-encargos-table td {
+        padding: 0.7rem;
+        border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    .pos-encargos-table__row {
+        cursor: pointer;
+        transition: background-color .15s ease;
+    }
+
+    .pos-encargos-table__row:hover {
+        background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    }
+
+    .pos-encargos-table__number {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .pos-encargos-table__actions {
+        display: flex;
+        gap: 0.35rem;
+        justify-content: flex-end;
+    }
+
+    .pos-encargos-table .btn--sm {
+        min-height: 1.9rem;
+        padding: 0.2rem 0.55rem;
+        font-size: 0.72rem;
+    }
+
+    /* Consulta de pedidos: adaptación visual local a AlfaDesign v1. */
+    .pos-encargos-modal {
+        background: var(--alfa-bg-surface);
+        border: 1px solid var(--alfa-border-default);
+        color: var(--alfa-text-primary);
+        border-radius: var(--alfa-radius-md);
+        box-shadow: var(--alfa-shadow-lg, 0 18px 50px rgba(0, 0, 0, .28));
+    }
+
+    .pos-encargos-modal .pos-settings-modal__header { border-bottom-color: var(--alfa-border-default); }
+    .pos-encargos-modal .pos-settings-modal__header h3,
+    .pos-encargos-modal .pos-settings-modal__header p,
+    .pos-encargos-modal .pos-reprint-filters label,
+    .pos-encargos-modal .pos-encargos-switch__label,
+    .pos-encargos-modal .pos-grid-status { color: var(--alfa-text-primary); }
+    .pos-encargos-modal .pos-settings-modal__header p,
+    .pos-encargos-modal .pos-reprint-filters label,
+    .pos-encargos-modal .pos-grid-status { color: var(--alfa-text-secondary); }
+    .pos-encargos-modal .pos-settings-modal__close {
+        border-color: var(--alfa-border-default);
+        background: transparent;
+        color: var(--alfa-text-secondary);
+    }
+    .pos-encargos-modal .pos-settings-modal__close:hover { border-color: var(--alfa-accent); color: var(--alfa-accent); }
+    .pos-encargos-modal .pos-reprint-filters,
+    .pos-encargos-modal .pos-encargos-table-wrap {
+        background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface));
+        border-color: var(--alfa-border-default);
+    }
+    .pos-encargos-modal .pos-reprint-filters input,
+    .pos-encargos-modal .pos-reprint-filters select {
+        background: var(--alfa-bg-input, var(--alfa-bg-surface));
+        border-color: var(--alfa-border-default);
+        color: var(--alfa-text-primary);
+    }
+    .pos-encargos-modal .pos-reprint-filters input:focus,
+    .pos-encargos-modal .pos-reprint-filters select:focus {
+        border-color: var(--alfa-accent);
+        outline: 2px solid color-mix(in srgb, var(--alfa-accent) 22%, transparent);
+        outline-offset: 1px;
+    }
+    .pos-encargos-modal .pos-encargos-filters .pos-settings-modal__check-field {
+        background: var(--alfa-bg-surface);
+        border-color: var(--alfa-border-default);
+    }
+    .pos-encargos-modal .pos-encargos-switch { background: var(--alfa-border-default); }
+    .pos-encargos-modal .pos-encargos-switch__input:checked + .pos-encargos-switch { background: var(--alfa-accent); }
+    .pos-encargos-modal .pos-encargo-state--pending {
+        color: var(--alfa-warning, #a66b00);
+        background: var(--alfa-warning-subtle, #fff4d6);
+        border-color: var(--alfa-warning, #d9a400);
+    }
+    .pos-encargos-modal .pos-encargo-state--closed,
+    .pos-encargos-modal .pos-encargo-state--finished {
+        color: var(--alfa-success, #1e7e34);
+        background: var(--alfa-success-subtle, #e6f4ea);
+        border-color: var(--alfa-success, #2e9e5b);
+    }
+    .pos-encargos-modal .pos-encargo-state--cancelled,
+    .pos-encargos-modal .pos-encargo-state--blocked {
+        color: var(--alfa-danger, #b3261e);
+        background: var(--alfa-danger-subtle, #fdecea);
+        border-color: var(--alfa-danger, #e5484d);
+    }
+    .pos-encargos-modal .pos-encargos-table { color: var(--alfa-text-primary); }
+    .pos-encargos-modal .pos-encargos-table th {
+        background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface));
+        border-bottom-color: var(--alfa-border-default);
+        color: var(--alfa-text-secondary);
+    }
+    .pos-encargos-modal .pos-encargos-table td { border-bottom-color: var(--alfa-border-default); }
+    .pos-encargos-modal .pos-encargos-table__row:hover { background: color-mix(in srgb, var(--alfa-accent) 9%, transparent); }
+    .pos-encargos-modal .pos-encargos-table__row strong { color: var(--alfa-text-primary); }
+    .pos-encargos-modal .btn--primary {
+        background: var(--alfa-accent);
+        border-color: var(--alfa-accent);
+        color: var(--alfa-on-accent, #fff);
+    }
+    .pos-encargos-modal .btn--secondary {
+        background: transparent;
+        border-color: var(--alfa-border-default);
+        color: var(--alfa-text-primary);
+    }
+    .pos-encargos-modal .btn--secondary:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }
 
     .pos-ticket-preview {
         display: grid;
@@ -5130,6 +5949,28 @@
             align-content: start;
         }
 
+        .pos-charge-modal__field-row,
+        .pos-charge-modal__field-row--address {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .pos-np-anticipo {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .pos-np-anticipo__payment {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .pos-np-anticipo__options button {
+            flex: 1 1 0;
+        }
+
+        .pos-charge-modal__footer .pos-charge-modal__actions {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+
         .pos-charge-modal__actions .pos-charge-modal__accept-print {
             grid-column: 1 / -1;
         }
@@ -5271,6 +6112,44 @@
                 return;
             }
 
+            if (!event.ctrlKey && !event.altKey && !event.metaKey && event.key === "F5") {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-clients-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
+            if (!event.ctrlKey && !event.altKey && !event.metaKey && event.key === "F9") {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-orders-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
+            if (event.ctrlKey && !event.altKey && !event.metaKey) {
+                const comprobanteTriggers = {
+                    a: "pos-comprobante-fc-shortcut-trigger",
+                    n: "pos-comprobante-nc-shortcut-trigger",
+                    c: "pos-comprobante-fp-shortcut-trigger",
+                    o: "pos-comprobante-np-shortcut-trigger",
+                    e: "pos-comprobante-rm-shortcut-trigger"
+                };
+                const triggerId = comprobanteTriggers[event.key.toLowerCase()];
+                if (triggerId) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const trigger = document.getElementById(triggerId);
+                    if (trigger) trigger.click();
+                    return;
+                }
+            }
+
             if (event.ctrlKey && (event.key === "b" || event.key === "B")) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -5312,8 +6191,21 @@
 </script>
 
 <section class="pos-shell">
+    @if (_cargandoNpEnPos)
+    {
+        <div class="pos-np-loading-overlay" role="status" aria-live="polite">
+            <div class="pos-np-loading"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Cargando nota de pedido...</div>
+        </div>
+    }
     <button id="pos-reprint-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="OpenReprintModalAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-arca-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleArcaShortcutAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-clients-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleClientsShortcutAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-orders-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="OpenNpAnticiposModalAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-comprobante-fc-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick='() => SeleccionarTipoComprobante("FC")' tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-comprobante-nc-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick='() => SeleccionarTipoComprobante("NC")' tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-comprobante-fp-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick='() => SeleccionarTipoComprobante("FP")' tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-comprobante-np-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick='() => SeleccionarTipoComprobante("NP")' tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-comprobante-rm-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick='() => SeleccionarTipoComprobante("RM")' tabindex="-1" aria-hidden="true"></button>
     <button id="pos-clear-cart-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleClearCartShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-save-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleSaveShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-escape-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleEscapeShortcutAsync" tabindex="-1" aria-hidden="true"></button>
@@ -5402,6 +6294,13 @@
                         <div class="pos-topbar__menu-panel">
                             <div class="pos-shortcuts-hint" aria-label="Atajos de teclado">
                                 <span class="pos-shortcuts-hint__title">Atajos rápidos</span>
+                                <span><kbd>F5</kbd> Clientes</span>
+                                <span><kbd>F9</kbd> Consultar pedidos</span>
+                                <span><kbd>Ctrl+A</kbd> e-Factura</span>
+                                <span><kbd>Ctrl+N</kbd> e-Nota de crédito</span>
+                                <span><kbd>Ctrl+C</kbd> Factura proforma</span>
+                                <span><kbd>Ctrl+O</kbd> Nota de pedido</span>
+                                <span><kbd>Ctrl+E</kbd> Remito interno</span>
                                 <span><kbd>Ctrl+F</kbd> ARCA</span>
                                 <span><kbd>Ctrl+B</kbd> Vaciar</span>
                                 <span><kbd>Ctrl+G</kbd> Cobrar / grabar</span>
@@ -5441,9 +6340,17 @@
                             </button>
                             @if (EsMostradorProduccion)
                             {
+                                <button type="button" class="pos-topbar__menu-item" @onclick="OpenNuevoEncargoAsync">
+                                    <i class="bi bi-plus-circle"></i>
+                                    Nuevo encargo
+                                </button>
                                 <button type="button" class="pos-topbar__menu-item" @onclick="OpenNpAnticiposModalAsync">
                                     <i class="bi bi-receipt"></i>
-                                    Gestionar encargos
+                                    Consultar pedidos <kbd>F9</kbd>
+                                </button>
+                                <button type="button" class="pos-topbar__menu-item" @onclick="OpenProductionMonitorAsync">
+                                    <i class="bi bi-kanban"></i>
+                                    Producción
                                 </button>
                             }
                             <button type="button" class="pos-topbar__menu-item" @onclick="InstallPwaFromPosAsync" title="Instalar Punto de Venta como aplicación">
@@ -5530,11 +6437,12 @@
                     <section class="pos-mobile-catalog">
                         <div class="pos-mobile-search">
                             <i class="bi bi-search"></i>
-                            <InputText @bind-Value="_filters.Texto"
-                                       @onkeydown="HandleMobileSearchKeyDown"
-                                       class="pos-mobile-search__input"
-                                       placeholder="Buscar por descripción, código o barras"
-                                       aria-label="Buscar artículos" />
+                            <input @bind="_filters.Texto"
+                                   @bind:event="oninput"
+                                   @onkeydown="HandleMobileSearchKeyDown"
+                                   class="pos-mobile-search__input"
+                                   placeholder="Buscar por descripción, código o barras"
+                                   aria-label="Buscar artículos" />
                             <button type="button" class="pos-mobile-search__button" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading" aria-label="Buscar artículos">
                                 <i class="bi bi-search"></i>
                             </button>
@@ -5542,6 +6450,7 @@
 
                         <select class="pos-mobile-rubro" @bind="_filters.IdRubro" aria-label="Filtrar por rubro">
                             <option value="">Todos los rubros</option>
+                            <option value="@PuntoVentaCatalogoKeys.Top">Top</option>
                             @foreach (var rubro in _rubros)
                             {
                                 <option value="@rubro.IdRubro">@RubroLabel(rubro)</option>
@@ -5681,7 +6590,7 @@
             </footer>
         </section>
 
-        <section class="pos-stage">
+        <section class="pos-stage @(_settings.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado ? "pos-stage--quick" : string.Empty)">
             <aside class="pos-sidebar">
                 <div class="pos-sidebar__items">
                     @if (!_cartItems.Any())
@@ -5695,7 +6604,7 @@
                     {
                         @foreach (var item in _cartItems)
                         {
-                            <article class="pos-line" @onclick="() => OpenCartItemModal(item.IdArticulo)">
+                            <article class="pos-line" @onclick="() => OpenCartItemModal(item)">
                                 <div class="pos-line__main">
                                     <strong>@(string.IsNullOrWhiteSpace(item.Descripcion) ? "Artículo sin descripción" : item.Descripcion)</strong>
                                     <div class="pos-line__details">
@@ -5715,10 +6624,14 @@
                                                 <i class="bi bi-plus"></i>
                                             </button>
                                             <button type="button" class="pos-line__remove" title="Eliminar artículo"
-                                                    @onclick="() => RemoveItem(item.IdArticulo)">
+                                                    @onclick="() => RemoveItem(item)">
                                                 <i class="bi bi-trash3"></i>
                                             </button>
                                         </div>
+                                        @if (EsNotaPedido && !string.IsNullOrWhiteSpace(item.Observaciones))
+                                        {
+                                            <div class="pos-line__observation"><i class="bi bi-chat-left-text"></i> @item.Observaciones</div>
+                                        }
                                     </div>
                                 </div>
                                 <div class="pos-line__price">@FmtMoney(item.Subtotal)</div>
@@ -5728,6 +6641,16 @@
                 </div>
 
                 <div class="pos-sidebar__checkout">
+                    @if (_settings.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado)
+                    {
+                        <PosIngresoRapido @ref="_ingresoRapidoRef"
+                                          ImportesRapidos="ImportesRapidosConfigurados"
+                                          CantidadesRapidas="CantidadesRapidasConfiguradas"
+                                          Decimales="_settings.CantidadDecimales"
+                                          Compacto="@(_settings.ModoIngresoRapido == PuntoVentaIngresoRapidoModoKeys.Compacto)"
+                                          OnConfirmed="AceptarIngresoRapidoAsync"
+                                          OnPreparedChanged="ActualizarIngresoRapidoPreparadoAsync" />
+                    }
                     <div class="pos-sidebar__notes">
                         <div class="pos-sidebar__scan-wrap">
                             <i class="bi bi-upc-scan pos-sidebar__scan-icon"></i>
@@ -5796,7 +6719,12 @@
             <div class="pos-catalog">
                 <section class="pos-catalog__toolbar">
                     <div class="pos-catalog__search">
-                        <InputText @bind-Value="_filters.Texto" class="pos-search-input" placeholder="Buscar articulos..." />
+                        <input @bind="_filters.Texto"
+                               @bind:event="oninput"
+                               @onkeydown="HandleDesktopSearchKeyDown"
+                               class="pos-search-input"
+                               placeholder="Buscar articulos..."
+                               aria-label="Buscar artículos" />
                         <button type="button" class="pos-search-btn" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading">
                             @( _catalogLoading ? "Buscando..." : "Buscar" )
                         </button>
@@ -5805,6 +6733,7 @@
                     <div class="pos-catalog__filters">
                         <select class="pos-select" @bind="_filters.IdRubro">
                             <option value="">Todos los rubros</option>
+                            <option value="@PuntoVentaCatalogoKeys.Top">Top</option>
                             @foreach (var rubro in _rubros)
                             {
                                 <option value="@rubro.IdRubro">@RubroLabel(rubro)</option>
@@ -5950,7 +6879,23 @@
 
             <div class="pos-item-modal__price">@FmtMoney(SelectedCartItem.Subtotal)</div>
 
-            <button type="button" class="pos-item-modal__danger" @onclick="() => RemoveItemAndClose(SelectedCartItem.IdArticulo)">Eliminar</button>
+            @if (EsNotaPedido)
+            {
+                <label class="pos-item-modal__observation">
+                    <span>Nota para preparación</span>
+                    <textarea @bind="_lineObservationBeingEdited" maxlength="500"
+                              placeholder="Indicaciones para este artículo"></textarea>
+                </label>
+                <div class="pos-item-modal__observation-actions">
+                    <button type="button" @onclick="SaveLineObservation">Guardar nota</button>
+                    @if (!string.IsNullOrWhiteSpace(SelectedCartItem.Observaciones))
+                    {
+                        <button type="button" class="is-muted" @onclick="ClearLineObservation">Quitar nota</button>
+                    }
+                </div>
+            }
+
+            <button type="button" class="pos-item-modal__danger" @onclick="() => RemoveItemAndClose(SelectedCartItem!)">Eliminar</button>
 
             <div class="pos-item-modal__qty-label">Cantidad</div>
             <div class="pos-item-modal__qty">
@@ -5960,8 +6905,8 @@
                        step="0.01"
                        @bind="SelectedCartItem.Cantidad"
                        @onkeydown="HandleQuantityKeyDown" />
-                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, -1m)">-</button>
-                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, 1m)">+</button>
+                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem!, -1m)">-</button>
+                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem!, 1m)">+</button>
             </div>
         </div>
     </section>
@@ -6139,13 +7084,123 @@
 
         @if (EsRemitoONotaPedido)
         {
-            <div class="pos-charge-modal__body">
-                <section class="pos-charge-modal__section">
-                    <div class="pos-grid-status">
-                        Este documento queda pendiente de facturar -- no pide medio de pago, no genera
-                        cobranza ni asiento contable. La factura real se hace después, por ahora desde
-                        el sistema de escritorio.
+            <div class="pos-charge-modal__body pos-charge-modal__body--np">
+                <section class="pos-charge-modal__section pos-charge-modal__section--np-form">
+                    <h4>Datos del encargo</h4>
+                    <div class="pos-np-arca-search">
+                        <label for="np-documento-arca">DNI / CUIT</label>
+                        <input id="np-documento-arca"
+                               @bind="_npDocumentoContactoInput"
+                               @bind:event="oninput"
+                               @onkeydown="HandleNpArcaKeyDownAsync"
+                               maxlength="20"
+                               inputmode="numeric"
+                               placeholder="Ingresá DNI o CUIT" />
+                        <button type="button" @onclick="ConsultarNpArcaAsync" disabled="@_npArcaBuscando">
+                            <i class="bi bi-cloud-search"></i>
+                            @(_npArcaBuscando ? "..." : "ARCA")
+                        </button>
+                        @if (!string.IsNullOrWhiteSpace(_npArcaMensaje))
+                        {
+                            <p class="pos-np-arca-message">@_npArcaMensaje</p>
+                        }
+                        @if (_npArcaOpciones.Count > 1)
+                        {
+                            <div class="pos-np-arca-options">
+                                @foreach (var persona in _npArcaOpciones)
+                                {
+                                    <button type="button" @onclick="() => AplicarNpArcaPersona(persona)">
+                                        @persona.Cuit · @persona.RazonSocial
+                                    </button>
+                                }
+                            </div>
+                        }
                     </div>
+                    <label class="pos-charge-modal__field">
+                        <span>Nombre y apellido *</span>
+                        <input @bind="_npNombreContactoInput" maxlength="100" placeholder="Nombre y apellido" />
+                    </label>
+                    <label class="pos-charge-modal__field">
+                        <span>Teléfono *</span>
+                        <input @bind="_npTelefonoInput" maxlength="100" placeholder="Ej.: 11-4444-5555" />
+                    </label>
+                    <div class="pos-charge-modal__field-row">
+                        <label class="pos-charge-modal__field">
+                            <span>Fecha de entrega</span>
+                            <input type="date" @bind="_npFechaEntregaDateInput" />
+                        </label>
+                        <label class="pos-charge-modal__field">
+                            <span>Hora de entrega</span>
+                            <input type="time" @bind="_npHoraEntregaInput" />
+                        </label>
+                    </div>
+                    @if (_npEntregaADomicilioInput)
+                    {
+                        <div class="pos-charge-modal__field-row pos-charge-modal__field-row--address">
+                            <label class="pos-charge-modal__field">
+                                <span>Domicilio *</span>
+                                <input @bind="_npDomicilioEntregaInput" maxlength="200" placeholder="Calle y número" />
+                            </label>
+                            <label class="pos-charge-modal__field">
+                                <span>Localidad</span>
+                                <input @bind="_npLocalidadEntregaInput" maxlength="100" placeholder="Localidad" />
+                            </label>
+                        </div>
+                    }
+                    <label class="pos-settings-modal__check-field">
+                        <input type="checkbox" @bind="_npEntregaADomicilioInput" />
+                        <span><strong>Enviar a domicilio</strong></span>
+                    </label>
+                    @if (_settings.RelacionaCobranzasConNotasPedido)
+                    {
+                        <div class="pos-np-anticipo pos-np-anticipo--attention">
+                            <div class="pos-np-anticipo__question">
+                                <span>¿Cargar anticipo por el pedido?</span>
+                                <small>Elegí una opción antes de generar</small>
+                                @if (_npCargarAnticipoInput)
+                                {
+                                    <span class="pos-np-anticipo__status"><i class="bi bi-exclamation-triangle"></i> Requiere CBCT</span>
+                                }
+                            </div>
+                            <div class="pos-np-anticipo__options">
+                                <button type="button" class="@(_npCargarAnticipoInput ? "is-active" : string.Empty)" @onclick="() => SeleccionarAnticipoAsync(true)">Sí</button>
+                                <button type="button" class="@(!_npCargarAnticipoInput ? "is-active" : string.Empty)" @onclick="() => SeleccionarAnticipoAsync(false)">No</button>
+                            </div>
+                        </div>
+                        @if (_npCargarAnticipoInput)
+                        {
+                            <div class="pos-np-anticipo__payment">
+                                <label class="pos-charge-modal__field">
+                                    <span>Importe del anticipo</span>
+                                    <input class="pos-charge-modal__amount"
+                                           @ref="_chargeAmountRef"
+                                           @bind="_chargeAmountInput"
+                                           @bind:event="oninput"
+                                           @onkeydown="HandleChargeAmountKeyDown"
+                                           inputmode="decimal"
+                                           placeholder="0,00" />
+                                </label>
+                                <label class="pos-charge-modal__field">
+                                    <span>Medio de pago</span>
+                                    <select class="pos-select" @bind="_selectedPaymentCode">
+                                        <option value="">Seleccioná un medio</option>
+                                        @foreach (var method in PaymentMethodsFiltrados)
+                                        {
+                                            <option value="@method.Codigo">@method.Descripcion</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="pos-grid-status pos-grid-status--np-summary">Anticipo no disponible para este punto de venta.</div>
+                    }
+                    <label class="pos-charge-modal__field pos-np-observations">
+                        <span>Observaciones</span>
+                        <textarea @bind="_npObservacionesInput" maxlength="500" placeholder="Indicaciones"></textarea>
+                    </label>
                 </section>
             </div>
         }
@@ -6298,19 +7353,21 @@
         </div>
         }
 
-        <div class="pos-charge-modal__actions">
-            <button type="button" class="pos-charge-modal__accept-print" @onclick="() => ConfirmChargeAsync(true)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
-                @(EsRemitoONotaPedido ? "GENERAR E IMPRIMIR" : "ACEPTAR E IMPRIMIR")
-            </button>
-            <button type="button" class="pos-charge-modal__save" @onclick="() => ConfirmChargeAsync(false)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
-                @(_chargeSaving ? "Grabando..." : EsRemitoONotaPedido ? "GENERAR" : "ACEPTAR")
-            </button>
-            <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">CANCELAR</button>
-        </div>
-        <div class="pos-shortcuts-hint pos-shortcuts-hint--modal" aria-label="Atajos de la cobranza">
-            <span class="pos-shortcuts-hint__title">Atajos</span>
-            <span><kbd>Ctrl+G</kbd> Aceptar</span>
-            <span><kbd>Esc</kbd> Cerrar</span>
+        <div class="pos-charge-modal__footer">
+            <div class="pos-charge-modal__actions">
+                <button type="button" class="pos-charge-modal__accept-print" @onclick="() => ConfirmChargeAsync(true)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
+                    @(EsRemitoONotaPedido ? "GENERAR E IMPRIMIR" : "ACEPTAR E IMPRIMIR")
+                </button>
+                <button type="button" class="pos-charge-modal__save" @onclick="() => ConfirmChargeAsync(false)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
+                    @(_chargeSaving ? "Grabando..." : EsRemitoONotaPedido ? "GENERAR" : "ACEPTAR")
+                </button>
+                <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">CANCELAR</button>
+            </div>
+            <div class="pos-shortcuts-hint pos-shortcuts-hint--modal" aria-label="Atajos de la cobranza">
+                <span class="pos-shortcuts-hint__title">Atajos</span>
+                <span><kbd>Ctrl+G</kbd> Aceptar</span>
+                <span><kbd>Esc</kbd> Cerrar</span>
+            </div>
         </div>
     </section>
 }
@@ -6522,7 +7579,7 @@
         }
         else
         {
-            <div class="pos-reprint-list">
+            <div class="pos-encargos-table-wrap">
                 @foreach (var receipt in _recentReceipts)
                 {
                     <button type="button" class="pos-reprint-item" @onclick="() => OpenExistingReceiptAsync(receipt.IdComprobante)">
@@ -6550,29 +7607,49 @@
 @if (_showNpAnticiposModal && EsMostradorProduccion)
 {
     <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar consulta de anticipos" @onclick="CloseNpAnticiposModal"></button>
-    <section class="pos-settings-modal pos-reprint-modal" aria-label="Gestionar encargos">
+    <section class="pos-settings-modal pos-reprint-modal pos-encargos-modal" aria-label="Consultar pedidos">
         <div class="pos-settings-modal__header">
             <div>
-                <h3>Gestionar encargos</h3>
-                <p>Consultá y revisá tus últimos encargos. Esta pantalla es solo de lectura.</p>
+                <h3>@(_npVistaProduccion ? "Producción" : "Consultar pedidos")</h3>
+                <p>@(_npVistaProduccion
+                    ? "Monitor de NP comerciales pendientes, con avance de preparación y entrega. Solo lectura; se actualiza cada 30 segundos."
+                    : "Consultá y revisá tus últimos encargos. Esta pantalla es solo de lectura.")</p>
             </div>
             <button type="button" class="pos-settings-modal__close" @onclick="CloseNpAnticiposModal">X</button>
         </div>
 
-        <div class="pos-reprint-filters">
-            <label>
-                <span>Buscar NP, cliente o nombre</span>
+        <div class="pos-reprint-filters pos-encargos-filters">
+            <div class="pos-encargos-filters__primary">
+            <label class="pos-encargos-filter--search">
+                <span>Buscar en todo</span>
                 <input class="pos-settings-modal__input" type="text" value="@_npAnticiposIdComprobante"
                        @oninput="OnNpAnticiposIdChanged" @onkeydown="HandleNpAnticiposKeyDown"
-                       placeholder="Ej.: 0001-00000001" autocomplete="off" />
+                       placeholder="Comprobante, cliente, DNI/CUIT o teléfono" autocomplete="off" />
+            </label>
+            </div>
+            <div class="pos-encargos-filters__secondary">
+            <label>
+                <span>Fecha desde</span>
+                <input class="pos-settings-modal__input" type="date" @bind="_npFechaDesdeInput" />
             </label>
             <label>
-                <span>Cuenta del cliente (opcional)</span>
-                <input class="pos-settings-modal__input" type="text" value="@_npAnticiposCuenta"
-                       @oninput="OnNpAnticiposCuentaChanged" @onkeydown="HandleNpAnticiposKeyDown"
-                       autocomplete="off" />
+                <span>Fecha hasta</span>
+                <input class="pos-settings-modal__input" type="date" @bind="_npFechaHastaInput" />
             </label>
-            <button type="button" class="btn btn--primary" @onclick="BuscarEncargosAsync" disabled="@_npAnticiposLoading">Buscar</button>
+            <label>
+                <span>Estado</span>
+                <select class="pos-settings-modal__input pos-encargos-select" @bind="_npEstadoInput">
+                    <option value="">Todos</option>
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="CERRADA">Cerrada</option>
+                    <option value="FINALIZADA">Finalizada</option>
+                    <option value="BLOQUEADA">Bloqueada</option>
+                    <option value="ANULADA">Anulada</option>
+                </select>
+            </label>
+            <button type="button" class="btn btn--primary" @onclick="BuscarEncargosDesdeFiltrosAsync" disabled="@_npAnticiposLoading">Buscar</button>
+            <button type="button" class="btn btn--secondary" @onclick="ActualizarEncargosAsync" disabled="@_npAnticiposLoading" title="Actualizar listado"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_npAnticiposError))
@@ -6592,22 +7669,41 @@
                 }
                 else
                 {
-                    @foreach (var encargo in _npAnticiposListado!.Items)
-                    {
-                        <div class="pos-reprint-item">
-                            <div class="pos-reprint-item__header"><strong>@encargo.IdComprobante</strong><span class="pos-receipt-modal__flag">@encargo.EstadoComprobante</span></div>
-                            <div class="pos-reprint-item__meta">
-                                <span>@(encargo.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
-                                <span>@DisplayValueOrDash(encargo.Cliente)</span>
-                                <span>Total: @FmtMoney(encargo.ImporteComercial)</span>
-                                <span>Señas: @(encargo.TotalAnticiposVerificado ? FmtMoney(encargo.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</span>
-                            </div>
-                            <div class="pos-reprint-item__footer">
-                                <span>Saldo: @(encargo.TotalAnticiposVerificado ? FmtMoney(Math.Max(encargo.ImporteComercial - (encargo.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</span>
-                                <button type="button" class="btn btn--secondary" @onclick="() => AbrirDetalleEncargoAsync(encargo)">Detalle</button>
-                            </div>
-                        </div>
-                    }
+                    <table class="pos-encargos-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Comprobante</th>
+                                <th>Cliente</th>
+                                <th class="pos-encargos-table__number">Total</th>
+                                <th class="pos-encargos-table__number">Seña</th>
+                                <th class="pos-encargos-table__number">Saldo</th>
+                                <th>Estado</th>
+                                <th>Fecha de entrega</th>
+                                <th aria-label="Acciones"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var encargo in _npAnticiposListado!.Items)
+                            {
+                                var puedeFacturar = PuedeFacturarEncargo(encargo);
+                                <tr class="pos-encargos-table__row" @ondblclick="() => FacturarEncargoDesdeListado(encargo)" title="Doble clic para cargar en el POS y facturar">
+                                    <td>@(encargo.Fecha?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                    <td><strong>@encargo.IdComprobante</strong></td>
+                                    <td>@DisplayValueOrDash(encargo.Cliente)</td>
+                                    <td class="pos-encargos-table__number">@FmtMoney(encargo.ImporteComercial)</td>
+                                    <td class="pos-encargos-table__number">@(encargo.TotalAnticiposVerificado ? FmtMoney(encargo.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</td>
+                                    <td class="pos-encargos-table__number">@(encargo.TotalAnticiposVerificado ? FmtMoney(Math.Max(encargo.ImporteComercial - (encargo.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</td>
+                                    <td><span class="pos-encargo-state @EstadoEncargoCss(encargo.EstadoComprobante)">@EstadoEncargoTexto(encargo.EstadoComprobante)</span></td>
+                                    <td>@(encargo.FechaEntrega?.ToString("dd/MM/yyyy HH:mm") ?? "A coordinar")</td>
+                                    <td class="pos-encargos-table__actions">
+                                        <button type="button" class="btn btn--primary btn--sm" disabled="@(!puedeFacturar)" title="Cargar en el POS" @onclick="() => FacturarEncargoDesdeListado(encargo)">Facturar</button>
+                                        <button type="button" class="btn btn--secondary btn--sm" title="Ver detalle" @onclick="() => AbrirDetalleEncargoAsync(encargo)">Detalle</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 }
             </div>
             @if (_npAnticiposListado is { TotalPaginas: > 1 })
@@ -6615,86 +7711,200 @@
                 <div class="pos-reprint-item__footer">
                     <button type="button" class="btn btn--secondary" @onclick="() => CambiarPaginaEncargosAsync(-1)" disabled="@(_npAnticiposPagina <= 1)">Anterior</button>
                     <span>Página @_npAnticiposPagina de @_npAnticiposListado.TotalPaginas</span>
-                    <button type="button" class="btn btn--secondary" @onclick="() => CambiarPaginaEncargosAsync(1)" disabled="@(_npAnticiposPagina >= _npAnticiposListado.TotalPaginas)">Siguiente</button>
+                    <button type="button" class="btn btn--secondary" @onclick="() => CambiarPaginaEncargosAsync(1)" disabled="@(!_npAnticiposListado.TieneSiguiente)">Siguiente</button>
                 </div>
             }
         }
         else
         {
             var np = _npAnticiposResultado;
-            <div class="pos-settings-modal__grid">
-                <div class="pos-settings-modal__field"><span>Cliente</span><strong>@DisplayValueOrDash(np.Cliente)</strong></div>
-                <div class="pos-settings-modal__field"><span>Fecha</span><strong>@(np.Fecha?.ToString("dd/MM/yyyy") ?? "-")</strong></div>
-                <div class="pos-settings-modal__field"><span>Estado</span><strong>@np.EstadoComprobante</strong></div>
-                <div class="pos-settings-modal__field"><span>Importe comercial</span><strong>@FmtMoney(np.ImporteComercial)</strong></div>
-                <div class="pos-settings-modal__field"><span>Estado de anticipos</span><strong>@np.EstadoAnticipos</strong></div>
-                <div class="pos-settings-modal__field"><span>Anticipos vigentes</span><strong>@(np.TotalAnticiposVerificado ? FmtMoney(np.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
-                <div class="pos-settings-modal__field"><span>Saldo pendiente</span><strong>@(np.TotalAnticiposVerificado ? FmtMoney(Math.Max(np.ImporteComercial - (np.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
-            </div>
-
-            @if (!np.TotalAnticiposVerificado)
-            {
-                <div class="pos-settings-modal__feedback pos-settings-modal__feedback--error">
-                    No se puede determinar de forma verificada el saldo pendiente. Los importes disponibles no deben utilizarse para cobrar.
+            <div class="pos-encargo-detail">
+                <div class="pos-encargo-summary">
+                    <div class="pos-encargo-summary__main">
+                        <span class="pos-encargo-summary__label">Cliente</span>
+                        <strong>@DisplayValueOrDash(np.Cliente)</strong>
+                        <span class="pos-encargo-summary__account">Cuenta @DisplayValueOrDash(np.Cuenta)</span>
+                    </div>
+                    <div class="pos-encargo-summary__status">
+                        <span class="pos-encargo-summary__label">Estado</span>
+                        <span class="pos-encargo-status">@np.EstadoComprobante</span>
+                    </div>
+                    <div class="pos-encargo-summary__metric">
+                        <span class="pos-encargo-summary__label">Fecha</span>
+                        <strong>@(np.Fecha?.ToString("dd/MM/yyyy") ?? "-")</strong>
+                    </div>
+                    <div class="pos-encargo-summary__metric">
+                        <span class="pos-encargo-summary__label">Importe comercial</span>
+                        <strong>@FmtMoney(np.ImporteComercial)</strong>
+                    </div>
+                    <div class="pos-encargo-summary__metric">
+                        <span class="pos-encargo-summary__label">Anticipos vigentes</span>
+                        <strong>@(np.TotalAnticiposVerificado ? FmtMoney(np.TotalAnticiposVigentes ?? 0m) : PuntoVentaAnticiposEstados.NoVerificado)</strong>
+                    </div>
+                    <div class="pos-encargo-summary__metric pos-encargo-summary__metric--total">
+                        <span class="pos-encargo-summary__label">Saldo pendiente</span>
+                        <strong>@(np.TotalAnticiposVerificado ? FmtMoney(Math.Max(np.ImporteComercial - (np.TotalAnticiposVigentes ?? 0m), 0m)) : PuntoVentaAnticiposEstados.NoVerificado)</strong>
+                    </div>
                 </div>
-            }
 
-            <h4>Cobranzas relacionadas</h4>
-            @if (np.Cobranzas.Count == 0)
-            {
-                <div class="pos-grid-status">No se encontraron cobranzas relacionadas.</div>
-            }
-            else
-            {
-                <div class="pos-reprint-list">
-                    @foreach (var cobranza in np.Cobranzas)
+                <div class="pos-encargo-delivery">
+                    <div><span>Entrega</span><strong>@(np.FechaEntrega?.ToString("dd/MM/yyyy HH:mm") ?? "A coordinar")@IndicadorEntrega(np.FechaEntrega, np.EstadoEntrega)</strong></div>
+                    <div><span>Teléfono</span><strong>@(string.IsNullOrWhiteSpace(np.Telefono) ? "No informado" : np.Telefono)</strong></div>
+                    <div><span>Preparación</span><strong>@(np.FechaPreparacion?.ToString("dd/MM/yyyy HH:mm") ?? "Pendiente de producción")</strong></div>
+                    <div><span>Estado producción</span><strong>@np.EstadoProduccion</strong></div>
+                    <div><span>Estado entrega</span><strong>@np.EstadoEntrega</strong></div>
+                </div>
+                <div class="pos-encargo-actions">
+                    <button type="button" class="btn btn--secondary" @onclick="() => ImprimirEncargoAsync(np)" disabled="@_npPrinting">
+                        <i class="bi bi-printer"></i> @(_npPrinting ? "Preparando impresión..." : "Imprimir nota")
+                    </button>
+                    <button type="button" class="btn btn--secondary" @onclick="() => ImprimirTicketProduccionAsync(np)" disabled="@_npPrinting">
+                        <i class="bi bi-card-checklist"></i> Ticket de producción
+                    </button>
+                    @if (!string.Equals(np.EstadoComprobante, "ANULADA", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(np.EstadoComprobante, "FINALIZADA", StringComparison.OrdinalIgnoreCase))
                     {
-                        <div class="pos-reprint-item">
-                            <div class="pos-reprint-item__header">
-                                <strong>@($"{cobranza.Tc} {cobranza.IdComprobante}")</strong>
-                                <span class="pos-receipt-modal__flag">@(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
-                            </div>
-                            <div class="pos-reprint-item__meta">
-                                <span>Original: @FmtMoney(cobranza.ImporteOriginal)</span>
-                                <span>Aplicado: @(cobranza.ImporteAplicado.HasValue ? FmtMoney(cobranza.ImporteAplicado.Value) : PuntoVentaAnticiposEstados.NoVerificado)</span>
-                                <strong>Disponible: @(cobranza.PuedeUsarseComoAnticipo && cobranza.ImporteDisponible.HasValue ? FmtMoney(cobranza.ImporteDisponible.Value) : PuntoVentaAnticiposEstados.NoVerificado)</strong>
-                            </div>
-                            <div class="pos-reprint-item__footer">
-                                <span>@(cobranza.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
-                                <span>Relación: @cobranza.TipoRelacion</span>
-                                <span>Finanzas: @(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
-                            </div>
-                            @if (!cobranza.RelacionVerificada)
+                        <button type="button" class="btn btn--primary" @onclick="() => FacturarEncargoDesdeDetalleAsync(np)">
+                            <i class="bi bi-receipt"></i> Cargar en el POS
+                        </button>
+                        <span>La NP se carga en el carrito actual para continuar la facturación.</span>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_npPrintError))
+                {
+                    <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">@_npPrintError</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(np.Observaciones))
+                {
+                    <div class="pos-encargo-observations"><span>Observaciones</span><strong>@np.Observaciones</strong></div>
+                }
+
+                @if (!np.TotalAnticiposVerificado)
+                {
+                    <div class="pos-encargo-alert">
+                        <strong>Saldo no verificado</strong>
+                        <span>No utilices estos importes para cobrar hasta revisar las cobranzas relacionadas.</span>
+                    </div>
+                }
+
+                <section class="pos-encargo-section">
+                    <div class="pos-encargo-section__heading">
+                        <div>
+                            <h4>Cobranzas relacionadas</h4>
+                            <p>Señas y pagos asociados a esta nota de pedido.</p>
+                        </div>
+                        <span class="pos-encargo-section__count">@np.Cobranzas.Count</span>
+                    </div>
+                    @if (np.Cobranzas.Count == 0)
+                    {
+                        <div class="pos-encargo-empty">No se encontraron cobranzas relacionadas.</div>
+                    }
+                    else
+                    {
+                        <div class="pos-encargo-cobranzas">
+                            @foreach (var cobranza in np.Cobranzas)
                             {
-                                <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">
-                                    @DisplayValueOrDash(cobranza.AdvertenciaRelacion)
-                                </div>
+                                <article class="pos-encargo-cobranza">
+                                    <div class="pos-encargo-cobranza__top">
+                                        <strong>@($"{cobranza.Tc} {cobranza.IdComprobante}")</strong>
+                                        <span class="pos-receipt-modal__flag">@(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
+                                    </div>
+                                    <div class="pos-encargo-cobranza__values">
+                                        <div><span>Original</span><strong>@FmtMoney(cobranza.ImporteOriginal)</strong></div>
+                                        <div><span>Aplicado</span><strong>@(cobranza.ImporteAplicado.HasValue ? FmtMoney(cobranza.ImporteAplicado.Value) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
+                                        <div><span>Disponible</span><strong>@(cobranza.PuedeUsarseComoAnticipo && cobranza.ImporteDisponible.HasValue ? FmtMoney(cobranza.ImporteDisponible.Value) : PuntoVentaAnticiposEstados.NoVerificado)</strong></div>
+                                    </div>
+                                    <div class="pos-encargo-cobranza__bottom">
+                                        <span>@(cobranza.Fecha?.ToString("dd/MM/yyyy") ?? "-")</span>
+                                        <span>Relación: @cobranza.TipoRelacion</span>
+                                        <span>Finanzas: @(cobranza.Anulada ? PuntoVentaAnticiposEstados.Anulado : cobranza.EstadoDisponible)</span>
+                                    </div>
+                                    @if (!cobranza.RelacionVerificada)
+                                    {
+                                        <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">
+                                            @DisplayValueOrDash(cobranza.AdvertenciaRelacion)
+                                        </div>
+                                    }
+                                </article>
                             }
                         </div>
                     }
-                </div>
-            }
+                </section>
 
-            <h4>Historial de acciones</h4>
-            @if (np.Acciones.Count == 0)
-            {
-                <div class="pos-grid-status">No hay acciones registradas.</div>
-            }
-            else
-            {
-                <div class="pos-reprint-list">
-                    @foreach (var accion in np.Acciones)
+                <section class="pos-encargo-section">
+                    <div class="pos-encargo-section__heading">
+                        <div>
+                            <h4>Artículos del encargo</h4>
+                            <p>Detalle comercial y avance de preparación.</p>
+                        </div>
+                        <span class="pos-encargo-section__count">@np.Items.Count</span>
+                    </div>
+                    @if (np.Items.Count == 0)
                     {
-                        <div class="pos-reprint-item">
-                            <div class="pos-reprint-item__header"><strong>@DisplayValueOrDash(accion.TipoAccion)</strong><span>@(accion.FechaHora?.ToString("dd/MM/yyyy HH:mm") ?? "-")</span></div>
-                            <div class="pos-reprint-item__meta"><span>@DisplayValueOrDash(accion.Usuario)</span><span>@DisplayValueOrDash(accion.Comentario)</span></div>
+                        <div class="pos-encargo-empty">No se encontraron artículos para esta nota.</div>
+                    }
+                    else
+                    {
+                        <div class="pos-encargo-items">
+                            @foreach (var item in np.Items)
+                            {
+                                var progreso = item.Cantidad <= 0 ? 0 : Math.Clamp(item.CantidadPreparada / item.Cantidad * 100m, 0m, 100m);
+                                <article class="pos-encargo-item">
+                                    <div class="pos-encargo-item__description">
+                                        <strong>@item.Descripcion</strong>
+                                        <span>@item.IdArticulo@(string.IsNullOrWhiteSpace(item.Presentacion) ? string.Empty : $" · {item.Presentacion}")</span>
+                                        @if (!string.IsNullOrWhiteSpace(item.Observaciones))
+                                        {
+                                            <small>@item.Observaciones</small>
+                                        }
+                                    </div>
+                                    <div class="pos-encargo-item__numbers">
+                                        <span>@item.Cantidad.ToString("0.####")</span>
+                                        <span>@FmtMoney(item.Precio)</span>
+                                        <strong>@FmtMoney(item.Importe)</strong>
+                                    </div>
+                                    <div class="pos-encargo-item__progress">
+                                        <span>Preparado @item.CantidadPreparada.ToString("0.####") / @item.Cantidad.ToString("0.####")</span>
+                                        <div><i style="@($"width:{progreso:0.##}%")"></i></div>
+                                        <small>Entregado en mostrador: @item.CantidadEntregada.ToString("0.####") / @item.Cantidad.ToString("0.####")</small>
+                                    </div>
+                                </article>
+                            }
                         </div>
                     }
-                </div>
-            }
+                </section>
+
+                <section class="pos-encargo-section pos-encargo-section--history">
+                    <div class="pos-encargo-section__heading">
+                        <div>
+                            <h4>Historial de acciones</h4>
+                            <p>Registro de cambios realizados sobre la nota de pedido.</p>
+                        </div>
+                        <span class="pos-encargo-section__count">@np.Acciones.Count</span>
+                    </div>
+                    @if (np.Acciones.Count == 0)
+                    {
+                        <div class="pos-encargo-empty">No hay acciones registradas.</div>
+                    }
+                    else
+                    {
+                        <div class="pos-encargo-cobranzas">
+                            @foreach (var accion in np.Acciones)
+                            {
+                                <article class="pos-encargo-cobranza pos-encargo-action">
+                                    <div class="pos-encargo-cobranza__top"><strong>@DisplayValueOrDash(accion.TipoAccion)</strong><span>@(accion.FechaHora?.ToString("dd/MM/yyyy HH:mm") ?? "-")</span></div>
+                                    <div class="pos-encargo-cobranza__bottom"><span>@DisplayValueOrDash(accion.Usuario)</span><span>@DisplayValueOrDash(accion.Comentario)</span></div>
+                                </article>
+                            }
+                        </div>
+                    }
+                </section>
+            </div>
         }
     </section>
 }
+
+<iframe id="pos-np-print-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión de nota de pedido"></iframe>
 
 @if (_showSettingsModal)
 {
@@ -6750,6 +7960,12 @@
                         <small>cfgRecargoTJTSinIVA: el recargo se informa completo y no genera IVA.</small>
                     </span>
                 </label>
+
+                <div class="pos-settings-modal__field">
+                    <label>Máximo de entrega (km)</label>
+                    <input type="number" min="0" step="0.1" @bind="_settings.DistanciaMaximaEntregaKm" placeholder="Vacío = sin límite" />
+                    <small>Se compara con la distancia legacy de TA_DistLocalidades por localidad.</small>
+                </div>
 
                 <div class="pos-settings-modal__field">
                     <label>EMAIL_SERVER</label>
@@ -7555,6 +8771,8 @@
     private bool _closeReceiptAfterPrint;
     private string? _selectedCartItemId;
     private string _descriptionBeingEdited = string.Empty;
+    private string _lineObservationBeingEdited = string.Empty;
+    private PuntoVentaCartItemDto? _selectedCartItemDirect;
     private PuntoVentaArticleDto? _manualArticlePending;
     private decimal _manualArticlePendingQuantity = 1m;
     private string _manualArticleDescription = string.Empty;
@@ -7567,6 +8785,30 @@
     private bool _manualArticleFocusPrice;
     private string _scanCode = string.Empty;
     private string _scanError = string.Empty;
+    private PosIngresoRapidoConfirmado? _ingresoRapidoPendiente;
+    private PosIngresoRapido? _ingresoRapidoRef;
+
+    private IReadOnlyList<decimal> ImportesRapidosConfigurados
+        => new[]
+        {
+            LeerImporteRapido(_settings.ImporteRapido1, 5m),
+            LeerImporteRapido(_settings.ImporteRapido2, 10m),
+            LeerImporteRapido(_settings.ImporteRapido3, 25m),
+            LeerImporteRapido(_settings.ImporteRapido4, 50m),
+            LeerImporteRapido(_settings.ImporteRapido5, 100m),
+            LeerImporteRapido(_settings.ImporteRapido6, 200m)
+        };
+
+    private IReadOnlyList<decimal> CantidadesRapidasConfiguradas
+        => new[]
+        {
+            LeerImporteRapido(_settings.CantidadRapida1, 0.1m),
+            LeerImporteRapido(_settings.CantidadRapida2, 0.25m),
+            LeerImporteRapido(_settings.CantidadRapida3, 0.5m),
+            LeerImporteRapido(_settings.CantidadRapida4, 1m),
+            LeerImporteRapido(_settings.CantidadRapida5, 6m),
+            LeerImporteRapido(_settings.CantidadRapida6, 12m)
+        };
     private bool _scanLoading;
     private string _cuentaCliente = string.Empty;
     private string _cuentaClienteNombre = string.Empty;
@@ -7711,9 +8953,36 @@
     private string _puntoVentaModo = PuntoVentaModoKeys.Mostrador;
 
     private bool _showNpAnticiposModal;
+    private bool _cargandoNpEnPos;
     private bool _npAnticiposLoading;
     private string _npAnticiposIdComprobante = string.Empty;
     private string _npAnticiposCuenta = string.Empty;
+    private DateTime? _npFechaDesdeInput;
+    private DateTime? _npFechaHastaInput;
+    private string _npEstadoInput = string.Empty;
+    private string _npSucursalInput = string.Empty;
+    private string _npUnidadInput = string.Empty;
+    private bool _npIncluirAnuladasInput;
+    private int? _facturandoNotaPedidoId;
+    private string _facturandoNotaPedidoComprobante = string.Empty;
+    private bool _npVistaProduccion;
+    private CancellationTokenSource? _npMonitorRefreshCts;
+    private Task? _npMonitorRefreshTask;
+    private bool _npPrinting;
+    private string? _npPrintError;
+    private DateTime? _npFechaEntregaDateInput;
+    private TimeOnly? _npHoraEntregaInput;
+    private string _npNombreContactoInput = string.Empty;
+    private string _npTelefonoInput = string.Empty;
+    private string _npDocumentoContactoInput = string.Empty;
+    private bool _npCargarAnticipoInput;
+    private bool _npArcaBuscando;
+    private string? _npArcaMensaje;
+    private IReadOnlyList<ArcaPadronPersonaDto> _npArcaOpciones = [];
+    private bool _npEntregaADomicilioInput;
+    private string _npDomicilioEntregaInput = string.Empty;
+    private string _npLocalidadEntregaInput = string.Empty;
+    private string _npObservacionesInput = string.Empty;
     private string? _npAnticiposError;
     private PuntoVentaNpAnticiposDto? _npAnticiposResultado;
     private PuntoVentaNpPaginaDto? _npAnticiposListado;
@@ -7807,7 +9076,7 @@
     private decimal TotalRecargosPoint => _paymentLines.Sum(x => x.Recargo);
     private decimal PendienteCobro => Math.Max(decimal.Round(TotalCarrito - TotalPagado, 2), 0m);
     private decimal VueltoCobro => Math.Max(decimal.Round(TotalPagado - TotalCarrito - TotalRecargosPoint, 2), 0m);
-    private PuntoVentaCartItemDto? SelectedCartItem => _cartItems.FirstOrDefault(x => x.IdArticulo == _selectedCartItemId);
+    private PuntoVentaCartItemDto? SelectedCartItem => _selectedCartItemDirect ?? _cartItems.FirstOrDefault(x => x.IdArticulo == _selectedCartItemId);
     private IReadOnlyList<PuntoVentaPaymentMethodDto> PaymentMethodsFiltrados
     {
         get
@@ -7860,6 +9129,7 @@
             if (IdPuntoVentaQuery is > 0)
             {
                 var puntoVenta = await PosConfigSvc.GetPuntoVentaByIdAsync(IdPuntoVentaQuery.Value);
+                AplicarConfiguracionIngresoRapido(puntoVenta);
                 _puntoVentaModo = string.IsNullOrWhiteSpace(puntoVenta?.Modo)
                     ? PuntoVentaModoKeys.Mostrador
                     : puntoVenta!.Modo.Trim().ToUpperInvariant();
@@ -7921,7 +9191,8 @@
                             Cantidad = item.Cantidad,
                             TasaIva = item.TasaIva,
                             Exento = item.Exento,
-                            Familia = item.Familia
+                            Familia = item.Familia,
+                            Observaciones = item.Observaciones
                         });
                     }
 
@@ -7933,6 +9204,7 @@
                     }
 
                     var puntoVentaPedido = await PosConfigSvc.GetPuntoVentaByIdAsync(_pedidoContexto.IdPuntoVenta);
+                    AplicarConfiguracionIngresoRapido(puntoVentaPedido);
                     _puntoVentaModo = string.IsNullOrWhiteSpace(puntoVentaPedido?.Modo)
                         ? PuntoVentaModoKeys.Mostrador
                         : puntoVentaPedido!.Modo.Trim().ToUpperInvariant();
@@ -8660,19 +9932,161 @@
             Pagina = pagina
         };
 
-    private void AddToCart(PuntoVentaArticleDto article, decimal cantidad = 1m)
+    private void AddToCart(PuntoVentaArticleDto article, decimal? cantidad = null)
     {
+        var ingresoRapidoAplicado = false;
+        var cantidadFinal = cantidad ?? 1m;
+        if (!cantidad.HasValue && _ingresoRapidoPendiente is not null && _settings.ConfirmarCantidadPrecio)
+        {
+            // Equivalente a OptThumb1_Click -> TxtAux1_KeyPress cuando la
+            // configuración legacy exige confirmar cantidad/precio. El circuito
+            // habitual agrega la línea y deja sus controles editables; no se
+            // aplica silenciosamente el valor preparado por el panel.
+            ConsumirIngresoRapido();
+        }
+        if (!cantidad.HasValue && _ingresoRapidoPendiente is { } ingresoRapido)
+        {
+            var existente = _cartItems.FirstOrDefault(x => string.Equals(x.IdArticulo, article.IdArticulo, StringComparison.OrdinalIgnoreCase));
+            var precioBase = existente?.PrecioUnitario ?? article.PrecioUnitario;
+            if (ingresoRapido.Modo == PosIngresoRapidoModo.Importe)
+            {
+                if (precioBase <= 0m)
+                {
+                    _scanError = "El artículo no tiene un precio unitario válido para calcular el importe solicitado.";
+                    return;
+                }
+
+                if (existente is not null)
+                {
+                    var cantidadNueva = decimal.Round(
+                        existente.Cantidad + ingresoRapido.Valor / precioBase,
+                        2,
+                        MidpointRounding.AwayFromZero);
+                    if (!ValidarCantidadRapida(cantidadNueva, out var errorCantidadExistente))
+                    {
+                        _scanError = errorCantidadExistente;
+                        return;
+                    }
+
+                    existente.Cantidad = cantidadNueva;
+                    _chargeSuccess = null;
+                    ConsumirIngresoRapido();
+                    return;
+                }
+
+                cantidadFinal = decimal.Round(
+                    ingresoRapido.Valor / precioBase,
+                    2,
+                    MidpointRounding.AwayFromZero);
+                if (!ValidarCantidadRapida(cantidadFinal, out var errorCantidadNueva))
+                {
+                    _scanError = errorCantidadNueva;
+                    return;
+                }
+
+                var precioAjustado = decimal.Round(
+                    ingresoRapido.Valor / cantidadFinal,
+                    2,
+                    MidpointRounding.AwayFromZero);
+                AddToCartCore(article, cantidadFinal);
+                var lineaNueva = _cartItems.FirstOrDefault(x => string.Equals(x.IdArticulo, article.IdArticulo, StringComparison.OrdinalIgnoreCase));
+                if (lineaNueva is not null)
+                    lineaNueva.PrecioUnitario = precioAjustado;
+                ConsumirIngresoRapido();
+                return;
+            }
+
+            if (!PosIngresoRapidoCalculador.TryCalcularCantidad(
+                    ingresoRapido,
+                    article.PrecioUnitario,
+                    out cantidadFinal,
+                    out var errorIngreso))
+            {
+                _scanError = errorIngreso;
+                return;
+            }
+
+            ingresoRapidoAplicado = true;
+        }
+
         var esArticuloManual = EsArticuloManual(article.IdArticulo);
         if (esArticuloManual || article.PrecioUnitario <= 0m)
         {
+            if (ingresoRapidoAplicado)
+            {
+                _scanError = "El artículo requiere un precio unitario válido antes de usar el importe rápido.";
+                return;
+            }
+
             OpenManualArticleModal(
                 article,
-                cantidad,
+                cantidadFinal,
                 esArticuloManual || string.IsNullOrWhiteSpace(article.Descripcion));
             return;
         }
 
-        AddToCartCore(article, cantidad);
+        AddToCartCore(article, cantidadFinal);
+        if (ingresoRapidoAplicado)
+            ConsumirIngresoRapido();
+    }
+
+    private bool ValidarCantidadRapida(decimal cantidad, out string error)
+    {
+        error = string.Empty;
+        if (cantidad <= 0m)
+        {
+            error = "La cantidad calculada debe ser mayor que cero.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private void ConsumirIngresoRapido()
+    {
+        _ingresoRapidoPendiente = null;
+        _ingresoRapidoRef?.Reiniciar();
+    }
+
+    private Task AceptarIngresoRapidoAsync(PosIngresoRapidoConfirmado ingreso)
+    {
+        _ingresoRapidoPendiente = ingreso;
+        _scanError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task ActualizarIngresoRapidoPreparadoAsync(PosIngresoRapidoConfirmado? ingreso)
+    {
+        _ingresoRapidoPendiente = ingreso;
+        if (ingreso is not null)
+            _scanError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private static decimal LeerImporteRapido(string? texto, decimal predeterminado)
+        => PosIngresoRapidoCalculador.TryParse(texto, out var valor) && valor > 0m ? valor : predeterminado;
+
+    private void AplicarConfiguracionIngresoRapido(PuntoVentaEntidadDto? puntoVenta)
+    {
+        if (puntoVenta is null)
+            return;
+
+        _settings.CargaRapidaGrafica = puntoVenta.CargaRapidaGrafica;
+        _settings.ModoIngresoRapido = string.IsNullOrWhiteSpace(puntoVenta.ModoIngresoRapido)
+            ? (puntoVenta.CargaRapidaGrafica ? PuntoVentaIngresoRapidoModoKeys.Completo : PuntoVentaIngresoRapidoModoKeys.Deshabilitado)
+            : puntoVenta.ModoIngresoRapido;
+        _settings.ImporteRapido1 = puntoVenta.ImporteRapido1.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.ImporteRapido2 = puntoVenta.ImporteRapido2.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.ImporteRapido3 = puntoVenta.ImporteRapido3.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.ImporteRapido4 = puntoVenta.ImporteRapido4.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.ImporteRapido5 = puntoVenta.ImporteRapido5.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.ImporteRapido6 = puntoVenta.ImporteRapido6.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.CantidadRapida1 = puntoVenta.CantidadRapida1.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.CantidadRapida2 = puntoVenta.CantidadRapida2.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.CantidadRapida3 = puntoVenta.CantidadRapida3.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.CantidadRapida4 = puntoVenta.CantidadRapida4.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.CantidadRapida5 = puntoVenta.CantidadRapida5.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.CantidadRapida6 = puntoVenta.CantidadRapida6.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private bool _mobileCartView;
@@ -8728,6 +10142,12 @@
             await BuscarArticulosAsync();
     }
 
+    private async Task HandleDesktopSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await BuscarArticulosAsync();
+    }
+
     private void OpenMobileCart()
     {
         _mobileCartView = true;
@@ -8743,7 +10163,8 @@
     private void AddToCartCore(PuntoVentaArticleDto article, decimal cantidad = 1m)
     {
         _chargeSuccess = null;
-        var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo);
+        var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo
+            && (!EsNotaPedido || string.IsNullOrWhiteSpace(x.Observaciones)));
         if (existing is not null)
         {
             existing.Cantidad += cantidad;
@@ -8893,19 +10314,22 @@
             _cartItems.Remove(item);
     }
 
-    private void OpenCartItemModal(string idArticulo)
+    private void OpenCartItemModal(PuntoVentaCartItemDto item)
     {
-        _selectedCartItemId = idArticulo;
-        var item = _cartItems.FirstOrDefault(x => x.IdArticulo == idArticulo);
-        _descriptionBeingEdited = string.IsNullOrWhiteSpace(item?.Descripcion)
+        _selectedCartItemDirect = item;
+        _selectedCartItemId = item.IdArticulo;
+        _descriptionBeingEdited = string.IsNullOrWhiteSpace(item.Descripcion)
             ? string.Empty
             : item.Descripcion;
+        _lineObservationBeingEdited = item.Observaciones ?? string.Empty;
     }
 
     private void CloseCartItemModal()
     {
         _selectedCartItemId = null;
+        _selectedCartItemDirect = null;
         _descriptionBeingEdited = string.Empty;
+        _lineObservationBeingEdited = string.Empty;
         _needScanFocus = true;
     }
 
@@ -8918,6 +10342,40 @@
 
         item.Descripcion = descripcion;
         CloseCartItemModal();
+    }
+
+    private void SaveLineObservation()
+    {
+        if (SelectedCartItem is null || !EsNotaPedido)
+            return;
+
+        SelectedCartItem.Observaciones = _lineObservationBeingEdited.Trim();
+        CloseCartItemModal();
+    }
+
+    private void ClearLineObservation()
+    {
+        if (SelectedCartItem is null)
+            return;
+
+        SelectedCartItem.Observaciones = string.Empty;
+        _lineObservationBeingEdited = string.Empty;
+    }
+
+    private void ChangeQty(PuntoVentaCartItemDto item, decimal delta)
+    {
+        item.Cantidad += delta;
+        if (item.Cantidad <= 0)
+            _cartItems.Remove(item);
+        if (SelectedCartItem == item && item.Cantidad <= 0)
+            CloseCartItemModal();
+    }
+
+    private void RemoveItem(PuntoVentaCartItemDto item)
+    {
+        _cartItems.Remove(item);
+        if (SelectedCartItem == item)
+            CloseCartItemModal();
     }
 
     private void HandleQuantityKeyDown(KeyboardEventArgs e)
@@ -8939,9 +10397,22 @@
             CloseCartItemModal();
     }
 
+    private void ChangeQtyAndRefreshModal(PuntoVentaCartItemDto item, decimal delta)
+    {
+        ChangeQty(item, delta);
+        if (item.Cantidad <= 0 || SelectedCartItem is null)
+            CloseCartItemModal();
+    }
+
     private void RemoveItemAndClose(string idArticulo)
     {
         RemoveItem(idArticulo);
+        CloseCartItemModal();
+    }
+
+    private void RemoveItemAndClose(PuntoVentaCartItemDto item)
+    {
+        RemoveItem(item);
         CloseCartItemModal();
     }
 
@@ -8959,7 +10430,8 @@
         if (raw.Length == 0) return;
 
         // Soporte formato "cantidad*codigo", ej: 3*7791728001723 o -3*7791728001723 (devolucion)
-        decimal cantidad = 1m;
+        decimal? cantidad = null;
+        var cantidadIngresada = false;
         string codigo;
         var starIdx = raw.IndexOf('*');
         if (starIdx > 0 && starIdx < raw.Length - 1)
@@ -8971,6 +10443,7 @@
                 && parsedCant != 0m && codPart.Length > 0)
             {
                 cantidad = parsedCant;
+                cantidadIngresada = true;
                 codigo   = codPart;
             }
             else
@@ -8991,20 +10464,20 @@
             if (art is not null)
             {
                 _scanCode = string.Empty;
-                if (cantidad < 0m && RequiereClaveCancelar())
+                if (cantidad.GetValueOrDefault() < 0m && RequiereClaveCancelar())
                 {
                     AbrirModalClaveCancelar(
                         "Cantidad negativa",
                         "Ingresá la clave para cargar una cantidad negativa.",
                         () =>
                         {
-                            AddToCart(art, cantidad);
+                            AddToCart(art, cantidadIngresada ? cantidad : null);
                             return Task.CompletedTask;
                         });
                 }
                 else
                 {
-                    AddToCart(art, cantidad);
+                    AddToCart(art, cantidadIngresada ? cantidad : null);
                 }
             }
             else
@@ -9029,6 +10502,11 @@
         _cuentaClienteNombre = cliente.RazonSocial ?? string.Empty;
         _clienteDocumentoTipo = cliente.DocumentoTipoCodigo ?? string.Empty;
         _clienteNumeroDocumento = cliente.NumeroDocumento ?? string.Empty;
+        _npNombreContactoInput = cliente.RazonSocial ?? string.Empty;
+        _npTelefonoInput = cliente.Telefono ?? string.Empty;
+        _npDocumentoContactoInput = cliente.NumeroDocumento ?? string.Empty;
+        _npDomicilioEntregaInput = string.Join(" ", new[] { cliente.Calle, cliente.Numero, cliente.Piso, cliente.Departamento }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+        _npLocalidadEntregaInput = cliente.Localidad ?? string.Empty;
         _clienteIva = string.IsNullOrWhiteSpace(cliente.IvaDescripcion)
             ? cliente.IvaCodigo ?? string.Empty
             : cliente.IvaDescripcion;
@@ -9039,12 +10517,76 @@
         _needScanFocus = true;
     }
 
+    private async Task HandleNpArcaKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await ConsultarNpArcaAsync();
+    }
+
+    private async Task ConsultarNpArcaAsync()
+    {
+        _npArcaMensaje = null;
+        _npArcaOpciones = [];
+        var documento = new string((_npDocumentoContactoInput ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (documento.Length is not (7 or 8 or 11))
+        {
+            _npArcaMensaje = "Ingresá un DNI de 7/8 dígitos o un CUIT de 11 dígitos.";
+            return;
+        }
+
+        try
+        {
+            _npArcaBuscando = true;
+            if (documento.Length == 11)
+            {
+                AplicarNpArcaPersona(await ArcaPadronSvc.ConsultarPersonaAsync(documento));
+                return;
+            }
+
+            var personas = await ArcaPadronSvc.ConsultarDniAsync(documento);
+            if (personas.Count == 0)
+            {
+                _npArcaMensaje = $"ARCA no encontró un CUIT asociado al DNI {documento}.";
+            }
+            else if (personas.Count == 1)
+            {
+                AplicarNpArcaPersona(personas[0]);
+            }
+            else
+            {
+                _npArcaOpciones = personas;
+                _npArcaMensaje = "El DNI tiene más de un CUIT asociado. Seleccioná el cliente correcto.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _npArcaMensaje = ex.Message;
+        }
+        finally
+        {
+            _npArcaBuscando = false;
+        }
+    }
+
+    private void AplicarNpArcaPersona(ArcaPadronPersonaDto persona)
+    {
+        _npDocumentoContactoInput = persona.Cuit;
+        _npNombreContactoInput = string.IsNullOrWhiteSpace(persona.RazonSocial)
+            ? $"{persona.Nombre} {persona.Apellido}".Trim()
+            : persona.RazonSocial;
+        _npDomicilioEntregaInput = persona.Calle;
+        _npLocalidadEntregaInput = persona.Localidad;
+        _npArcaOpciones = [];
+        _npArcaMensaje = "Datos completados desde ARCA.";
+    }
+
     private async Task LimpiarCliente()
     {
         _cuentaCliente = string.Empty;
         _cuentaClienteNombre = string.Empty;
         ClearCustomerIdentity();
         _clienteEventual = null;
+        LimpiarDatosContactoEncargo();
         await RecalculateCartPricesAsync();
         await LoadCatalogAsync();
         _needScanFocus = true;
@@ -9063,6 +10605,7 @@
         _cuentaClienteNombre = string.Empty;
         ClearCustomerIdentity();
         _clienteEventual = null;
+        LimpiarDatosContactoEncargo();
         await RecalculateCartPricesAsync();
         await LoadCatalogAsync();
         _needScanFocus = true;
@@ -9260,10 +10803,55 @@
         _showPosMenu = false;
         _showNpAnticiposModal = true;
         _npAnticiposError = null;
+        _npPrintError = null;
         _npAnticiposResultado = null;
+        StopNpMonitorRefresh();
         _npAnticiposIdComprobante = string.Empty;
+        _npAnticiposCuenta = string.Empty;
+        _npVistaProduccion = false;
+        // F9 debe mostrar los pendientes sin limitarse únicamente a los de hoy.
+        // La fecha queda disponible como filtro opcional.
+        _npFechaDesdeInput = null;
+        _npFechaHastaInput = null;
+        _npEstadoInput = "PENDIENTE";
+        _npSucursalInput = SucursalOperativa;
+        _npUnidadInput = string.Empty;
+        _npIncluirAnuladasInput = false;
         _npAnticiposPagina = 1;
         await BuscarEncargosAsync();
+    }
+
+    private async Task OpenProductionMonitorAsync()
+    {
+        if (!EsMostradorProduccion)
+            return;
+
+        _showPosMenu = false;
+        _showNpAnticiposModal = true;
+        _npVistaProduccion = true;
+        _npAnticiposError = null;
+        StartNpMonitorRefresh();
+        _npAnticiposResultado = null;
+        _npAnticiposIdComprobante = string.Empty;
+        _npAnticiposCuenta = string.Empty;
+        _npFechaDesdeInput = null;
+        _npFechaHastaInput = null;
+        _npEstadoInput = "PENDIENTE";
+        _npSucursalInput = SucursalOperativa;
+        _npUnidadInput = string.Empty;
+        _npIncluirAnuladasInput = false;
+        _npAnticiposPagina = 1;
+        await BuscarEncargosAsync();
+    }
+
+    private Task OpenNuevoEncargoAsync()
+    {
+        if (!EsMostradorProduccion)
+            return Task.CompletedTask;
+
+        _showPosMenu = false;
+        SeleccionarTipoComprobante("NP");
+        return Task.CompletedTask;
     }
 
     private void CloseNpAnticiposModal()
@@ -9271,6 +10859,9 @@
         _showNpAnticiposModal = false;
         _npAnticiposLoading = false;
         _npAnticiposError = null;
+        _npVistaProduccion = false;
+        _npPrintError = null;
+        StopNpMonitorRefresh();
     }
 
     private void OnNpAnticiposIdChanged(ChangeEventArgs args)
@@ -9282,7 +10873,13 @@
     private async Task HandleNpAnticiposKeyDown(KeyboardEventArgs args)
     {
         if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
-            await BuscarEncargosAsync();
+            await BuscarEncargosDesdeFiltrosAsync();
+    }
+
+    private async Task BuscarEncargosDesdeFiltrosAsync()
+    {
+        _npAnticiposPagina = 1;
+        await BuscarEncargosAsync();
     }
 
     private async Task BuscarEncargosAsync()
@@ -9298,10 +10895,15 @@
             _npAnticiposListado = await AnticiposSvc.BuscarNotasPedidoAsync(new PuntoVentaNpListadoFiltro
             {
                 Buscar = _npAnticiposIdComprobante,
+                Estado = _npEstadoInput,
+                Desde = _npFechaDesdeInput,
+                Hasta = _npFechaHastaInput,
+                Sucursal = _npSucursalInput,
+                Unidad = _npUnidadInput,
+                IncluirAnuladas = _npIncluirAnuladasInput,
                 Pagina = _npAnticiposPagina,
                 TamanoPagina = 20,
-                // El listado inicial abarca las NP del alcance autorizado, no solo la sucursal operativa del POS.
-                Sucursal = string.Empty
+                // La sucursal queda vacía por defecto y puede acotarse con el filtro.
             });
         }
         catch (Exception ex)
@@ -9324,6 +10926,53 @@
         await BuscarEncargosAsync();
     }
 
+    private async Task ActualizarEncargosAsync()
+    {
+        if (_npAnticiposListado is null)
+            _npAnticiposPagina = 1;
+        await BuscarEncargosAsync();
+    }
+
+    private void StartNpMonitorRefresh()
+    {
+        StopNpMonitorRefresh();
+        _npMonitorRefreshCts = new CancellationTokenSource();
+        _npMonitorRefreshTask = RefrescarMonitorNpAsync(_npMonitorRefreshCts.Token);
+    }
+
+    private void StopNpMonitorRefresh()
+    {
+        _npMonitorRefreshCts?.Cancel();
+        _npMonitorRefreshCts = null;
+        _npMonitorRefreshTask = null;
+    }
+
+    private async Task RefrescarMonitorNpAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+                if (!_showNpAnticiposModal || !_npVistaProduccion || ct.IsCancellationRequested)
+                    return;
+
+                await InvokeAsync(async () =>
+                {
+                    if (!_npAnticiposLoading)
+                        await BuscarEncargosAsync();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "No se pudo actualizar automáticamente el monitor de producción.");
+        }
+    }
+
     private async Task AbrirDetalleEncargoAsync(PuntoVentaNpResumenDto encargo)
     {
         if (_npAnticiposLoading)
@@ -9333,6 +10982,107 @@
         _npAnticiposCuenta = encargo.Cuenta;
         await ConsultarNpAnticiposAsync();
     }
+
+    private static bool PuedeFacturarEncargo(PuntoVentaNpResumenDto encargo)
+        => !string.Equals(encargo.EstadoComprobante, "ANULADA", StringComparison.OrdinalIgnoreCase)
+           && !string.Equals(encargo.EstadoComprobante, "FINALIZADA", StringComparison.OrdinalIgnoreCase);
+
+    private async Task FacturarEncargoDesdeListado(PuntoVentaNpResumenDto encargo)
+    {
+        if (!PuedeFacturarEncargo(encargo) || _npAnticiposLoading)
+            return;
+
+        if (_cartItems.Any())
+        {
+            var reemplazar = await Js.InvokeAsync<bool>("confirm", "El carrito tiene artículos. ¿Querés reemplazarlo por la nota de pedido seleccionada?");
+            if (!reemplazar)
+                return;
+        }
+
+        try
+        {
+            _cargandoNpEnPos = true;
+            _showNpAnticiposModal = false;
+            _npAnticiposLoading = true;
+            _npAnticiposError = null;
+            var np = await AnticiposSvc.GetNotaPedidoParaFacturarAsync(encargo.IdComprobante, encargo.Cuenta);
+            if (np is null)
+            {
+                _npAnticiposError = "No se pudo cargar la nota de pedido en el POS.";
+                return;
+            }
+
+            var pendientes = np.Items
+                .Select(x => new { Item = x, Cantidad = Math.Max(x.Cantidad - x.CantidadEntregada, 0m) })
+                .Where(x => x.Cantidad > 0m)
+                .ToList();
+            if (pendientes.Count == 0)
+            {
+                _npAnticiposError = "La nota de pedido no tiene cantidades pendientes para facturar.";
+                return;
+            }
+
+            CartState.Clear();
+            foreach (var pendiente in pendientes)
+            {
+                var item = pendiente.Item;
+                _cartItems.Add(new PuntoVentaCartItemDto
+                {
+                    OrigenLineaId = item.LineaId,
+                    IdArticulo = item.IdArticulo,
+                    Descripcion = item.Descripcion,
+                    Presentacion = item.Presentacion,
+                    PrecioUnitario = item.Precio,
+                    PrecioOriginal = item.Precio,
+                    Cantidad = pendiente.Cantidad,
+                    Observaciones = item.Observaciones
+                });
+            }
+
+            _cuentaCliente = np.Cuenta.Trim();
+            _cuentaClienteNombre = np.Cliente.Trim();
+            _tipoComprobanteSeleccionado = "FC";
+            _facturandoNotaPedidoId = np.Id;
+            _facturandoNotaPedidoComprobante = np.IdComprobante.Trim();
+            _paymentLines.Clear();
+            if (np.AnticipoAplicable is { ImporteOriginal: > 0 } anticipo)
+            {
+                _paymentLines.Add(new PuntoVentaPaymentLineDto
+                {
+                    CodigoMedioPago = "ANTICIPO",
+                    DescripcionMedioPago = $"Seña {anticipo.IdComprobante}",
+                    Importe = anticipo.ImporteOriginal,
+                    EsAnticipo = true,
+                    IdCobranzaAnticipo = anticipo.Id,
+                    ComprobanteAnticipo = anticipo.IdComprobante
+                });
+            }
+            _showNpAnticiposModal = false;
+            _npAnticiposResultado = null;
+            _selectedCartItemId = null;
+            _needScanFocus = true;
+        }
+        catch (Exception ex)
+        {
+            _npAnticiposError = ex.Message;
+        }
+        finally
+        {
+            _npAnticiposLoading = false;
+            _cargandoNpEnPos = false;
+        }
+    }
+
+    private Task FacturarEncargoDesdeDetalleAsync(PuntoVentaNpAnticiposDto np)
+        => FacturarEncargoDesdeListado(new PuntoVentaNpResumenDto
+        {
+            Id = np.Id,
+            IdComprobante = np.IdComprobante,
+            Cuenta = np.Cuenta,
+            Cliente = np.Cliente,
+            EstadoComprobante = np.EstadoComprobante,
+            ImporteComercial = np.ImporteComercial
+        });
 
     private async Task ConsultarNpAnticiposAsync()
     {
@@ -9364,6 +11114,95 @@
         {
             _npAnticiposLoading = false;
         }
+    }
+
+    private void AbrirFacturacionEncargo(PuntoVentaNpAnticiposDto np)
+        => AbrirFacturacionEncargo(np.IdComprobante);
+
+    private void AbrirFacturacionEncargo(string idComprobante)
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath;
+        const string mostradorRoute = "/ventas/punto-venta/mostrador";
+        var index = path.IndexOf(mostradorRoute, StringComparison.OrdinalIgnoreCase);
+        var prefix = index >= 0 ? path[..index] : string.Empty;
+        var route = $"{prefix}/ventas/carga-comprobantes?buscar={Uri.EscapeDataString(idComprobante)}";
+        Nav.NavigateTo(route);
+    }
+
+    private async Task ImprimirEncargoAsync(PuntoVentaNpAnticiposDto np)
+    {
+        if (_npPrinting)
+            return;
+
+        try
+        {
+            _npPrinting = true;
+            _npPrintError = null;
+            var documento = await CotizacionDocumentSvc.RenderNotaPedidoAsync(np.Id, null);
+            var impreso = await Js.InvokeAsync<bool>("alfaPosPrintHtml", "pos-np-print-frame", documento.Html);
+            if (!impreso)
+                _npPrintError = "No se encontró el visor de impresión de la nota de pedido.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo imprimir la nota de pedido {IdComprobante}.", np.IdComprobante);
+            _npPrintError = ex.Message;
+        }
+        finally
+        {
+            _npPrinting = false;
+        }
+    }
+
+    private async Task ImprimirTicketProduccionAsync(PuntoVentaNpAnticiposDto np)
+    {
+        if (_npPrinting)
+            return;
+
+        try
+        {
+            _npPrinting = true;
+            _npPrintError = null;
+            var html = ConstruirTicketProduccion(np);
+            var impreso = await Js.InvokeAsync<bool>("alfaPosPrintHtml", "pos-np-print-frame", html);
+            if (!impreso)
+                _npPrintError = "No se encontró el visor de impresión del ticket de producción.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo imprimir el ticket de producción de la nota {IdComprobante}.", np.IdComprobante);
+            _npPrintError = ex.Message;
+        }
+        finally
+        {
+            _npPrinting = false;
+        }
+    }
+
+    private static string ConstruirTicketProduccion(PuntoVentaNpAnticiposDto np)
+    {
+        var sb = new System.Text.StringBuilder();
+        var entrega = np.FechaEntrega?.ToString("dd/MM/yyyy HH:mm") ?? "A coordinar";
+        sb.AppendLine("<!doctype html><html><head><meta charset='utf-8'><title>Ticket de producción</title>");
+        sb.AppendLine("<style>body{font-family:Arial,sans-serif;width:72mm;margin:0;padding:4mm;color:#111}h1{font-size:18px;margin:0 0 4px}h2{font-size:13px;border-bottom:1px solid #111;padding-bottom:3px}p{font-size:11px;margin:3px 0}.line{border-bottom:1px dashed #777;padding:5px 0}.qty{font-size:16px;font-weight:700;margin-right:6px}.obs{font-size:10px;font-style:italic;margin-top:2px}.foot{font-size:10px;margin-top:8px}</style></head><body>");
+        sb.AppendLine($"<h1>PRODUCCIÓN · NP {HtmlEncode(np.IdComprobante)}</h1>");
+        sb.AppendLine($"<p><b>Cliente:</b> {HtmlEncode(DisplayValueOrDash(np.Cliente))}</p>");
+        sb.AppendLine($"<p><b>Entrega:</b> {HtmlEncode(entrega)}</p>");
+        if (!string.IsNullOrWhiteSpace(np.Observaciones))
+            sb.AppendLine($"<p><b>Observaciones:</b> {HtmlEncode(np.Observaciones)}</p>");
+        sb.AppendLine("<h2>Artículos</h2>");
+        foreach (var item in np.Items)
+        {
+            var pendiente = Math.Max(item.Cantidad - item.CantidadPreparada, 0m);
+            sb.AppendLine($"<div class='line'><span class='qty'>{FmtQty(pendiente)}</span>{HtmlEncode(item.Descripcion)}");
+            if (!string.IsNullOrWhiteSpace(item.Presentacion))
+                sb.Append($"<p>{HtmlEncode(item.Presentacion)}</p>");
+            if (!string.IsNullOrWhiteSpace(item.Observaciones))
+                sb.Append($"<div class='obs'>{HtmlEncode(item.Observaciones)}</div>");
+            sb.AppendLine("</div>");
+        }
+        sb.AppendLine($"<p class=\"foot\">Impreso: {DateTime.Now:dd/MM/yyyy HH:mm} · Sin información financiera</p></body></html>");
+        return sb.ToString();
     }
 
     private Task OpenSettingsAsync()
@@ -9505,6 +11344,14 @@
         return Task.CompletedTask;
     }
 
+    private Task HandleClientsShortcutAsync()
+    {
+        _showPosMenu = false;
+        _clienteModalStartInNew = false;
+        _showClienteModal = true;
+        return Task.CompletedTask;
+    }
+
     private Task HandleSaveShortcutAsync()
         => _showChargeModal ? ConfirmChargeAsync(false) : OpenChargeModalAsync();
 
@@ -9578,6 +11425,20 @@
         _selectedPaymentCode = string.Empty;
         _paymentMethodCodeFilter = string.Empty;
         _chargeAmountInput = PendingAmountInput();
+        if (EsRemitoONotaPedido)
+        {
+            _npFechaEntregaDateInput = null;
+            _npHoraEntregaInput = null;
+            _npObservacionesInput = string.Empty;
+            _npArcaBuscando = false;
+            _npArcaMensaje = null;
+            _npArcaOpciones = [];
+            _npCargarAnticipoInput = false;
+            if (string.IsNullOrWhiteSpace(_npNombreContactoInput))
+                _npNombreContactoInput = _cuentaClienteNombre;
+            if (string.IsNullOrWhiteSpace(_npDocumentoContactoInput))
+                _npDocumentoContactoInput = _clienteNumeroDocumento;
+        }
         // Cada cobranza debe iniciar con la simulación Point limpia. Si no se
         // reinicia, una selección anterior de tarjeta/cuotas queda visible al
         // volver a abrir el modal aunque el medio seleccionado sea MP QR.
@@ -9654,7 +11515,11 @@
         _chargeAmountInput = string.Empty;
         _selectedPaymentCode = string.Empty;
         _paymentMethodCodeFilter = string.Empty;
+        var anticiposConservados = _paymentLines
+            .Where(x => x.EsAnticipo)
+            .ToList();
         _paymentLines.Clear();
+        _paymentLines.AddRange(anticiposConservados);
         _mpTerminalesDisponibles = [];
         _mpTerminalSeleccionada = string.Empty;
         _mpPointPuedeReintentar = false;
@@ -9714,6 +11579,9 @@
     private bool EsRemitoONotaPedido
         => _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "RM" or "NP";
 
+    private bool EsNotaPedido
+        => _tipoComprobanteSeleccionado.Trim().Equals("NP", StringComparison.OrdinalIgnoreCase);
+
     private string TipoComprobanteSeleccionadoLabel()
         => _tipoComprobanteSeleccionado switch
         {
@@ -9733,6 +11601,20 @@
         _selectedPaymentCode = codigo?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(_chargeAmountInput))
             _chargeAmountInput = PendingAmountInput();
+    }
+
+    private async Task SeleccionarAnticipoAsync(bool cargar)
+    {
+        _npCargarAnticipoInput = cargar;
+        if (!cargar)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_chargeAmountInput))
+            _chargeAmountInput = PendingAmountInput();
+
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try { await Js.InvokeVoidAsync("alfaPosFocusSelect", _chargeAmountRef); } catch { }
     }
 
     private async Task HandlePaymentMethodClickAsync(string codigo)
@@ -10319,6 +12201,25 @@
             return;
         }
 
+        if (EsRemitoONotaPedido && _npCargarAnticipoInput)
+        {
+            // Una seña precargada no reemplaza el importe que el operador acaba
+            // de escribir para completar el saldo. Si hay importe en el campo y
+            // todavía no existe un pago nuevo, se agrega automáticamente al grabar.
+            if (!_paymentLines.Any(x => !x.EsAnticipo) && TryParseMoney(_chargeAmountInput, out var importePendiente) && importePendiente > 0m)
+                await AddSelectedPaymentAsync(focusFilterAfterAdd: false);
+
+            if (!_paymentLines.Any(x => !x.EsAnticipo) && !_paymentLines.Any(x => x.EsAnticipo))
+            {
+                if (string.IsNullOrWhiteSpace(_chargeError))
+                    _chargeError = "Seleccioná un medio de pago e ingresá el importe del anticipo.";
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_chargeError))
+                return;
+        }
+
         // Remito interno (RM) y Nota de pedido (NP) quedan pendientes de facturar: no piden medio de
         // pago (ver EsRemitoONotaPedido / PuntoVentaService.CreateSaleAsync), así que se salta toda la
         // validación de cobro y se confirma directo con el carrito.
@@ -10327,10 +12228,13 @@
             // Si todavía no hay líneas cargadas, aprovechamos el medio seleccionado
             // y el importe del formulario. Así ACEPTAR y ACEPTAR E IMPRIMIR también
             // funcionan como una carga rápida del primer medio de pago.
-            if (!_paymentLines.Any())
+            if (!_paymentLines.Any(x => !x.EsAnticipo)
+                && PendienteCobro > 0.01m
+                && TryParseMoney(_chargeAmountInput, out var importeCompletar)
+                && importeCompletar > 0m)
                 await AddSelectedPaymentAsync(focusFilterAfterAdd: false);
 
-            if (!_paymentLines.Any())
+            if (!_paymentLines.Any(x => !x.EsAnticipo) && PendienteCobro > 0.01m)
             {
                 if (string.IsNullOrWhiteSpace(_chargeError))
                     _chargeError = "Seleccioná un medio de pago e ingresá un importe válido.";
@@ -10364,6 +12268,7 @@
             var soldItems = _cartItems
                 .Select(x => new PuntoVentaCartItemDto
                 {
+                    OrigenLineaId = x.OrigenLineaId,
                     IdArticulo = x.IdArticulo,
                     Descripcion = x.Descripcion,
                     Presentacion = x.Presentacion,
@@ -10384,7 +12289,10 @@
                     DescripcionMedioPago = x.DescripcionMedioPago,
                     Observaciones = x.Observaciones,
                     Recargo = x.Recargo,
-                    Importe = x.Importe
+                    Importe = x.Importe,
+                    EsAnticipo = x.EsAnticipo,
+                    IdCobranzaAnticipo = x.IdCobranzaAnticipo,
+                    ComprobanteAnticipo = x.ComprobanteAnticipo
                 })
                 .ToList();
 
@@ -10405,15 +12313,29 @@
                         CondicionIva = _clienteEventual.IvaCodigo
                     },
                 Fecha = DateTime.Today,
+                FechaEntrega = EsRemitoONotaPedido ? CombinarNpFechaHora() : null,
+                NombreContacto = EsRemitoONotaPedido ? _npNombreContactoInput.Trim() : string.Empty,
+                TelefonoContacto = EsRemitoONotaPedido ? _npTelefonoInput.Trim() : string.Empty,
+                DocumentoContacto = EsRemitoONotaPedido ? _npDocumentoContactoInput.Trim() : string.Empty,
+                EsEntregaADomicilio = EsRemitoONotaPedido && _npEntregaADomicilioInput,
+                DomicilioEntrega = EsRemitoONotaPedido ? _npDomicilioEntregaInput.Trim() : string.Empty,
+                LocalidadEntrega = EsRemitoONotaPedido ? _npLocalidadEntregaInput.Trim() : string.Empty,
                 TipoComprobante = _tipoComprobanteSeleccionado,
                 // La sucursal del punto seleccionado tiene prioridad. La configuración
                 // general se usa dentro del servicio únicamente si el punto no tiene una.
                 Sucursal = _pedidoSucursalOverride ?? _puntoVentaSucursal ?? string.Empty,
                 Items = soldItems,
-                Observaciones = string.Join(" | ", soldPayments
-                    .Where(x => x.Recargo > 0)
-                    .Select(x => $"Recargo Point: {FmtMoney(x.Recargo)}")),
+                Observaciones = string.Join(" | ", new[]
+                {
+                    EsRemitoONotaPedido ? _npObservacionesInput.Trim() : string.Empty,
+                    string.Join(" | ", soldPayments.Where(x => x.Recargo > 0).Select(x => $"Recargo Point: {FmtMoney(x.Recargo)}"))
+                }.Where(x => !string.IsNullOrWhiteSpace(x))),
                 Pagos = soldPayments,
+                IdNotaPedidoOrigen = _facturandoNotaPedidoId,
+                ComprobanteNotaPedidoOrigen = _facturandoNotaPedidoComprobante,
+                IdCobranzaAnticipo = soldPayments.FirstOrDefault(x => x.EsAnticipo)?.IdCobranzaAnticipo ?? 0,
+                ComprobanteCobranzaAnticipo = soldPayments.FirstOrDefault(x => x.EsAnticipo)?.ComprobanteAnticipo ?? string.Empty,
+                ImporteAnticipo = soldPayments.Where(x => x.EsAnticipo).Sum(x => x.Importe),
                 Progreso = ActualizarProgresoGrabacion
             });
 
@@ -10456,9 +12378,15 @@
                 }
             }
 
-            ShowChargeSuccess($"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · total {FmtMoney(result.Total)}.");
+            var mensajeRegistro = result.IdCobranza > 0
+                && string.Equals(_tipoComprobanteSeleccionado.Trim(), "NP", StringComparison.OrdinalIgnoreCase)
+                ? $"Nota de pedido registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · anticipo CBCT registrado · total {FmtMoney(result.Total)}."
+                : $"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · total {FmtMoney(result.Total)}.";
+            ShowChargeSuccess(mensajeRegistro);
             _cartItems.Clear();
             _paymentLines.Clear();
+            _facturandoNotaPedidoId = null;
+            _facturandoNotaPedidoComprobante = string.Empty;
             // Después de grabar, una nueva venta móvil debe comenzar en la
             // carga de artículos y no quedar detrás del recibo en cobranza.
             _mobileCartView = false;
@@ -10512,6 +12440,34 @@
 
     private bool EsComprobanteFiscalSeleccionado()
         => _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "FC" or "NC";
+
+    private DateTime? CombinarNpFechaHora()
+    {
+        if (!_npFechaEntregaDateInput.HasValue)
+            return null;
+
+        var fecha = _npFechaEntregaDateInput.Value.Date;
+        if (_npHoraEntregaInput.HasValue)
+            return fecha.Add(_npHoraEntregaInput.Value.ToTimeSpan());
+
+        return fecha;
+    }
+
+    private void LimpiarDatosContactoEncargo()
+    {
+        _npNombreContactoInput = string.Empty;
+        _npTelefonoInput = string.Empty;
+        _npDocumentoContactoInput = string.Empty;
+        _npFechaEntregaDateInput = null;
+        _npHoraEntregaInput = null;
+        _npCargarAnticipoInput = false;
+        _npArcaBuscando = false;
+        _npArcaMensaje = null;
+        _npArcaOpciones = [];
+        _npDomicilioEntregaInput = string.Empty;
+        _npLocalidadEntregaInput = string.Empty;
+        _npEntregaADomicilioInput = false;
+    }
 
 
     private string MensajeErrorGrabacionVenta(Exception ex)
@@ -10794,6 +12750,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        StopNpMonitorRefresh();
         try { await Js.InvokeVoidAsync("alfaPosUnregisterShortcuts"); } catch { }
     }
 
@@ -11177,6 +13134,36 @@
 
     private static string FmtQty(decimal value)
         => value.ToString("#,##0.##", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static string EstadoEncargoTexto(string? estado)
+        => (estado ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "FINALIZADA" => "FINALIZADA",
+            "CERRADA" => "CERRADA",
+            "ANULADA" => "ANULADA",
+            "BLOQUEADA" => "BLOQUEADA",
+            _ => "PENDIENTE"
+        };
+
+    private static string EstadoEncargoCss(string? estado)
+        => EstadoEncargoTexto(estado) switch
+        {
+            "FINALIZADA" => "pos-encargo-state--finished",
+            "CERRADA" => "pos-encargo-state--closed",
+            "ANULADA" => "pos-encargo-state--cancelled",
+            "BLOQUEADA" => "pos-encargo-state--blocked",
+            _ => "pos-encargo-state--pending"
+        };
+
+    private static string IndicadorEntrega(DateTime? fecha, string estado)
+    {
+        if (!fecha.HasValue || estado is "ENTREGADO" or "ANULADA")
+            return string.Empty;
+
+        var diferencia = fecha.Value - DateTime.Now;
+        return diferencia < TimeSpan.Zero ? " · ATRASADO"
+            : diferencia <= TimeSpan.FromHours(24) ? " · PRÓXIMO" : string.Empty;
+    }
 
     private static string RecortarNombreCliente(string? nombre)
     {

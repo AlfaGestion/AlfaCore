@@ -1,0 +1,218 @@
+@page "/demo/{Rubro}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Models
+@inject AlfaCore.Services.IVentaDemoService VentaDemoSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject AlfaCore.Services.IAppEventService AppEvents
+@inject IConfiguration Configuration
+@inject ILogger<DemoIngreso> Logger
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* Entrada directa a la demo de un rubro, sin registro (docs/modulos/venta-online.md, fase 1).
+   Hace el mismo login SaaS que Login.razor pero con el usuario central de la demo
+   (ALFA_CENTRAL.dbo.VentaDemos + clave en configuración VentaDemo:Claves:{Familia}). *@
+
+<PageTitle>Demo @(_familia?.Titulo ?? string.Empty) | AlfaCore</PageTitle>
+<HeadContent>
+    <meta name="robots" content="noindex" />
+    <link rel="stylesheet" href="/css/landing-rubros.css?v=20261123a" />
+</HeadContent>
+
+<section class="venta-demo-ingreso">
+    <div class="venta-demo-ingreso__card" role="status" aria-live="polite">
+        @switch (_estado)
+        {
+            case EstadoIngreso.Entrando:
+                <h1>Abriendo la demo…</h1>
+                <p>Estamos preparando @(_demo?.NegocioEjemplo is { Length: > 0 } negocio ? negocio : "el negocio de ejemplo") para que lo pruebes.</p>
+                break;
+
+            case EstadoIngreso.SesionPropia:
+                <h1>Ya tenés una sesión abierta</h1>
+                <p>Estás conectado con tu usuario. Para no mezclar tus datos con la demo, abrila en una ventana de incógnito o cerrá tu sesión primero.</p>
+                <button type="button" class="btn btn--primary" @onclick="CerrarSesionYEntrarAsync">Cerrar mi sesión y abrir la demo</button>
+                <a href="/sistema" class="btn btn--ghost">Volver</a>
+                break;
+
+            case EstadoIngreso.NoDisponible:
+                <h1>Esta demo todavía no está lista</h1>
+                <p>Estamos preparando la demo de @(_familia?.Titulo.ToLowerInvariant() ?? "este rubro"). Mientras tanto, escribinos y te la mostramos.</p>
+                @if (!string.IsNullOrWhiteSpace(WhatsAppUrl))
+                {
+                    <a href="@WhatsAppUrl" class="btn btn--primary" target="_blank" rel="noopener">Escribir por WhatsApp</a>
+                }
+                <a href="/sistema#rubros" class="btn btn--ghost">Ver otros rubros</a>
+                break;
+
+            case EstadoIngreso.RubroInexistente:
+                <h1>No encontramos ese rubro</h1>
+                <p>Elegí el tuyo en la lista y entrás directo a la demo.</p>
+                <a href="/sistema#rubros" class="btn btn--primary">Ver rubros</a>
+                break;
+
+            default:
+                <h1>No pudimos abrir la demo</h1>
+                <p>@_mensajeError</p>
+                <a href="/sistema#rubros" class="btn btn--primary">Volver a intentar</a>
+                break;
+        }
+    </div>
+</section>
+
+@code {
+    private const string TokenStorageKey = "alfacore_user_token";
+
+    [Parameter] public string Rubro { get; set; } = string.Empty;
+
+    private enum EstadoIngreso { Entrando, SesionPropia, NoDisponible, RubroInexistente, Error }
+
+    private EstadoIngreso _estado = EstadoIngreso.Entrando;
+    private VentaFamilia? _familia;
+    private VentaDemoDto? _demo;
+    private string _mensajeError = string.Empty;
+
+    private string? WhatsAppUrl => Configuration["VentaOnline:WhatsAppUrl"];
+
+    protected override void OnParametersSet()
+    {
+        _familia = VentaRubrosCatalogo.BuscarFamilia(Rubro);
+        _estado = _familia is null ? EstadoIngreso.RubroInexistente : EstadoIngreso.Entrando;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Login y JS (localStorage) solo con el circuito interactivo ya conectado, igual que Login.razor.
+        if (!firstRender || _familia is null)
+            return;
+
+        if (!AppMode.IsSaaSMode)
+        {
+            await MostrarErrorAsync("La demo solo está disponible en la versión en la nube.");
+            return;
+        }
+
+        _demo = await VentaDemoSvc.GetDemoActivaAsync(_familia.Clave);
+        var clave = _demo is null ? null : VentaDemoSvc.GetClaveDemo(_familia.Clave);
+        if (_demo is null || clave is null)
+        {
+            Logger.LogWarning("DemoIngreso: demo no disponible. Rubro={Rubro}, Familia={Familia}, HayFila={HayFila}", Rubro, _familia.Clave, _demo is not null);
+            _estado = EstadoIngreso.NoDisponible;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (AppUserSession.IsAuthenticated)
+        {
+            var demoActual = await VentaDemoSvc.GetDemoPorLoginAsync(AppUserSession.CurrentUser?.CentralLogin);
+            if (demoActual is null)
+            {
+                // Sesión real de un usuario: nunca la pisamos sin preguntar.
+                _estado = EstadoIngreso.SesionPropia;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            await CerrarSesionAsync();
+        }
+
+        await EntrarAsync(_demo, clave);
+    }
+
+    private async Task CerrarSesionYEntrarAsync()
+    {
+        if (_familia is null || _demo is null)
+            return;
+
+        var clave = VentaDemoSvc.GetClaveDemo(_familia.Clave);
+        if (clave is null)
+        {
+            _estado = EstadoIngreso.NoDisponible;
+            return;
+        }
+
+        _estado = EstadoIngreso.Entrando;
+        await InvokeAsync(StateHasChanged);
+        await CerrarSesionAsync();
+        await EntrarAsync(_demo, clave);
+    }
+
+    private async Task CerrarSesionAsync()
+    {
+        AppUserSession.Logout();
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", TokenStorageKey); }
+        catch (Exception ex) { Logger.LogDebug(ex, "DemoIngreso: no se pudo borrar el token anterior."); }
+    }
+
+    private async Task EntrarAsync(VentaDemoDto demo, string clave)
+    {
+        try
+        {
+            await AppUserSession.LoginAsync(demo.CentralLogin, clave);
+
+            var token = AppUserSession.CurrentToken;
+            if (!string.IsNullOrWhiteSpace(token))
+                await JS.InvokeVoidAsync("localStorage.setItem", TokenStorageKey, token);
+
+            var session = SessionSvc.GetAllSessions().FirstOrDefault(s => s.BaseId == demo.IdBase);
+            if (session is null)
+            {
+                await MostrarErrorAsync("La base de la demo no está asociada al usuario demo.", registrar: true, demo);
+                return;
+            }
+
+            SessionSvc.SwitchSession(session.Id);
+            await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", session.Id.ToString());
+            AppUserSession.HandleSqlSessionChanged();
+
+            var internalSession = await LegacyBaseUserSession.ResolveByCentralLoginAsync(demo.CentralLogin);
+            if (internalSession is null)
+            {
+                await MostrarErrorAsync("No se pudo resolver el usuario interno de la demo.", registrar: true, demo);
+                return;
+            }
+
+            AppUserSession.AdoptInternalUser(internalSession);
+            if (!AppUserSession.IsAuthorizedForSession(session.Id))
+            {
+                await MostrarErrorAsync("No se pudo completar el ingreso a la base de la demo.", registrar: true, demo);
+                return;
+            }
+
+            var idWeb = (AppUserSession.CurrentUser?.IdWeb ?? string.Empty).Trim();
+            var ruta = (demo.RutaInicial ?? string.Empty).Trim().Trim('/');
+            var destino = idWeb.Length == 0
+                ? "/"
+                : $"/{Uri.EscapeDataString(idWeb)}/{demo.IdBase}" + (ruta.Length == 0 ? string.Empty : "/" + ruta);
+
+            Logger.LogInformation("DemoIngreso: ingreso a demo. Rubro={Rubro}, Familia={Familia}, Destino={Destino}", Rubro, demo.Familia, destino);
+            Nav.NavigateTo(destino, replace: true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await MostrarErrorAsync("El usuario de la demo no pudo ingresar.", registrar: true, demo, ex);
+        }
+    }
+
+    private async Task MostrarErrorAsync(string detalle, bool registrar = false, VentaDemoDto? demo = null, Exception? ex = null)
+    {
+        _mensajeError = "Probá de nuevo en un rato o escribinos por WhatsApp.";
+        if (registrar)
+        {
+            var codigo = await AppEvents.LogErrorAsync(
+                "VentaOnline",
+                "IngresoDemo",
+                ex ?? new InvalidOperationException(detalle),
+                detalle,
+                new { Rubro, Familia = demo?.Familia, demo?.IdBase, demo?.CentralLogin },
+                AppEventSeverity.Warning);
+            _mensajeError = $"Probá de nuevo en un rato o escribinos por WhatsApp. (Incidente {codigo})";
+        }
+
+        _estado = EstadoIngreso.Error;
+        await InvokeAsync(StateHasChanged);
+    }
+}

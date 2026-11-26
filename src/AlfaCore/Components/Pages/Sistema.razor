@@ -1,0 +1,153 @@
+@page "/sistema"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Models
+@inject IConfiguration Configuration
+
+@* Página de venta por rubros (docs/modulos/venta-online.md, fase 1).
+   Cada rubro entra directo a su demo (/demo/{rubro}), sin registro. *@
+
+<PageTitle>AlfaCore | Sistema de gestión para tu negocio</PageTitle>
+<HeadContent>
+    <link rel="stylesheet" href="/css/landing.css" />
+    <link rel="stylesheet" href="/css/landing-rubros.css?v=20261123a" />
+    <meta name="description" content="Sistema de gestión para tu negocio: punto de venta, factura electrónica de ARCA, stock, cuentas corrientes y WhatsApp. Elegí tu rubro y probá la demo sin registrarte." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="AlfaCore — Vendé, facturá y cobrá en un solo lugar" />
+    <meta property="og:description" content="Elegí tu rubro y probá la demo al toque, sin registrarte." />
+    <meta property="og:image" content="/logos/Logo.png" />
+</HeadContent>
+
+<header class="venta-topnav">
+    <div class="venta-topnav__inner">
+        <a href="/sistema" class="venta-topnav__brand">
+            <img src="/logos/Logo.png" alt="" />
+            <span>AlfaCore</span>
+        </a>
+        <nav class="venta-topnav__links" aria-label="Secciones">
+            <a href="/sistema#rubros">Rubros</a>
+            <a href="/sistema#funciones">Qué hace</a>
+            <a href="/modulos">Precios</a>
+        </nav>
+        <div class="venta-topnav__actions">
+            <a href="/login" class="venta-topnav__login">Ingresar</a>
+            <a href="/registrarme" class="btn btn--primary">Contratar</a>
+        </div>
+    </div>
+</header>
+
+<section class="landing-hero">
+    <div class="landing-hero__inner">
+        <span class="landing-hero__badge"><i class="bi bi-award"></i> ALFA NET · sistemas de gestión desde 1993</span>
+        <h1>Vendé, facturá y cobrá. Todo en un solo lugar.</h1>
+        <p class="landing-hero__desc">
+            El sistema de gestión para tu negocio: punto de venta, factura electrónica de ARCA, stock,
+            cuentas corrientes y WhatsApp. En la nube, en la compu y en el celular.
+        </p>
+        <div class="landing-hero__actions">
+            <a href="/sistema#rubros" class="btn btn--primary btn--lg">Probar la demo ahora</a>
+            <a href="/modulos" class="btn btn--ghost btn--lg">Ver precios</a>
+        </div>
+        <p class="landing-hero__price">La demo abre al toque, sin registrarte ni dejar tus datos.</p>
+    </div>
+</section>
+
+<section class="venta-confianza" aria-label="Por qué AlfaCore">
+    <div class="venta-confianza__inner">
+        <span><i class="bi bi-receipt"></i> Factura electrónica de ARCA incluida</span>
+        <span><i class="bi bi-whatsapp"></i> Soporte por WhatsApp con gente de verdad</span>
+        <span><i class="bi bi-clock-history"></i> Más de 30 años haciendo sistemas</span>
+        <span><i class="bi bi-power"></i> Sin permanencia</span>
+    </div>
+</section>
+
+<section id="rubros" class="venta-rubros">
+    <div class="venta-rubros__inner">
+        <div class="venta-section-head">
+            <h2>Elegí tu rubro y miralo funcionando</h2>
+            <p>
+                Tocá tu tipo de negocio: entrás directo a una demo con un negocio de ejemplo ya cargado.
+                Podés vender, facturar de prueba y tocar todo. Cada noche se vuelve a cero.
+            </p>
+        </div>
+
+        @foreach (var familia in VentaRubrosCatalogo.Familias)
+        {
+            <div class="venta-familia venta-familia--@familia.Tono">
+                <div class="venta-familia__head">
+                    <span class="venta-familia__icon"><i class="bi @familia.Icono" aria-hidden="true"></i></span>
+                    <h3>@familia.Titulo</h3>
+                    <span class="venta-familia__bajada">@familia.Bajada</span>
+                </div>
+                <div class="venta-familia__grid">
+                    @foreach (var rubro in familia.Rubros)
+                    {
+                        <a href="@($"/demo/{rubro.Slug}")" class="venta-rubro">
+                            <span>@rubro.Nombre</span>
+                            <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                        </a>
+                    }
+                </div>
+            </div>
+        }
+
+        <p class="venta-rubros__otro">
+            <strong>¿No ves el tuyo?</strong> Si vendés productos o servicios, te sirve igual.
+            @if (!string.IsNullOrWhiteSpace(WhatsAppUrl))
+            {
+                <a href="@WhatsAppUrl" target="_blank" rel="noopener">Escribinos por WhatsApp</a>
+            }
+            else
+            {
+                <span>Escribinos por WhatsApp</span>
+            }
+            y te contamos.
+        </p>
+    </div>
+</section>
+
+<section id="funciones" class="landing-features">
+    <div class="landing-features__inner">
+        <h2>Lo que hace por vos</h2>
+        <div class="landing-features__grid">
+            @foreach (var funcion in VentaRubrosCatalogo.Funciones)
+            {
+                <article class="landing-feature">
+                    <span class="landing-feature__icon"><i class="bi @funcion.Icono"></i></span>
+                    <div>
+                        <strong>@funcion.Titulo</strong>
+                        <span>@funcion.Texto</span>
+                    </div>
+                </article>
+            }
+        </div>
+    </div>
+</section>
+
+<section class="venta-pasos">
+    <div class="venta-pasos__inner">
+        <h2>Empezás en tres pasos</h2>
+        <ol class="venta-pasos__grid">
+            <li><strong>Probá la demo</strong><span>Entrás con tu rubro, sin registrarte. Tocá todo lo que quieras.</span></li>
+            <li><strong>Contratá online</strong><span>Elegís el plan, cargás los datos de tu negocio y queda tu base lista.</span></li>
+            <li><strong>Traé tus artículos</strong><span>Los importás desde un Excel con código, precio y stock, y empezás a vender.</span></li>
+        </ol>
+    </div>
+</section>
+
+<section class="landing-cta">
+    <div class="landing-cta__inner">
+        <h2>¿Listo para empezar?</h2>
+        <p>Creá tu cuenta y probalo con tus propios datos.</p>
+        <a href="/registrarme" class="btn btn--primary btn--lg">Contratar</a>
+    </div>
+</section>
+
+<footer class="landing-footer">
+    <span>© @DateTime.Now.Year ALFA NET — Soluciones Informáticas</span>
+    <a href="/login">Ya tengo cuenta</a>
+</footer>
+
+@code {
+    /// <summary>Link de WhatsApp de ventas (ej. https://wa.me/549XXXXXXXXXX). Configuración VentaOnline:WhatsAppUrl.</summary>
+    private string? WhatsAppUrl => Configuration["VentaOnline:WhatsAppUrl"];
+}

@@ -45,6 +45,10 @@ if defined PORT_PID goto :port_busy
 dotnet --list-sdks 2>nul | findstr /r "^8\." >nul
 if errorlevel 1 goto :sdk_missing
 
+rem Evita que VBCSCompiler/MSBuild mantenga bloqueada la DLL de Release
+rem cuando se cerró una instancia anterior de dotnet run.
+dotnet build-server shutdown --vbcscompiler --msbuild 2>nul
+
 echo Iniciando servidor...
 echo.
 dotnet run --configuration Release --no-launch-profile

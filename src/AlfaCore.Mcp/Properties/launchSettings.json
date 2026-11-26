@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "mcp-local": {
+      "commandName": "Project",
+      "dotnetRunMessages": false,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

@@ -26,7 +26,7 @@ public sealed class PuntoVentaSalonService(
 
     // ------------------------------------------------------------------ lectura
 
-    public Task<PuntoVentaSalonDto> GetSalonAsync(int idPuntoVenta, CancellationToken ct = default)
+    public Task<PuntoVentaSalonDto> GetSalonAsync(int idPuntoVenta, bool incluirInactivas = false, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetSalon", async token =>
         {
             await using var cn = await OpenAsync(token);
@@ -47,6 +47,8 @@ public sealed class PuntoVentaSalonService(
                 SELECT
                     m.ID AS Id, m.IDSECTOR AS IdSector, m.CODIGO AS Codigo, m.NOMBRE AS Nombre,
                     m.CAPACIDAD AS Capacidad, m.POSX AS PosX, m.POSY AS PosY, m.WIDTH AS Width, m.HEIGHT AS Height,
+                    ISNULL(m.FORMATO, 'CUADRADA') AS Formato,
+                    m.ACTIVO AS Activo,
                     ISNULL(m.ICONO, '') AS Icono,
                     p.ID AS IdPedido,
                     ISNULL(p.ESTADO, 'LIBRE') AS Estado,
@@ -78,12 +80,13 @@ public sealed class PuntoVentaSalonService(
                     FROM dbo.POS_PEDIDO_DET d
                     GROUP BY d.IDPEDIDO
                 ) t ON t.IDPEDIDO = p.ID
-                WHERE s.IDPUNTOVENTA = @IdPuntoVenta AND s.ACTIVO = 1 AND m.ACTIVO = 1
+                WHERE s.IDPUNTOVENTA = @IdPuntoVenta AND s.ACTIVO = 1
+                  AND (m.ACTIVO = 1 OR @IncluirInactivas = 1)
                 ORDER BY m.IDSECTOR, m.CODIGO, m.ID;
                 """;
 
             var mesas = (await cn.QueryAsync<PuntoVentaSalonMesaDto>(new CommandDefinition(
-                mesasSql, new { IdPuntoVenta = idPuntoVenta }, cancellationToken: token))).ToList();
+                mesasSql, new { IdPuntoVenta = idPuntoVenta, IncluirInactivas = incluirInactivas ? 1 : 0 }, cancellationToken: token))).ToList();
 
             // Si una mesa quedo con dos pedidos abiertos (no deberia: AbrirMesa lo bloquea), se muestra el mas viejo.
             foreach (var sector in sectores)
