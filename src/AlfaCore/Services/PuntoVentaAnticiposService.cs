@@ -81,7 +81,8 @@ public sealed class PuntoVentaAnticiposService(
                     CONVERT(varchar(20), CASE WHEN n.Finalizada = 1 THEN 'LISTO' ELSE 'PENDIENTE' END) AS EstadoProduccion,
                     CONVERT(varchar(20), CASE WHEN n.Anulada = 1 THEN 'ANULADA' ELSE 'PENDIENTE' END) AS EstadoEntrega
                 FROM np n
-                ORDER BY n.Fecha DESC, n.ID DESC;
+                ORDER BY n.Fecha DESC, n.ID DESC
+                OPTION (RECOMPILE);
                 """;
 
             var items = (await cn.QueryAsync<PuntoVentaNpResumenRow>(new CommandDefinition(sql, new
@@ -458,7 +459,7 @@ public sealed class PuntoVentaAnticiposService(
                     CONVERT(decimal(18,2), ISNULL(i.TOTAL, i.IMPORTE)) AS Importe,
                     CONVERT(decimal(18,4), 0) AS CantidadEntregada,
                     CONVERT(nvarchar(100), N'') AS Presentacion,
-                    CONVERT(nvarchar(500), N'') AS Observaciones
+                    LTRIM(RTRIM(ISNULL(i.OBSERVACIONES, N''))) AS Observaciones
                 FROM dbo.V_MV_CPTEINSUMOS i
                 WHERE LTRIM(RTRIM(i.TC)) = 'NP'
                   AND LTRIM(RTRIM(i.IDCOMPROBANTE)) = @Comprobante
