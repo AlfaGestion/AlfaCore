@@ -1,78 +1,230 @@
 @using AlfaCore.Services
+@using System.Globalization
 @inject IAyudaIaService AyudaIa
+@inject IAyudaHistorialService Historial
 @inject IJSRuntime JS
 @implements IDisposable
 
+@* Rediseño 2026-11-26: estilo de chat limpio (preguntas a la derecha, respuestas como texto con formato),
+   historial guardado por usuario y campo de pregunta que no pierde letras al escribir. *@
 <div class="ayuda-chat">
-    <p class="ayuda-chat__nota">Preguntá cómo usar AlfaCore. La IA consulta los manuales publicados; podés abrir sus fuentes para revisar los pasos.</p>
+    <div class="ayuda-chat__barra">
+        <button type="button" class="ayuda-chat__accion" @onclick="NuevaConversacion" disabled="@_ocupado">
+            <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva conversación
+        </button>
+        <button type="button" class="ayuda-chat__accion @(_verHistorial ? "is-activo" : string.Empty)" @onclick="AlternarHistorial" disabled="@_ocupado" aria-pressed="@(_verHistorial ? "true" : "false")">
+            <i class="bi bi-clock-history" aria-hidden="true"></i> Historial
+        </button>
+    </div>
+
     @if (!AyudaIa.Disponible)
     {
-        <p role="status">El chat con IA no está configurado en este servidor. Las guías siguen disponibles.</p>
+        <p class="ayuda-chat__aviso" role="status">El chat con IA no está configurado en este servidor. Las guías siguen disponibles.</p>
     }
-    <div class="ayuda-chat__mensajes" role="log" aria-label="Conversación de ayuda" aria-live="polite" aria-busy="@_ocupado.ToString().ToLowerInvariant()" @ref="_mensajes">
-        @if (_turnos.Count==0)
-        {
-            <p>Por ejemplo: «¿Cómo verifico si una cobranza ya está registrada?» o «¿Cómo pago dos facturas juntas?».</p>
-        }
-        @foreach (var turno in _turnos)
-        {
-            <section class="ayuda-chat__turno">
-                <strong>Vos</strong><p class="ayuda-chat__texto">@turno.Pregunta</p>
-                <strong>Ayuda IA</strong><p class="ayuda-chat__texto">@turno.Respuesta.Texto</p>
-                @foreach (var fuente in turno.Respuesta.Fuentes)
-                {
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-book" OnClick="()=>OnFuente.InvokeAsync(fuente)">@fuente.Titulo</AlfaButton>
-                }
-            </section>
-        }
-        @if (_ocupado) { <p role="status">Consultando los manuales…</p> }
-    </div>
-    @if (_error is not null) { <p role="alert" class="ayuda-chat__error">@_error</p> }
-    <form class="ayuda-chat__consulta" @onsubmit="Enviar" @onsubmit:preventDefault>
-        <AlfaInput Label="Tu pregunta" Value="@_pregunta" ValueChanged="v=>_pregunta=v ?? string.Empty" MaxLength="2000" Disabled="@(_ocupado || !AyudaIa.Disponible)" Placeholder="¿Cómo puedo…?" />
-        <div class="ayuda-chat__acciones">
-            <AlfaButton Type="submit" Variant="AlfaButtonVariant.Primary" Disabled="@(_ocupado || !AyudaIa.Disponible || string.IsNullOrWhiteSpace(_pregunta))">Preguntar</AlfaButton>
-            @if (_ocupado) { <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="Cancelar">Cancelar consulta</AlfaButton> }
-            else if (_turnos.Count>0) { <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="Limpiar">Nueva conversación</AlfaButton> }
+
+    @if (_verHistorial)
+    {
+        <div class="ayuda-chat__historial">
+            @if (_conversaciones.Count == 0)
+            {
+                <p class="ayuda-chat__vacio">Todavía no hay consultas guardadas.</p>
+            }
+            @foreach (var c in _conversaciones)
+            {
+                <div class="ayuda-chat__historial-item @(c.IdConversacion == _idConversacion ? "is-activo" : string.Empty)">
+                    <button type="button" class="ayuda-chat__historial-abrir" @onclick="() => AbrirConversacion(c.IdConversacion)">
+                        <span class="ayuda-chat__historial-titulo">@c.Titulo</span>
+                        <span class="ayuda-chat__historial-fecha">@FechaCorta(c.Fecha) · @c.Preguntas @(c.Preguntas == 1 ? "pregunta" : "preguntas")</span>
+                    </button>
+                    <button type="button" class="ayuda-chat__historial-borrar" title="Borrar esta conversación" aria-label="Borrar esta conversación" @onclick="() => BorrarConversacion(c.IdConversacion)">
+                        <i class="bi bi-trash3" aria-hidden="true"></i>
+                    </button>
+                </div>
+            }
+            <p class="ayuda-chat__nota">Las consultas se guardan @_diasHistorial días y después se borran solas.</p>
         </div>
-    </form>
-    <small>Se envían tu pregunta, la conversación reciente y fragmentos de las guías al servicio de IA. No se consultan saldos ni movimientos.</small>
+    }
+    else
+    {
+        <div class="ayuda-chat__mensajes" role="log" aria-label="Conversación de ayuda" aria-live="polite" aria-busy="@_ocupado.ToString().ToLowerInvariant()" @ref="_mensajes">
+            @if (_turnos.Count == 0 && !_ocupado)
+            {
+                <div class="ayuda-chat__inicio">
+                    <span class="ayuda-chat__inicio-icono" aria-hidden="true"><i class="bi bi-stars"></i></span>
+                    <h3>¿En qué te ayudo?</h3>
+                    <p>Respondo con los manuales de AlfaCore y te muestro de dónde sale cada respuesta.</p>
+                    <div class="ayuda-chat__sugerencias">
+                        @foreach (var s in Sugerencias)
+                        {
+                            <button type="button" class="ayuda-chat__sugerencia" disabled="@(!AyudaIa.Disponible)" @onclick="() => Preguntar(s)">@s</button>
+                        }
+                    </div>
+                </div>
+            }
+            @foreach (var turno in _turnos)
+            {
+                <div class="ayuda-chat__pregunta"><p>@turno.Pregunta</p></div>
+                <div class="ayuda-chat__respuesta">
+                    <div class="ayuda-chat__texto">@((MarkupString)AyudaManuales.Html(turno.Respuesta.Texto))</div>
+                    @if (turno.Respuesta.Fuentes.Count > 0)
+                    {
+                        <div class="ayuda-chat__fuentes">
+                            @foreach (var fuente in turno.Respuesta.Fuentes)
+                            {
+                                <button type="button" class="ayuda-chat__fuente" @onclick="() => OnFuente.InvokeAsync(fuente)" title="Abrir en el manual">
+                                    <i class="bi bi-book" aria-hidden="true"></i> @fuente.Titulo
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            @if (_ocupado)
+            {
+                <div class="ayuda-chat__pregunta"><p>@_preguntaEnCurso</p></div>
+                <div class="ayuda-chat__respuesta ayuda-chat__pensando" role="status">
+                    <span class="ayuda-chat__puntos" aria-hidden="true"><span></span><span></span><span></span></span>
+                    Consultando los manuales…
+                </div>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <p role="alert" class="ayuda-chat__error">@_error</p>
+        }
+
+        <form class="ayuda-chat__composer" @onsubmit="Enviar" @onsubmit:preventDefault>
+            @* El texto no vuelve del servidor al campo mientras se escribe; al enviar se vacía recreándolo. *@
+            <input @key="_versionCampo" type="text" class="ayuda-chat__campo" maxlength="2000" autocomplete="off"
+                   placeholder="Preguntá cómo hacer algo en AlfaCore…" aria-label="Tu pregunta"
+                   disabled="@(_ocupado || !AyudaIa.Disponible)" @oninput="e => _pregunta = e.Value?.ToString() ?? string.Empty" />
+            @if (_ocupado)
+            {
+                <button type="button" class="ayuda-chat__enviar" title="Cancelar consulta" aria-label="Cancelar consulta" @onclick="Cancelar">
+                    <i class="bi bi-stop-fill" aria-hidden="true"></i>
+                </button>
+            }
+            else
+            {
+                <button type="submit" class="ayuda-chat__enviar" title="Preguntar" aria-label="Preguntar" disabled="@(!AyudaIa.Disponible)">
+                    <i class="bi bi-arrow-up" aria-hidden="true"></i>
+                </button>
+            }
+        </form>
+        <small class="ayuda-chat__legal">Se envían tu pregunta, la conversación reciente y partes de los manuales al servicio de IA. No se consultan saldos ni movimientos.</small>
+    }
 </div>
 
 @code {
-    [Parameter] public string Tema {get;set;}="general";
-    [Parameter] public EventCallback<AyudaFuente> OnFuente {get;set;}
-    private readonly List<(string Pregunta,AyudaRespuesta Respuesta)> _turnos=[];
-    private string _pregunta="";
+    [Parameter] public string Tema { get; set; } = "general";
+    [Parameter] public EventCallback<AyudaFuente> OnFuente { get; set; }
+
+    private static readonly string[] Sugerencias =
+    [
+        "¿Cómo doy de alta un cliente?",
+        "¿Cómo cargo una factura de compra?",
+        "¿Cómo hago el cierre de caja?"
+    ];
+
+    private readonly List<(string Pregunta, AyudaRespuesta Respuesta)> _turnos = [];
+    private IReadOnlyList<AyudaConversacionResumen> _conversaciones = [];
+    private Guid _idConversacion = Guid.NewGuid();
+    private string _pregunta = "", _preguntaEnCurso = "";
     private string? _error;
-    private bool _ocupado,_disposed,_scrollPendiente;
+    private bool _ocupado, _disposed, _scrollPendiente, _verHistorial;
+    private int _versionCampo, _diasHistorial = AyudaHistorialService.DiasPorDefecto;
     private ElementReference _mensajes;
     private CancellationTokenSource? _consulta;
-    private async Task Enviar()
+
+    // Al abrir, sigue la última conversación (antes se perdía al cerrar la ayuda).
+    protected override async Task OnInitializedAsync()
     {
-        if(_ocupado || string.IsNullOrWhiteSpace(_pregunta) || !AyudaIa.Disponible)return;
-        _ocupado=true;_error=null;_scrollPendiente=true;
-        var pregunta=_pregunta.Trim();
-        using var consulta=new CancellationTokenSource();_consulta=consulta;
+        _conversaciones = await Historial.ListarAsync();
+        _diasHistorial = await Historial.DiasAsync();
+        if (_conversaciones.Count > 0)
+            await CargarTurnos(_conversaciones[0].IdConversacion);
+    }
+
+    private Task Enviar() => Preguntar(_pregunta);
+
+    private async Task Preguntar(string texto)
+    {
+        if (_ocupado || string.IsNullOrWhiteSpace(texto) || !AyudaIa.Disponible)
+            return;
+        var pregunta = texto.Trim();
+        _ocupado = true; _error = null; _scrollPendiente = true; _preguntaEnCurso = pregunta;
+        _pregunta = ""; _versionCampo++;
+        using var consulta = new CancellationTokenSource(); _consulta = consulta;
         try
         {
-            var respuesta=await AyudaIa.PreguntarAsync(pregunta,Tema,_turnos.Select(t=>new AyudaTurno(t.Pregunta,t.Respuesta.Texto)).ToArray(),consulta.Token);
-            if(_disposed || consulta.IsCancellationRequested)return;
-            _scrollPendiente=true;_turnos.Add((pregunta,respuesta));if(_turnos.Count>12)_turnos.RemoveAt(0);_pregunta="";
+            var respuesta = await AyudaIa.PreguntarAsync(pregunta, Tema, _turnos.Select(t => new AyudaTurno(t.Pregunta, t.Respuesta.Texto)).ToArray(), consulta.Token);
+            if (_disposed || consulta.IsCancellationRequested)
+                return;
+            _scrollPendiente = true;
+            _turnos.Add((pregunta, respuesta));
+            if (_turnos.Count > 12)
+                _turnos.RemoveAt(0);
+            await Historial.GuardarAsync(_idConversacion, Tema, pregunta, respuesta);
         }
-        catch(OperationCanceledException) { if(!_disposed)_error="Consulta cancelada. Podés volver a preguntar."; }
-        catch(AppUserFacingException ex) { if(!_disposed)_error=ex.Message; }
-        catch(InvalidOperationException ex) { if(!_disposed)_error=ex.Message; }
-        finally { _ocupado=false;if(ReferenceEquals(_consulta,consulta))_consulta=null; }
+        catch (OperationCanceledException) { if (!_disposed) _error = "Consulta cancelada. Podés volver a preguntar."; }
+        catch (AppUserFacingException ex) { if (!_disposed) _error = ex.Message; }
+        catch (InvalidOperationException ex) { if (!_disposed) _error = ex.Message; }
+        finally { _ocupado = false; if (ReferenceEquals(_consulta, consulta)) _consulta = null; }
     }
+
+    private async Task CargarTurnos(Guid idConversacion)
+    {
+        var turnos = await Historial.CargarAsync(idConversacion);
+        _turnos.Clear();
+        foreach (var t in turnos.TakeLast(12))
+            _turnos.Add((t.Pregunta, t.Respuesta));
+        _idConversacion = idConversacion; _scrollPendiente = true;
+    }
+
+    private async Task AbrirConversacion(Guid idConversacion)
+    {
+        await CargarTurnos(idConversacion);
+        _verHistorial = false; _error = null;
+    }
+
+    private async Task AlternarHistorial()
+    {
+        _verHistorial = !_verHistorial;
+        if (_verHistorial)
+            _conversaciones = await Historial.ListarAsync();
+    }
+
+    private async Task BorrarConversacion(Guid idConversacion)
+    {
+        await Historial.BorrarAsync(idConversacion);
+        _conversaciones = await Historial.ListarAsync();
+        if (idConversacion == _idConversacion)
+            NuevaConversacion();
+        _verHistorial = true;
+    }
+
+    private void NuevaConversacion()
+    {
+        _turnos.Clear(); _error = null; _pregunta = ""; _versionCampo++;
+        _idConversacion = Guid.NewGuid(); _verHistorial = false;
+    }
+
+    private static string FechaCorta(DateTime fecha)
+        => fecha.Date == DateTime.Today ? $"Hoy {fecha:HH:mm}"
+            : fecha.Date == DateTime.Today.AddDays(-1) ? $"Ayer {fecha:HH:mm}"
+            : fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if(!_scrollPendiente)return;
-        _scrollPendiente=false;
-        try { await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom",_mensajes); }
-        catch(JSDisconnectedException) { }
+        if (!_scrollPendiente || _verHistorial)
+            return;
+        _scrollPendiente = false;
+        try { await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom", _mensajes); }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
     }
-    private void Cancelar()=>_consulta?.Cancel();
-    private void Limpiar() { _turnos.Clear();_error=null;_pregunta=""; }
-    public void Dispose() { _disposed=true;Cancelar(); }
+
+    private void Cancelar() => _consulta?.Cancel();
+    public void Dispose() { _disposed = true; Cancelar(); }
 }

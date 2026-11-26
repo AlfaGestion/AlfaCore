@@ -74,7 +74,8 @@ public sealed class AyudaIaService(IHttpClientFactory http,IIaUsoRecorder uso,IS
                 Respondé sólo si algún fragmento explica esa misma tarea. Si los fragmentos tratan algo parecido pero no lo que se pregunta (otra pantalla, otro módulo u otra acción), no armes los pasos combinando partes: decí que esa tarea no está en los manuales de AlfaCore y devolvé fuentes vacías.
                 Los pasos, menús y botones que nombres tienen que figurar tal cual en los fragmentos.
                 El historial sirve solo para entender repreguntas, no es evidencia documental.
-                Devolvé SOLO JSON: {"respuesta":"texto plano sin HTML ni enlaces","fuentes":["id exacto del fragmento usado"]}.
+                En "respuesta" podés usar Markdown simple: listas numeradas para los pasos y **negrita** para los nombres de menús y botones. Sin HTML, sin enlaces y sin títulos.
+                Devolvé SOLO JSON: {"respuesta":"...","fuentes":["id exacto del fragmento usado"]}.
                 Citá únicamente IDs recibidos que respalden la respuesta. Si los fragmentos no alcanzan, devolvé fuentes vacías.
                 """;
             var datos=new {pregunta,tema,historial=historial.TakeLast(4).Select(t=>new {pregunta=Recortar(t.Pregunta,2000),respuesta=Recortar(t.Respuesta,3000)}),
@@ -114,8 +115,6 @@ public sealed class AyudaIaService(IHttpClientFactory http,IIaUsoRecorder uso,IS
         if(string.IsNullOrWhiteSpace(texto) || texto.Length>12000)throw new InvalidOperationException("La respuesta de ayuda no es válida.");
         // Si inventa una fuente o no puede fundamentar, no mostrar el procedimiento generado.
         if(ids.Length==0 || ids.Any(id=>!permitidas.Any(f=>f.Id==id)))return new(SinDocumentacion,[]);
-        // El panel muestra texto plano: el modelo a veces marca negritas igual ("**Nuevo cliente**", 2026-11-26).
-        texto=Regex.Replace(texto,@"\*\*(.+?)\*\*|__(.+?)__","$1$2");
         return new(texto,permitidas.Where(f=>ids.Contains(f.Id)).ToArray());
     }
     internal static IReadOnlyList<AyudaFuente> Recuperar(string pregunta,string tema)

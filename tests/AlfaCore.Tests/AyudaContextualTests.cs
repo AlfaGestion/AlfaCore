@@ -100,10 +100,14 @@ public sealed class AyudaContextualTests
         Assert.NotEmpty(resultados);
         Assert.Equal("dar-de-alta-un-cliente",resultados[0].Articulo.Id);
         Assert.Empty(AyudaManuales.BuscarEnTodo("de donde los"));
-        // La ayuda con IA muestra texto plano: sin los asteriscos de las negritas.
+        // La respuesta de la IA se muestra con formato (Markdown sin HTML): negritas y listas, sin asteriscos sueltos.
+        Assert.Contains("<strong>Nuevo cliente</strong>",AyudaManuales.Html("Pulsá **Nuevo cliente**."),StringComparison.Ordinal);
+        Assert.DoesNotContain("<script>",AyudaManuales.Html("<script>alert(1)</script>"),StringComparison.Ordinal);
+        // El historial sólo devuelve fuentes que siguen en los manuales.
         var fuentes=AyudaIaService.Recuperar("como doy de alta un cliente","archivos");
-        using var json=System.Text.Json.JsonDocument.Parse($$"""{"respuesta":"Pulsá **Nuevo cliente**.","fuentes":["{{fuentes[0].Id}}"]}""");
-        Assert.Equal("Pulsá Nuevo cliente.",AyudaIaService.ValidarRespuesta(json.RootElement,fuentes).Texto);
+        var guardadas=AyudaHistorialService.LeerFuentes($$"""[{"Tema":"{{fuentes[0].Tema}}","Articulo":"{{fuentes[0].Articulo}}","Titulo":"x"},{"Tema":"nada","Articulo":"y","Titulo":"z"}]""");
+        Assert.Single(guardadas);
+        Assert.Equal(fuentes[0].Id,guardadas[0].Id);
         // El campo no recibe el texto de vuelta mientras se escribe y busca al hacer una pausa.
         var dialogo=File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","Shared","AyudaContextualDialog.razor"));
         Assert.Contains("@oninput=\"AlEscribir\"",dialogo,StringComparison.Ordinal);
@@ -129,6 +133,14 @@ public sealed class AyudaContextualTests
             Task.FromResult(new AyudaRespuesta("Revisá la cuenta corriente antes de cobrar.",
                 [new AyudaFuente("cobranzas","registrar-una-cobranza","Cobranzas · Registrar una cobranza","")]));
         services.AddSingleton(ia);
+        // Historial de la ayuda: vacío y sin guardar nada.
+        var historial=DispatchProxy.Create<IAyudaHistorialService,CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)historial).Handler=(m,a)=>m.Name switch {
+            "ListarAsync"=>Task.FromResult<IReadOnlyList<AyudaConversacionResumen>>([]),
+            "CargarAsync"=>Task.FromResult<IReadOnlyList<AyudaTurnoGuardado>>([]),
+            "DiasAsync"=>Task.FromResult(60),
+            _=>Task.CompletedTask };
+        services.AddSingleton(historial);
         var capture=new Capture();services.AddSingleton<IComponentActivator>(capture);
         using var provider=services.BuildServiceProvider();
         await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());

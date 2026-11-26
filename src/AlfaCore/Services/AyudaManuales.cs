@@ -247,7 +247,9 @@ public static class AyudaManuales
         void Guardar()
         {
             // Un título sin texto propio (solo agrupa subsecciones) o el índice del documento no es una tarea.
-            if(titulo is null || texto.ToString().Trim().Length==0 || IdArticulo(titulo)=="indice") { texto.Clear();return; }
+            // Tampoco si sólo tiene una línea divisoria ("---"): "Alfa Gestión · Guía principal de uso" salía vacío.
+            var propio=Regex.Replace(texto.ToString(),@"^\s*([-*_])(\s*\1){2,}\s*$","",RegexOptions.Multiline).Trim();
+            if(titulo is null || propio.Length==0 || IdArticulo(titulo)=="indice") { texto.Clear();return; }
             var id=IdArticulo(titulo);
             var unico=id;var n=2;while(!ids.Add(unico))unico=id+"-"+n++;
             articulos.Add(new(unico,titulo,texto.ToString().Trim()));texto.Clear();

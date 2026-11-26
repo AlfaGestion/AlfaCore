@@ -466,6 +466,7 @@ public class Program
         builder.Services.AddScoped<ProveedorAltaRapidaService>();
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
+        builder.Services.AddScoped<IAyudaHistorialService, AyudaHistorialService>();
         builder.Services.AddScoped<CobranzasService>();
         builder.Services.AddScoped<IPuntoVentaAnticiposService, PuntoVentaAnticiposService>();
         builder.Services.AddScoped<IPuntoVentaAnticipoRegistroService, PuntoVentaAnticipoRegistroService>();
