@@ -10,6 +10,13 @@ public static class PuntoVentaModoKeys
     public static readonly string[] All = [Mostrador, MostradorProduccion, Salon, Delivery];
 }
 
+public static class PuntoVentaIngresoRapidoModoKeys
+{
+    public const string Deshabilitado = "DESHABILITADO";
+    public const string Compacto = "COMPACTO";
+    public const string Completo = "COMPLETO";
+}
+
 public sealed class PuntoVentaCatalogoOpcionDto
 {
     public string Valor { get; init; } = string.Empty;
@@ -38,6 +45,20 @@ public sealed class PuntoVentaEntidadDto
     public string IdLista { get; set; } = string.Empty;
     /// <summary>Clase de precio 1..8. Null = la de la configuracion general.</summary>
     public int? ClasePrecio { get; set; }
+    public bool CargaRapidaGrafica { get; set; }
+    public string ModoIngresoRapido { get; set; } = PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
+    public decimal ImporteRapido1 { get; set; } = 5m;
+    public decimal ImporteRapido2 { get; set; } = 10m;
+    public decimal ImporteRapido3 { get; set; } = 25m;
+    public decimal ImporteRapido4 { get; set; } = 50m;
+    public decimal ImporteRapido5 { get; set; } = 100m;
+    public decimal ImporteRapido6 { get; set; } = 200m;
+    public decimal CantidadRapida1 { get; set; } = 0.1m;
+    public decimal CantidadRapida2 { get; set; } = 0.25m;
+    public decimal CantidadRapida3 { get; set; } = 0.5m;
+    public decimal CantidadRapida4 { get; set; } = 1m;
+    public decimal CantidadRapida5 { get; set; } = 6m;
+    public decimal CantidadRapida6 { get; set; } = 12m;
     /// <summary>Rubros que vende el punto de venta. Vacio = todos.</summary>
     public List<string> Rubros { get; set; } = [];
     public bool Activo { get; set; } = true;
@@ -57,6 +78,20 @@ public sealed class PuntoVentaEntidadSaveRequest
     public string Sucursal { get; set; } = string.Empty;
     public string IdLista { get; set; } = string.Empty;
     public int? ClasePrecio { get; set; }
+    public bool CargaRapidaGrafica { get; set; }
+    public string ModoIngresoRapido { get; set; } = PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
+    public decimal ImporteRapido1 { get; set; } = 5m;
+    public decimal ImporteRapido2 { get; set; } = 10m;
+    public decimal ImporteRapido3 { get; set; } = 25m;
+    public decimal ImporteRapido4 { get; set; } = 50m;
+    public decimal ImporteRapido5 { get; set; } = 100m;
+    public decimal ImporteRapido6 { get; set; } = 200m;
+    public decimal CantidadRapida1 { get; set; } = 0.1m;
+    public decimal CantidadRapida2 { get; set; } = 0.25m;
+    public decimal CantidadRapida3 { get; set; } = 0.5m;
+    public decimal CantidadRapida4 { get; set; } = 1m;
+    public decimal CantidadRapida5 { get; set; } = 6m;
+    public decimal CantidadRapida6 { get; set; } = 12m;
     public List<string> Rubros { get; set; } = [];
     public bool Activo { get; set; } = true;
     public string? UsuarioAccion { get; set; }

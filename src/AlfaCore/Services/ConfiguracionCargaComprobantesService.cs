@@ -36,6 +36,7 @@ public sealed class ConfiguracionCargaComprobantesService(ISessionService sessio
         new("UsaFacturaProformaSinRegistracion","Omitir asiento en proforma legacy","Proforma","LECTURA","Solo lectura: Carga siempre genera asiento por requerimiento"),
         new("USAPROFORMA","Proforma en Punto de Venta","Proforma","LECTURA","Punto de Venta: editar en su pestaña; no es UsaFacturaProforma"),
         new("EntregaParcialRemito","Permitir entrega parcial","Orígenes y stock","SI_NO","Carga / Alfa Gestión"),
+        new("RelacionaCBaNP","Relaciona Cobranzas con Notas de Pedidos","Cobranzas y pedidos","SI_NO","Alfa Gestión; habilita la relación de anticipos con NP"),
         new("DescargaStockRemitos","Remitos descargan stock","Orígenes y stock","SI_NO","Remitos / facturación; se revalida el origen"),
         new("RevalorizaRemitos","Revalorizar remitos","Orígenes y stock","SI_NO","Circuito de revalorización aún pendiente en Carga"),
         new("DescargaStockxReparto","Descargar stock por reparto","Controles adicionales","SI_NO","Circuito de reparto aún pendiente en Carga"),

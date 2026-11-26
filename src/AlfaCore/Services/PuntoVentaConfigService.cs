@@ -183,6 +183,20 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(SUCURSAL, '') AS Sucursal,
                     LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista,
                     CLASEPRECIO AS ClasePrecio,
+                    ISNULL(CARGARAPIDAGRAFICA, 0) AS CargaRapidaGrafica,
+                    ISNULL(MODO_INGRESO_RAPIDO, CASE WHEN ISNULL(CARGARAPIDAGRAFICA, 0) = 1 THEN 'COMPLETO' ELSE 'DESHABILITADO' END) AS ModoIngresoRapido,
+                    ISNULL(GOUR_IMPORTE1, 5) AS ImporteRapido1,
+                    ISNULL(GOUR_IMPORTE2, 10) AS ImporteRapido2,
+                    ISNULL(GOUR_IMPORTE3, 25) AS ImporteRapido3,
+                    ISNULL(GOUR_IMPORTE4, 50) AS ImporteRapido4,
+                    ISNULL(GOUR_IMPORTE5, 100) AS ImporteRapido5,
+                    ISNULL(GOUR_IMPORTE6, 200) AS ImporteRapido6,
+                    ISNULL(GOUR_CANTIDAD1, 0.1) AS CantidadRapida1,
+                    ISNULL(GOUR_CANTIDAD2, 0.25) AS CantidadRapida2,
+                    ISNULL(GOUR_CANTIDAD3, 0.5) AS CantidadRapida3,
+                    ISNULL(GOUR_CANTIDAD4, 1) AS CantidadRapida4,
+                    ISNULL(GOUR_CANTIDAD5, 6) AS CantidadRapida5,
+                    ISNULL(GOUR_CANTIDAD6, 12) AS CantidadRapida6,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -215,6 +229,20 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(SUCURSAL, '') AS Sucursal,
                     LTRIM(RTRIM(ISNULL(IDLISTA, ''))) AS IdLista,
                     CLASEPRECIO AS ClasePrecio,
+                    ISNULL(CARGARAPIDAGRAFICA, 0) AS CargaRapidaGrafica,
+                    ISNULL(MODO_INGRESO_RAPIDO, CASE WHEN ISNULL(CARGARAPIDAGRAFICA, 0) = 1 THEN 'COMPLETO' ELSE 'DESHABILITADO' END) AS ModoIngresoRapido,
+                    ISNULL(GOUR_IMPORTE1, 5) AS ImporteRapido1,
+                    ISNULL(GOUR_IMPORTE2, 10) AS ImporteRapido2,
+                    ISNULL(GOUR_IMPORTE3, 25) AS ImporteRapido3,
+                    ISNULL(GOUR_IMPORTE4, 50) AS ImporteRapido4,
+                    ISNULL(GOUR_IMPORTE5, 100) AS ImporteRapido5,
+                    ISNULL(GOUR_IMPORTE6, 200) AS ImporteRapido6,
+                    ISNULL(GOUR_CANTIDAD1, 0.1) AS CantidadRapida1,
+                    ISNULL(GOUR_CANTIDAD2, 0.25) AS CantidadRapida2,
+                    ISNULL(GOUR_CANTIDAD3, 0.5) AS CantidadRapida3,
+                    ISNULL(GOUR_CANTIDAD4, 1) AS CantidadRapida4,
+                    ISNULL(GOUR_CANTIDAD5, 6) AS CantidadRapida5,
+                    ISNULL(GOUR_CANTIDAD6, 12) AS CantidadRapida6,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -263,6 +291,22 @@ public sealed class PuntoVentaConfigService(
             if (request.ClasePrecio is < 1 or > 8)
                 request.ClasePrecio = null;
             request.Rubros ??= [];
+            request.ModoIngresoRapido = (request.ModoIngresoRapido ?? string.Empty).Trim().ToUpperInvariant();
+            if (request.ModoIngresoRapido is not (PuntoVentaIngresoRapidoModoKeys.Deshabilitado or PuntoVentaIngresoRapidoModoKeys.Compacto or PuntoVentaIngresoRapidoModoKeys.Completo))
+                request.ModoIngresoRapido = request.CargaRapidaGrafica ? PuntoVentaIngresoRapidoModoKeys.Completo : PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
+            request.CargaRapidaGrafica = request.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
+            request.ImporteRapido1 = NormalizarImporteRapido(request.ImporteRapido1, 5m);
+            request.ImporteRapido2 = NormalizarImporteRapido(request.ImporteRapido2, 10m);
+            request.ImporteRapido3 = NormalizarImporteRapido(request.ImporteRapido3, 25m);
+            request.ImporteRapido4 = NormalizarImporteRapido(request.ImporteRapido4, 50m);
+            request.ImporteRapido5 = NormalizarImporteRapido(request.ImporteRapido5, 100m);
+            request.ImporteRapido6 = NormalizarImporteRapido(request.ImporteRapido6, 200m);
+            request.CantidadRapida1 = NormalizarImporteRapido(request.CantidadRapida1, 0.1m);
+            request.CantidadRapida2 = NormalizarImporteRapido(request.CantidadRapida2, 0.25m);
+            request.CantidadRapida3 = NormalizarImporteRapido(request.CantidadRapida3, 0.5m);
+            request.CantidadRapida4 = NormalizarImporteRapido(request.CantidadRapida4, 1m);
+            request.CantidadRapida5 = NormalizarImporteRapido(request.CantidadRapida5, 6m);
+            request.CantidadRapida6 = NormalizarImporteRapido(request.CantidadRapida6, 12m);
 
             var validation = await validator.ValidatePuntoVentaForSaveAsync(request, token);
             if (!validation.IsValid)
@@ -279,9 +323,9 @@ public sealed class PuntoVentaConfigService(
             {
                 const string insertSql = """
                     INSERT INTO dbo.POS_PUNTOVENTA
-                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, ACTIVO, USUARIO, FECHAHORA_ALTA)
+                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, CARGARAPIDAGRAFICA, MODO_INGRESO_RAPIDO, GOUR_IMPORTE1, GOUR_IMPORTE2, GOUR_IMPORTE3, GOUR_IMPORTE4, GOUR_IMPORTE5, GOUR_IMPORTE6, GOUR_CANTIDAD1, GOUR_CANTIDAD2, GOUR_CANTIDAD3, GOUR_CANTIDAD4, GOUR_CANTIDAD5, GOUR_CANTIDAD6, ACTIVO, USUARIO, FECHAHORA_ALTA)
                     VALUES
-                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @Activo, @Usuario, GETDATE());
+                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @CargaRapidaGrafica, @ModoIngresoRapido, @ImporteRapido1, @ImporteRapido2, @ImporteRapido3, @ImporteRapido4, @ImporteRapido5, @ImporteRapido6, @CantidadRapida1, @CantidadRapida2, @CantidadRapida3, @CantidadRapida4, @CantidadRapida5, @CantidadRapida6, @Activo, @Usuario, GETDATE());
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """;
                 var nuevoId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
@@ -294,6 +338,20 @@ public sealed class PuntoVentaConfigService(
                     request.Sucursal,
                     request.IdLista,
                     request.ClasePrecio,
+                    request.CargaRapidaGrafica,
+                    request.ModoIngresoRapido,
+                    request.ImporteRapido1,
+                    request.ImporteRapido2,
+                    request.ImporteRapido3,
+                    request.ImporteRapido4,
+                    request.ImporteRapido5,
+                    request.ImporteRapido6,
+                    request.CantidadRapida1,
+                    request.CantidadRapida2,
+                    request.CantidadRapida3,
+                    request.CantidadRapida4,
+                    request.CantidadRapida5,
+                    request.CantidadRapida6,
                     request.Activo,
                     Usuario = usuario
                 }, tx, cancellationToken: token));
@@ -312,6 +370,20 @@ public sealed class PuntoVentaConfigService(
                     SUCURSAL = @Sucursal,
                     IDLISTA = @IdLista,
                     CLASEPRECIO = @ClasePrecio,
+                    CARGARAPIDAGRAFICA = @CargaRapidaGrafica,
+                    MODO_INGRESO_RAPIDO = @ModoIngresoRapido,
+                    GOUR_IMPORTE1 = @ImporteRapido1,
+                    GOUR_IMPORTE2 = @ImporteRapido2,
+                    GOUR_IMPORTE3 = @ImporteRapido3,
+                    GOUR_IMPORTE4 = @ImporteRapido4,
+                    GOUR_IMPORTE5 = @ImporteRapido5,
+                    GOUR_IMPORTE6 = @ImporteRapido6,
+                    GOUR_CANTIDAD1 = @CantidadRapida1,
+                    GOUR_CANTIDAD2 = @CantidadRapida2,
+                    GOUR_CANTIDAD3 = @CantidadRapida3,
+                    GOUR_CANTIDAD4 = @CantidadRapida4,
+                    GOUR_CANTIDAD5 = @CantidadRapida5,
+                    GOUR_CANTIDAD6 = @CantidadRapida6,
                     ACTIVO = @Activo,
                     USUARIO = @Usuario,
                     FECHAHORA_MODIFICACION = GETDATE()
@@ -328,6 +400,20 @@ public sealed class PuntoVentaConfigService(
                 request.Sucursal,
                 request.IdLista,
                 request.ClasePrecio,
+                request.CargaRapidaGrafica,
+                request.ModoIngresoRapido,
+                request.ImporteRapido1,
+                request.ImporteRapido2,
+                request.ImporteRapido3,
+                request.ImporteRapido4,
+                request.ImporteRapido5,
+                request.ImporteRapido6,
+                request.CantidadRapida1,
+                request.CantidadRapida2,
+                request.CantidadRapida3,
+                request.CantidadRapida4,
+                request.CantidadRapida5,
+                request.CantidadRapida6,
                 request.Activo,
                 Usuario = usuario
             }, tx, cancellationToken: token));
@@ -339,6 +425,9 @@ public sealed class PuntoVentaConfigService(
             await tx.CommitAsync(token);
             return request.Id!.Value;
         }, "No se pudo guardar el punto de venta.", ct);
+
+    private static decimal NormalizarImporteRapido(decimal value, decimal defaultValue)
+        => value > 0m && value <= 999999999999m ? decimal.Round(value, 4, MidpointRounding.AwayFromZero) : defaultValue;
 
     public Task<IReadOnlyList<PuntoVentaSectorDto>> GetSectoresAsync(int idPuntoVenta, bool soloActivos = false, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetSectores", async token =>

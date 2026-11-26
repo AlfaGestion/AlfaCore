@@ -203,6 +203,28 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         if (plan.Directa is null)
             foreach (var parte in plan.Partes)
                 await actualizador.ActualizarAsync(cn, tx, parte.Origen, parte.Cantidades, ct);
+        if (plan.Directa is null && plan.Origen.Tc.Trim().Equals("NP", StringComparison.OrdinalIgnoreCase))
+        {
+            // V_mv_vtaPDVG.frm actualiza FINALIZADA al terminar la facturación
+            // cuando la NP ya no conserva cantidades pendientes. Se hace dentro
+            // de la misma transacción que la factura y MV_APLICACION.
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE origen
+                   SET FINALIZADA = 1,
+                       FECHAFINALIZACION = @Fecha
+                FROM dbo.V_MV_CPTE origen
+                WHERE origen.ID = @OrigenId
+                  AND LTRIM(RTRIM(origen.TC)) = 'NP'
+                  AND NOT EXISTS
+                  (
+                      SELECT 1
+                      FROM dbo.VT_V_MV_INSUMOS_SALDOSRM pendiente
+                      WHERE LTRIM(RTRIM(pendiente.TC)) = 'NP'
+                        AND LTRIM(RTRIM(pendiente.IDCOMPROBANTE)) = LTRIM(RTRIM(origen.IDCOMPROBANTE))
+                        AND ISNULL(pendiente.SALDO, 0) > 0
+                  );
+                """, new { OrigenId = plan.Origen.Id, Fecha = plan.Fecha }, tx, cancellationToken: ct));
+        }
         // Numeración de asiento serializada dentro del ejercicio/mes/subdiario.
         // PR/NP/RM (y proformas con UsaFacturaProformaSinRegistracion) no generan asiento.
         int? numeroAsiento = null;
