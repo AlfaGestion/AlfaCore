@@ -217,13 +217,18 @@
         SearchContent = RenderFiltros(),
         Actions = [
             new() { Key = "cobrar", Label = _seleccion.Count > 0 ? $"Cobrar seleccionados ({_seleccion.Count})" : "Cobrar seleccionados", Icon = "bi-cash-coin", Style = PageHeaderActionStyle.Primary,
-                Disabled = _busy || _seleccion.Count == 0, OnClick = () => { _ = CobrarSeleccionAsync(); return Task.CompletedTask; } },
+                Disabled = _busy || _seleccion.Count == 0, OnClick = () => DesdeBarraAsync(CobrarSeleccionAsync) },
             new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Disabled = _busy,
-                OnClick = () => { _ = BuscarAsync(); return Task.CompletedTask; } },
+                OnClick = () => DesdeBarraAsync(BuscarAsync) },
             new() { Key = "limpiar", Label = "Limpiar filtros", Icon = "bi-x-circle", Disabled = _busy,
-                OnClick = () => { LimpiarFiltros(); _ = BuscarAsync(); return Task.CompletedTask; } }
+                OnClick = () => DesdeBarraAsync(() => { LimpiarFiltros(); return BuscarAsync(); }) }
         ]
     });
+
+    // Los botones de la barra superior los dispara otro componente (el layout): la acción corre en el contexto de esta
+    // pantalla y al terminar se la vuelve a dibujar. Sin esto «Cobrar seleccionados» preparaba el cobro pero el diálogo
+    // nunca aparecía.
+    private Task DesdeBarraAsync(Func<Task> accion) => InvokeAsync(async () => { await accion(); StateHasChanged(); });
 
     private void ToggleFiltros() { _mostrarFiltros = !_mostrarFiltros; UpdateHeader(); }
 

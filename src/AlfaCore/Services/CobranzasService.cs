@@ -102,6 +102,43 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
         return row;
     }
 
+    /// <summary>
+    /// Saldo por factura (FC/FP/ND) con el mismo resultado que agrupar dbo.VE_CPTES_SALDOS_VENTAS, pero 3-4 veces más rápido:
+    /// replica sus vistas (VE_CPTES_SALDOS + VE_SALDOAPLICACION, y la parte de créditos) aplicando el filtro de TC antes de
+    /// sumar las aplicaciones, en vez de calcular los saldos de toda la base y descartar después. Los filtros caen solo
+    /// sobre columnas de cruce y agrupación, así que no cambian ningún saldo. Sin CTE: hay bases con compatibilidad 80.
+    /// Las vistas del legacy no se tocan. Parámetro: @cliente ('' = todos).
+    /// </summary>
+    internal const string SaldosFacturasSql = """
+                SELECT CUENTA,TC,SUCURSAL,NUMERO,LETRA,SUM(SALDO) SALDO,MIN(VENCIMIENTO) VENCIMIENTO
+                FROM (
+                    SELECT a.CUENTA,a.FECHA,a.TC,a.SUCURSAL,a.NUMERO,a.LETRA,a.IMPORTE-ISNULL(ap.IMPORTE,0) SALDO,ISNULL(a.VENCIMIENTO,a.FECHA) VENCIMIENTO
+                    FROM dbo.MV_ASIENTOS a WITH (NOLOCK) JOIN dbo.MA_CUENTAS c WITH (NOLOCK) ON a.CUENTA=c.CODIGO
+                    LEFT JOIN (
+                        SELECT ap.CUENTA,ap.TCO_ORIGEN TC,ap.SUCURSAL_ORIGEN SUCURSAL,ap.NUMERO_ORIGEN NUMERO,ap.LETRA_ORIGEN LETRA,
+                            SUM(ap.IMPORTE) IMPORTE,a2.IMPORTE TOTAL,a2.FECHA,a2.IdVendedor
+                        FROM dbo.MV_APLICACION ap JOIN dbo.MV_ASIENTOS a2 ON ap.CUENTA=a2.CUENTA AND ap.TCO_ORIGEN=a2.TC
+                            AND ap.SUCURSAL_ORIGEN=a2.SUCURSAL AND ap.NUMERO_ORIGEN=a2.NUMERO AND ap.LETRA_ORIGEN=a2.LETRA
+                        WHERE ap.TC<>'VJ' AND ap.TCO_ORIGEN IN ('FC','FP','ND') AND (@cliente='' OR LTRIM(RTRIM(ap.CUENTA))=@cliente)
+                        GROUP BY ap.CUENTA,ap.TCO_ORIGEN,ap.SUCURSAL_ORIGEN,ap.NUMERO_ORIGEN,ap.LETRA_ORIGEN,a2.IMPORTE,a2.FECHA,a2.IdVendedor
+                        UNION
+                        SELECT ap.CUENTA,ap.TC,ap.SUCURSAL,ap.NUMERO,ap.LETRA,SUM(ap.IMPORTE),a2.IMPORTE,a2.FECHA,a2.IdVendedor
+                        FROM dbo.MV_APLICACION ap JOIN dbo.MV_ASIENTOS a2 ON ap.CUENTA=a2.CUENTA AND ap.TC=a2.TC
+                            AND ap.SUCURSAL=a2.SUCURSAL AND ap.NUMERO=a2.NUMERO AND ap.LETRA=a2.LETRA
+                        WHERE ap.TC<>'VJ' AND ap.TC IN ('FC','FP','ND') AND ap.TCO_ORIGEN NOT IN ('OT','PR','RM','RMC','NP','OC')
+                            AND (@cliente='' OR LTRIM(RTRIM(ap.CUENTA))=@cliente)
+                        GROUP BY ap.CUENTA,ap.TC,ap.SUCURSAL,ap.NUMERO,ap.LETRA,a2.IMPORTE,a2.FECHA,a2.IdVendedor
+                    ) ap ON a.CUENTA=ap.CUENTA AND a.TC=ap.TC AND a.SUCURSAL=ap.SUCURSAL AND a.NUMERO=ap.NUMERO AND a.LETRA=ap.LETRA
+                    WHERE a.[DEBE-HABER]=N'D' AND a.EsResumen=0 AND a.TC IN ('FC','FP','ND') AND c.TipoVista IN ('CL','CB','CM')
+                        AND a.IMPORTE-ISNULL(ap.IMPORTE,0)<>0 AND (@cliente='' OR LTRIM(RTRIM(a.CUENTA))=@cliente)
+                    UNION
+                    SELECT CUENTA,FECHA,TC,SUCURSAL,NUMERO,LETRA,SALDO*-1,ISNULL(VENCIMIENTO,FECHA)
+                    FROM dbo.VE_CPTES_CREDITOS_PENDIENTES_SINREMITOS
+                    WHERE TIPOVISTA IN ('CL','CB','CM') AND SALDO<>0 AND TC IN ('FC','FP','ND') AND (@cliente='' OR LTRIM(RTRIM(CUENTA))=@cliente)
+                ) u
+                GROUP BY CUENTA,TC,SUCURSAL,NUMERO,LETRA HAVING CONVERT(decimal(18,2),SUM(SALDO))>0
+    """;
+
     private static async Task<IReadOnlyList<CobranzaDocumento>> Documentos(SqlConnection cn,string cliente,SqlTransaction? tx,CancellationToken ct,
         Usuario? usuario=null,DateTime? hasta=null,string buscar="",
         DateTime? desde=null,string unidadFiltro="",DateTime? vencidoAl=null)
@@ -109,18 +146,17 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
         if(cliente.Length==0&&usuario is null)throw new InvalidOperationException("Falta el usuario para consultar pendientes.");
         var documento=new string(buscar.Where(char.IsDigit).ToArray());
         if(documento.Length is not(7 or 8 or 11))documento="";
+        // TC comparado directo (sin LTRIM/RTRIM): '=' ya ignora espacios finales y así se usa el índice
+        // TC,SUCURSAL,NUMERO,LETRA de V_MV_CPTE. Con LTRIM la consulta tardaba ~30 s en LANUEVA (ahora ~7 s).
         var filas=(await cn.QueryAsync<CobranzaDocumento>(Cmd("""
             SELECT TOP(10001) f.ID Id,f.FECHA Fecha,LTRIM(RTRIM(f.CUENTA)) Cliente,LTRIM(RTRIM(f.NOMBRE)) Nombre,
                 LTRIM(RTRIM(f.UNEGOCIO)) Unidad,LTRIM(RTRIM(f.TC)) Tc,f.IDCOMPROBANTE Comprobante,
                 COALESCE(NULLIF(LTRIM(RTRIM(f.MONEDA)),''),asiento.Moneda) Moneda,CONVERT(decimal(18,2),s.SALDO) Saldo,
                 s.VENCIMIENTO Vencimiento,LTRIM(RTRIM(ISNULL(f.DOCUMENTONUMERO,''))) Cuit
             FROM (
-                SELECT CUENTA,TC,SUCURSAL,NUMERO,LETRA,SUM(SALDO) SALDO,MIN(ISNULL(VENCIMIENTO,FECHA)) VENCIMIENTO
-                FROM dbo.VE_CPTES_SALDOS_VENTAS
-                WHERE (@cliente='' OR LTRIM(RTRIM(CUENTA))=@cliente)
-                GROUP BY CUENTA,TC,SUCURSAL,NUMERO,LETRA HAVING CONVERT(decimal(18,2),SUM(SALDO))>0
+            """+SaldosFacturasSql+"""
             ) s JOIN dbo.V_MV_CPTE f
-                ON LTRIM(RTRIM(f.CUENTA))=LTRIM(RTRIM(s.CUENTA)) AND LTRIM(RTRIM(f.TC))=LTRIM(RTRIM(s.TC))
+                ON LTRIM(RTRIM(f.CUENTA))=LTRIM(RTRIM(s.CUENTA)) AND f.TC=s.TC
                 AND f.SUCURSAL=s.SUCURSAL AND f.NUMERO=s.NUMERO AND f.LETRA=s.LETRA AND f.IDCOMPLEMENTO=0
             OUTER APPLY (
                 SELECT CASE WHEN COUNT(DISTINCT NULLIF(LTRIM(RTRIM(a.MONEDA)),''))=1
@@ -135,7 +171,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
                 AND (@vencidoAl IS NULL OR s.VENCIMIENTO<@vencidoAl)
                 AND (@buscar='' OR f.CUENTA LIKE @patron ESCAPE '~' OR f.NOMBRE LIKE @patron ESCAPE '~' OR f.DOCUMENTONUMERO LIKE @patron ESCAPE '~'
                     OR (@documento<>'' AND REPLACE(REPLACE(REPLACE(f.DOCUMENTONUMERO,'-',''),'.',''),' ','') LIKE @patronDocumento))
-                AND LTRIM(RTRIM(f.TC)) IN ('FC','FP','ND')
+                AND f.TC IN ('FC','FP','ND')
             ORDER BY f.FECHA,f.ID;
             """,new { cliente,admin=usuario?.Admin??true,unidad=usuario?.Unidad??"",hasta,buscar,desde,unidadFiltro,vencidoAl,
                 patron="%"+buscar.Replace("~","~~").Replace("%","~%").Replace("_","~_").Replace("[","~[")+"%",
