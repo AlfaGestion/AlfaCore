@@ -293,6 +293,17 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.Contains("CASE WHEN @UsuarioAccion IS NULL OR @UsuarioAccion = N'AlfaCore' THEN NULL ELSE @UsuarioAccion END", source, StringComparison.Ordinal);
     }
 
+    // ALFANET (2026-11-26): el bot nunca consultaba AlfaKnowledge (IsConfigured miraba un caché vacío en cada
+    // mensaje) y después de cerrar respondía una pregunta vieja que había quedado pendiente.
+    [Fact]
+    public void ElBotConsultaAlfaKnowledge_YLoPendienteArrancaDespuesDelCierre()
+    {
+        var source = Fuente();
+        Assert.Contains("&& await alfaKnowledgeService.EnsureConfiguredAsync(token).ConfigureAwait(false);", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured", source, StringComparison.Ordinal);
+        Assert.Contains("IF ISNULL(@UltimoCierre, 0) > @Desde SET @Desde = @UltimoCierre;", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);
