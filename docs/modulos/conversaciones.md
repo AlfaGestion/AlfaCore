@@ -340,6 +340,12 @@ audios, hasta la primera respuesta de una persona del equipo. Salieron dos falla
   uno necesita su precio en `ALFA_CENTRAL.IA_PRECIO_MODELO` para contar en el tope de créditos; `CentralIaSchema`
   carga los de gpt-4.1 y gpt-4.1-mini (precio de lista de OpenAI, verificar) y se vuelve a aplicar si faltan.
 
+**Cómo lo ve el cliente (2026-11-26):** dos opciones, "Estándar" (gpt-6-luna, recomendado, ≈ 0,4 créditos por
+respuesta) y "Avanzado" (gpt-6.1-terra, ≈ 3,3). Sin elegir, el asistente usa el Estándar
+(`AsistenteModeloPorDefecto`; `OPENAI_MODEL` ya no cambia el modelo del asistente, sí el de las otras funciones
+de IA). Pasar a un modelo que consume más pide confirmación (`AlfaConfirmDialog` con `Tone=Primary`) avisando
+que se descuenta del plan y que el excedente se factura al cierre del mes.
+
 #### Comparación de modelos (2026-11-26)
 
 Mismas 6 charlas (impresora con datos sumados, pedido de desarrollo, "2,3y4", calculadora, foto de un error,

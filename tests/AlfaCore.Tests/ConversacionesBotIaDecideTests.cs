@@ -228,7 +228,7 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.Contains("GetRecentMessagesForBotAsync(idConversacion, config.BotContextoHoras, token)", source, StringComparison.Ordinal);
         Assert.Contains("AND (@Horas <= 0 OR FechaHora >= DATEADD(hour, -@Horas, GETDATE()))", source, StringComparison.Ordinal);
         // Modelo de la base, sólo de la lista (cada uno con precio en la central).
-        Assert.Contains("modelo: config.AsistenteModelo,", source, StringComparison.Ordinal);
+        Assert.Contains("modelo: config.AsistenteModeloEfectivo,", source, StringComparison.Ordinal);
         Assert.Equal("gpt-6-luna", ConversacionesConfigService.NormalizarModeloAsistente(" GPT-6-LUNA "));
         Assert.Equal(string.Empty, ConversacionesConfigService.NormalizarModeloAsistente("gpt-5-turbo-inventado"));
         foreach (var modelo in AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
@@ -240,7 +240,11 @@ public sealed class ConversacionesBotIaDecideTests
         }
         var recomendado = AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles[0];
         Assert.Equal("gpt-6-luna", recomendado.Codigo);
-        Assert.Equal("Recomendado (gpt-6-luna) · ≈ 0,4 créditos por respuesta", recomendado.Etiqueta);
+        Assert.Equal("Estándar", recomendado.Nombre);
+        Assert.Equal("Aprox. 0,4 créditos por respuesta", recomendado.ConsumoTexto);
+        // Sin modelo elegido, el asistente usa el Estándar.
+        Assert.Equal("gpt-6-luna", new AlfaCore.Models.ConversacionAutomatizacionesConfigDto().AsistenteModeloEfectivo);
+        Assert.Equal("gpt-6.1-terra", new AlfaCore.Models.ConversacionAutomatizacionesConfigDto { AsistenteModelo = "gpt-6.1-terra" }.AsistenteModeloEfectivo);
         Assert.Contains("N'gpt-6.1-terra')", CentralIaSchema.VerificacionSql, StringComparison.Ordinal);
         Assert.Contains("N'gpt-4.1-mini')", CentralIaSchema.VerificacionSql, StringComparison.Ordinal);
         // No se ofrece a hacer lo que sólo hace una persona.

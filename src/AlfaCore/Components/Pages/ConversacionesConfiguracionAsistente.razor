@@ -240,37 +240,42 @@
                     <p class="cfg-hint">El horario de atención se configura en Automatización → Horario y mensaje fijo.</p>
                 </ConversacionesConfigTarjeta>
 
-                <ConversacionesConfigTarjeta Titulo="Modelo de IA" Descripcion="El modelo de OpenAI con el que piensa el asistente. Uno mejor entiende mejor la charla, pero cada respuesta gasta más créditos del plan.">
-                    <AlfaSelect Id="asis-modelo" Label="Modelo" Options="ModeloOptions"
-                                Value="@Config.AsistenteModelo"
-                                ValueChanged="@((string? v) => Config.AsistenteModelo = v ?? string.Empty)" />
-                    <ul class="cfg-modelos">
+                <ConversacionesConfigTarjeta Titulo="Modelo de IA" Descripcion="Define la capacidad del asistente para interpretar las conversaciones. Cada respuesta consume créditos del plan de IA de tu empresa.">
+                    <div class="cfg-modelos" role="radiogroup" aria-label="Modelo de IA">
                         @foreach (var modelo in ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
                         {
-                            <li class="@(string.Equals(modelo.Codigo, Config.AsistenteModelo, StringComparison.OrdinalIgnoreCase) ? "is-elegido" : string.Empty)">
-                                <div class="cfg-modelos__titulo">
-                                    <strong>@modelo.Nombre</strong>
-                                    <span>@modelo.Codigo</span>
-                                </div>
-                                <div class="cfg-modelos__datos">
-                                    ≈ @Numero(modelo.CreditosPorRespuesta) crédito@(modelo.CreditosPorRespuesta == 1 ? "" : "s") por respuesta
-                                    · ≈ @Numero(modelo.CreditosPorRespuesta * 1000) créditos cada 1.000 respuestas
-                                    · @(modelo.VecesElEconomico == 1 ? "costo de referencia" : $"{Numero(modelo.VecesElEconomico)} veces lo que cuesta el anterior")
-                                </div>
-                                <p>@modelo.Descripcion</p>
-                            </li>
+                            var elegido = string.Equals(modelo.Codigo, Config.AsistenteModeloEfectivo, StringComparison.OrdinalIgnoreCase);
+                            <button type="button" role="radio" aria-checked="@(elegido ? "true" : "false")"
+                                    class="cfg-modelos__opcion @(elegido ? "is-elegido" : string.Empty)"
+                                    @onclick="() => ElegirModelo(modelo)">
+                                <span class="cfg-modelos__marca" aria-hidden="true"></span>
+                                <span class="cfg-modelos__texto">
+                                    <span class="cfg-modelos__titulo">
+                                        <strong>@modelo.Nombre</strong>
+                                        @if (modelo.Codigo == ConversacionAutomatizacionesConfigDto.AsistenteModeloPorDefecto)
+                                        {
+                                            <AlfaTag Tone="AlfaTagTone.Success">Recomendado</AlfaTag>
+                                        }
+                                    </span>
+                                    <span class="cfg-modelos__descripcion">@modelo.Descripcion</span>
+                                    <span class="cfg-modelos__consumo">@modelo.ConsumoTexto</span>
+                                </span>
+                            </button>
                         }
-                    </ul>
-                    <p class="cfg-hint">
-                        Precios oficiales de OpenAI al 26/11/2026, en dólares por millón de tokens:
-                        @foreach (var modelo in ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
-                        {
-                            <span class="cfg-modelos__precio">@modelo.Nombre US$ @Numero(modelo.UsdEntrada, "0.00") lo que lee / US$ @Numero(modelo.UsdSalida, "0.00") lo que escribe.</span>
-                        }
-                        Lo que gasta una respuesta sale de probar el asistente con las mismas charlas reales en cada modelo, tomando como referencia el consumo real de ALFA NET con el anterior (1 crédito = US$ 0,001).
-                        Precios actualizados en <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noopener">la página de precios de OpenAI</a>.
-                    </p>
+                    </div>
+                    <p class="cfg-hint">El consumo por respuesta es aproximado y varía según la extensión de cada conversación. El cambio se aplica al guardar.</p>
                 </ConversacionesConfigTarjeta>
+
+                <AlfaConfirmDialog Open="@(_modeloAConfirmar is not null)"
+                                   Tone="AlfaConfirmDialogTone.Primary"
+                                   Icon="bi-stars"
+                                   Title="@($"Cambiar al modelo {_modeloAConfirmar?.Nombre}")"
+                                   Message="@MensajeConfirmarModelo"
+                                   SecondaryMessage="Los créditos se descuentan del plan de IA contratado. El consumo que supere los créditos incluidos en el plan se factura al cierre del mes; en los planes sin excedente, el asistente se pausa al alcanzar el límite."
+                                   ConfirmLabel="Confirmar cambio"
+                                   CancelLabel="Cancelar"
+                                   OnConfirm="ConfirmarModelo"
+                                   OnCancel="() => _modeloAConfirmar = null" />
 
                 <ConversacionesConfigTarjeta Titulo="Límites" Columnas="2" Descripcion="Evitan que el asistente se extienda o que se adelante a tu equipo.">
                     <AlfaInput Id="bot-max" Label="Máximo de respuestas por conversación" Type="number"
@@ -338,14 +343,42 @@
 
     private bool IsDirty => !ConversacionesConfiguracion.AutomatizacionesEquals(Config, Original);
 
-    private static string Numero(decimal valor, string formato = "#,0.#")
-        => valor.ToString(formato, CultureInfo.GetCultureInfo("es-AR"));
+    // Elegir un modelo que consume más créditos pide confirmación (2026-11-26): el cliente tiene que saber que
+    // se descuenta de su plan y que el excedente se factura.
+    private AsistenteModeloOpcion? _modeloAConfirmar;
 
-    private static readonly IReadOnlyList<AlfaSelectOption> ModeloOptions =
-    [
-        new(string.Empty, "El que tenga el servidor (si no tiene ninguno, el Anterior)"),
-        .. ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles.Select(m => new AlfaSelectOption(m.Codigo, m.Etiqueta))
-    ];
+    private AsistenteModeloOpcion? ModeloActual
+        => ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles
+            .FirstOrDefault(m => string.Equals(m.Codigo, Config.AsistenteModeloEfectivo, StringComparison.OrdinalIgnoreCase));
+
+    private void ElegirModelo(AsistenteModeloOpcion modelo)
+    {
+        var actual = ModeloActual;
+        if (actual is not null && modelo.CreditosPorRespuesta > actual.CreditosPorRespuesta)
+            _modeloAConfirmar = modelo;
+        else
+            Config.AsistenteModelo = modelo.Codigo;
+    }
+
+    private void ConfirmarModelo()
+    {
+        if (_modeloAConfirmar is not null)
+            Config.AsistenteModelo = _modeloAConfirmar.Codigo;
+        _modeloAConfirmar = null;
+    }
+
+    private string MensajeConfirmarModelo
+    {
+        get
+        {
+            var actual = ModeloActual;
+            if (_modeloAConfirmar is null || actual is null || actual.CreditosPorRespuesta <= 0)
+                return string.Empty;
+            var veces = Math.Round(_modeloAConfirmar.CreditosPorRespuesta / actual.CreditosPorRespuesta, 0);
+            return $"El modelo {_modeloAConfirmar.Nombre} consume aproximadamente {_modeloAConfirmar.CreditosPorRespuesta.ToString("0.#", CultureInfo.GetCultureInfo("es-AR"))} créditos por respuesta, "
+                + $"unas {veces.ToString("0", CultureInfo.InvariantCulture)} veces más que el modelo {actual.Nombre}. ¿Confirmás el cambio?";
+        }
+    }
 
     private static readonly IReadOnlyList<AlfaSelectOption> PoliticaOptions =
     [

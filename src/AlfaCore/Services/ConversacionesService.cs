@@ -10155,7 +10155,7 @@ public sealed partial class ConversacionesService(
                         casoYaDerivado: casoYaDerivado,
                         temaPendiente: temaPendienteIa,
                         ultimoFueAclaracion: ultimaRespuestaFueAclaracion,
-                        modelo: config.AsistenteModelo,
+                        modelo: config.AsistenteModeloEfectivo,
                         ct: token).ConfigureAwait(false);
                     resumenCasoIa = result?.ResumenCaso ?? string.Empty;
 

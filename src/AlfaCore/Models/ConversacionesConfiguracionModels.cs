@@ -399,8 +399,8 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// cierra la conversación, evita que mezcle temas viejos. 0 = todo desde el último cierre.</summary>
     public int BotContextoHoras { get; set; } = 48;
 
-    /// <summary>Modelo de OpenAI del asistente (CONV_ASISTENTE_MODELO). Vacío = el del servidor
-    /// (variable OPENAI_MODEL) o gpt-4o-mini.</summary>
+    /// <summary>Modelo de OpenAI del asistente (CONV_ASISTENTE_MODELO). Vacío = el Estándar
+    /// (<see cref="AsistenteModeloPorDefecto"/>).</summary>
     public string AsistenteModelo { get; set; } = string.Empty;
 
     /// <summary>
@@ -413,15 +413,22 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// Se probaron también gpt-4.1-mini, gpt-4.1, gpt-5-nano, gpt-5-mini, gpt-5.4-nano y gpt-5.6-luna: más
     /// caros, más largos o con fallas (ver docs/modulos/conversaciones.md).
     /// </summary>
+    // gpt-4o-mini (el modelo hasta noviembre de 2026) quedó fuera de la lista: es peor y más caro que el
+    // Estándar. Su precio sigue en la central porque lo usan otras funciones de IA.
     public static readonly IReadOnlyList<AsistenteModeloOpcion> AsistenteModelosDisponibles =
     [
-        new("gpt-6-luna", "Recomendado", 0.10m, 0.01m, 0.50m, 0.4m,
-            "El que mejor anduvo en las pruebas con charlas reales: entiende los datos sueltos (\"2,3y4\" = cajas 2, 3 y 4), lee bien las fotos de errores, suma lo nuevo al caso y contesta corto. Cuesta menos de la mitad que el anterior."),
+        new("gpt-6-luna", "Estándar", 0.10m, 0.01m, 0.50m, 0.4m,
+            "Interpreta el contexto de la conversación y resuelve la mayoría de las consultas de atención y soporte."),
         new("gpt-6.1-terra", "Avanzado", 1.00m, 0.05m, 5.00m, 3.3m,
-            "Contesta tan bien como el recomendado, un poco más seco. Cuesta más de tres veces el anterior: sólo si el recomendado no alcanza."),
-        new("gpt-4o-mini", "Anterior", 0.15m, 0.075m, 0.60m, 1.0m,
-            "El que se usó hasta noviembre de 2026. Resuelve lo simple, pero en charlas largas repite frases y no siempre entiende el contexto.")
+            "Mayor capacidad de análisis, para conversaciones extensas o consultas de mayor complejidad.")
     ];
+
+    /// <summary>El modelo del asistente cuando la base no eligió ninguno (el Estándar).</summary>
+    public const string AsistenteModeloPorDefecto = "gpt-6-luna";
+
+    /// <summary>El modelo que usa el asistente: el elegido o, si no hay, el Estándar.</summary>
+    public string AsistenteModeloEfectivo
+        => string.IsNullOrWhiteSpace(AsistenteModelo) ? AsistenteModeloPorDefecto : AsistenteModelo.Trim();
 
     /// <summary>Lo que gastó, en promedio, una respuesta del asistente con el modelo anterior (créditos).</summary>
     public const decimal CreditosPorRespuestaEconomico = 1.0m;
@@ -702,6 +709,6 @@ public sealed record AsistenteModeloOpcion(string Codigo, string Nombre, decimal
     /// <summary>Créditos aproximados por respuesta del asistente.</summary>
     public decimal CreditosPorRespuesta => Math.Round(ConversacionAutomatizacionesConfigDto.CreditosPorRespuestaEconomico * VecesElEconomico, 1);
 
-    /// <summary>Texto del desplegable.</summary>
-    public string Etiqueta => $"{Nombre} ({Codigo}) · ≈ {CreditosPorRespuesta.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))} crédito{(CreditosPorRespuesta == 1 ? string.Empty : "s")} por respuesta";
+    /// <summary>Consumo para mostrar: "Aprox. 0,4 créditos por respuesta".</summary>
+    public string ConsumoTexto => $"Aprox. {CreditosPorRespuesta.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))} crédito{(CreditosPorRespuesta == 1 ? string.Empty : "s")} por respuesta";
 }
