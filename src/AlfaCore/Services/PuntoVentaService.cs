@@ -19,7 +19,8 @@ public sealed class PuntoVentaService(
     IArcaConfigService arcaConfigService,
     IArcaFacturacionElectronicaService arcaFacturacion,
     IArticuloPrecioResolverService articuloPrecioResolver,
-    ILogger<PuntoVentaService> logger) : IPuntoVentaService
+    ILogger<PuntoVentaService> logger,
+    ICentralBasesService? centralBasesService = null) : IPuntoVentaService
 {
     private const string ModuleName = "PuntoVenta";
     private const string DefaultTc = "FC";
@@ -170,7 +171,7 @@ public sealed class PuntoVentaService(
                 EmailCuenta = await TryReadConfigValueAsync(cn, "EMAIL_CTA", token),
                 EmailPassword = await TryReadConfigValueAsync(cn, "EMAIL_PASS", token),
                 EmailSsl = await TryReadConfigValueAsync(cn, "EMAIL_SSL", token),
-                FtpCodigoCta = await TryReadConfigValueAsync(cn, "FTP_CODIGOCTA", token),
+                FtpCodigoCta = await ResolveFtpCodigoCtaAsync(cn, token),
                 MedioDePagoContado = await TryReadConfigValueAsync(cn, "MedioDePagoContado", token),
                 RecargoTarjetaSinIva = ParseBooleanConfig(
                     await TryReadConfigValueAsync(cn, "cfgRecargoTJTSinIVA", token), false),
@@ -3459,6 +3460,30 @@ public sealed class PuntoVentaService(
             return (row.SucursalX.ToString("0000"), "V_TA_CPTE · sucursal X");
 
         return (DefaultSucursal, "Default general");
+    }
+
+    /// <summary>
+    /// Código de cliente del FTP de imágenes: la clave FTP_CODIGOCTA de la base o, si nunca se cargó, el
+    /// idcliente de la base activa en ALFA_CENTRAL (mismo criterio que el maestro de artículos). Sin esto el
+    /// punto de venta, el carrito y los catálogos no arman la dirección de las imágenes.
+    /// </summary>
+    private async Task<string> ResolveFtpCodigoCtaAsync(SqlConnection cn, CancellationToken token)
+    {
+        var configurado = await TryReadConfigValueAsync(cn, "FTP_CODIGOCTA", token);
+        if (!string.IsNullOrWhiteSpace(configurado) || centralBasesService is null)
+            return configurado;
+        var idBase = sessionService.GetActiveSession()?.BaseId;
+        if (idBase is not > 0)
+            return configurado;
+        try
+        {
+            return (await centralBasesService.GetByIdAsync(idBase.Value, token))?.IdCliente?.Trim() ?? string.Empty;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo resolver FTP_CODIGOCTA desde ALFA_CENTRAL para la base {IdBase}.", idBase);
+            return string.Empty;
+        }
     }
 
     private static string NormalizeSucursal(string value)
