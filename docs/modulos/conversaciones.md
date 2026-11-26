@@ -339,6 +339,26 @@ audios, hasta la primera respuesta de una persona del equipo. Salieron dos falla
   (`OPENAI_MODEL` o gpt-4o-mini), o gpt-4o-mini / gpt-4.1-mini / gpt-4.1. Sólo modelos de esa lista, porque cada
   uno necesita su precio en `ALFA_CENTRAL.IA_PRECIO_MODELO` para contar en el tope de créditos; `CentralIaSchema`
   carga los de gpt-4.1 y gpt-4.1-mini (precio de lista de OpenAI, verificar) y se vuelve a aplicar si faltan.
+
+#### Comparación de modelos (2026-11-26)
+
+Mismas 6 charlas (impresora con datos sumados, pedido de desarrollo, "2,3y4", calculadora, foto de un error,
+charla social) con el bot completo en la copia local, 20 respuestas por modelo. Costo medido por respuesta
+(1 = gpt-4o-mini) y precios de lista de https://developers.openai.com/api/docs/pricing:
+
+| Modelo | Costo | Resultado |
+|---|---|---|
+| gpt-6-luna | 0,4 | El mejor: entiende datos sueltos, lee bien fotos, suma al caso, corto. **Recomendado.** |
+| gpt-6.1-terra | 3,3 | Igual de bien, más seco. Avanzado. |
+| gpt-4o-mini | 1 | Genérico; "2,3y4" lo tomó como módulos. Anterior. |
+| gpt-4.1 | 8,9 | Bien, pero se ofrece a "revisarlo con vos". Fuera de la lista. |
+| gpt-5-nano / gpt-5-mini | 0,2 / 1,2 | Respuestas largas con listas de preguntas; gpt-5-mini se ofrece a calcular. Fuera. |
+| gpt-5.4-nano | 0,8 | Al saludo responde con la lista de módulos. Fuera. |
+| gpt-5.6-luna | 0,8 | Bien, pero una respuesta salió con una palabra en cirílico. Fuera. |
+
+Los modelos que "piensan" (gpt-5, gpt-5-mini/nano, gpt-5.6, gpt-6) necesitan `reasoning_effort`
+(`EsfuerzoRazonamiento`): sin él tardaban 10-13 s y gastaban hasta 1.800 tokens de más, y gpt-5.6 / gpt-6
+rechazan las herramientas en chat/completions.
 - **Si derivó y todavía no contestó nadie, responde según lo nuevo.** Antes callaba todo. Ahora la IA recibe
   que el caso ya está con el equipo (sección "CASO YA PASADO AL EQUIPO" del prompt) y contesta: confirma que
   suma el dato al caso, agradece, resuelve lo que puede o deriva un tema distinto. Sólo calla si la IA no

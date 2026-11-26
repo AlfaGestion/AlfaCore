@@ -59,7 +59,7 @@ IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
     VALUES (N'gpt-4o-mini', '2024-07-18', 0.15, 0.075, 0.60, N'Precio de lista OpenAI. Modelo por defecto si no hay OPENAI_MODEL.');
 
--- Modelos que se pueden elegir para el asistente (CONV_ASISTENTE_MODELO, 2026-11-26). Sin su fila el consumo
+-- Modelos que se pueden elegir para el asistente (CONV_ASISTENTE_MODELO, 2026-11-26; gpt-4.1 y gpt-4.1-mini se probaron y quedan con precio por si alguno los usa). Sin su fila el consumo
 -- quedaría sin precio y no contaría en el tope de créditos. "gpt-4.1-mini" gana sobre "gpt-4.1" (prefijo más largo).
 IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
@@ -68,6 +68,14 @@ IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1')
 IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1-mini')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
     VALUES (N'gpt-4.1-mini', '2025-04-14', 0.40, 0.10, 1.60, N'Precio de lista OpenAI. Asistente "Intermedio".');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6-luna')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-6-luna', '2026-01-01', 0.10, 0.01, 0.50, N'Precio de lista OpenAI (26/11/2026). Asistente "Recomendado".');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6.1-terra')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-6.1-terra', '2026-01-01', 1.00, 0.05, 5.00, N'Precio de lista OpenAI (26/11/2026). Asistente "Avanzado".');
 
 -- Sin esta fila, el prefijo "gpt-4o-mini" lo cobraría con la tarifa de texto (los tokens de entrada son de audio).
 IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini-transcribe')
@@ -245,6 +253,8 @@ GO
            AND OBJECT_ID(N'dbo.V_IA_USO_DIARIO', N'V') IS NOT NULL
             SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1')
                          AND EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4.1-mini')
+                         AND EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6-luna')
+                         AND EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-6.1-terra')
                         THEN 1 ELSE 0 END;
         ELSE
             SELECT 0;

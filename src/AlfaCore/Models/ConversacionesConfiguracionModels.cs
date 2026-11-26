@@ -406,22 +406,24 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>
     /// Modelos que se pueden elegir. Cada uno necesita su precio en ALFA_CENTRAL.IA_PRECIO_MODELO
     /// (CentralIaSchema) para que su consumo cuente en el tope de créditos. Precios de lista de OpenAI
-    /// (USD por millón de tokens, entrada / salida) verificados el 26/11/2026 en
-    /// https://developers.openai.com/api/docs/pricing. La comparación con el económico sale de esos precios;
-    /// lo que cuesta una respuesta, del consumo real del bot de ALFANET en noviembre de 2026
-    /// (976 respuestas, US$ 1,01: unos 1.000 créditos).
+    /// (USD por millón de tokens: entrada / entrada en caché / salida) verificados el 26/11/2026 en
+    /// https://developers.openai.com/api/docs/pricing. "Veces el anterior" es el costo medido por respuesta
+    /// con el bot completo y las mismas 6 charlas para cada modelo (2026-11-26, 20 respuestas por modelo);
+    /// el anterior (gpt-4o-mini) gastó 1 crédito por respuesta en el consumo real de ALFANET de noviembre.
+    /// Se probaron también gpt-4.1-mini, gpt-4.1, gpt-5-nano, gpt-5-mini, gpt-5.4-nano y gpt-5.6-luna: más
+    /// caros, más largos o con fallas (ver docs/modulos/conversaciones.md).
     /// </summary>
     public static readonly IReadOnlyList<AsistenteModeloOpcion> AsistenteModelosDisponibles =
     [
-        new("gpt-4o-mini", "Económico", 0.15m, 0.60m,
-            "El de siempre. Resuelve bien lo simple; en charlas largas a veces repite frases o no termina de seguir el contexto."),
-        new("gpt-4.1-mini", "Intermedio", 0.40m, 1.60m,
-            "En nuestras pruebas con charlas reales no mejoró de forma clara al económico."),
-        new("gpt-4.1", "Avanzado", 2.00m, 8.00m,
-            "En nuestras pruebas fue el que mejor siguió la charla: suma los datos nuevos al caso, entiende la urgencia y no repite.")
+        new("gpt-6-luna", "Recomendado", 0.10m, 0.01m, 0.50m, 0.4m,
+            "El que mejor anduvo en las pruebas con charlas reales: entiende los datos sueltos (\"2,3y4\" = cajas 2, 3 y 4), lee bien las fotos de errores, suma lo nuevo al caso y contesta corto. Cuesta menos de la mitad que el anterior."),
+        new("gpt-6.1-terra", "Avanzado", 1.00m, 0.05m, 5.00m, 3.3m,
+            "Contesta tan bien como el recomendado, un poco más seco. Cuesta más de tres veces el anterior: sólo si el recomendado no alcanza."),
+        new("gpt-4o-mini", "Anterior", 0.15m, 0.075m, 0.60m, 1.0m,
+            "El que se usó hasta noviembre de 2026. Resuelve lo simple, pero en charlas largas repite frases y no siempre entiende el contexto.")
     ];
 
-    /// <summary>Lo que gasta, en promedio, una respuesta del asistente con el modelo económico (créditos).</summary>
+    /// <summary>Lo que gastó, en promedio, una respuesta del asistente con el modelo anterior (créditos).</summary>
     public const decimal CreditosPorRespuestaEconomico = 1.0m;
 
     /// <summary>Cuándo el bot abre un ticket al derivar (texto para la IA). Vacío = criterio por defecto
@@ -694,11 +696,9 @@ public sealed class ConversacionReglaDto
 }
 
 /// <summary>Un modelo de OpenAI que se puede elegir para el asistente, con su precio de lista (USD por millón de tokens).</summary>
-public sealed record AsistenteModeloOpcion(string Codigo, string Nombre, decimal UsdEntrada, decimal UsdSalida, string Descripcion)
+public sealed record AsistenteModeloOpcion(string Codigo, string Nombre, decimal UsdEntrada, decimal UsdEntradaCache, decimal UsdSalida,
+    decimal VecesElEconomico, string Descripcion)
 {
-    /// <summary>Cuántas veces el costo del económico (gpt-4o-mini).</summary>
-    public decimal VecesElEconomico => Math.Round(UsdSalida / 0.60m, 1);
-
     /// <summary>Créditos aproximados por respuesta del asistente.</summary>
     public decimal CreditosPorRespuesta => Math.Round(ConversacionAutomatizacionesConfigDto.CreditosPorRespuestaEconomico * VecesElEconomico, 1);
 

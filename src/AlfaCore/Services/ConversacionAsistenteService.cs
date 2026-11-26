@@ -394,12 +394,31 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (temperature.HasValue && SupportsCustomTemperature(model))
             payload["temperature"] = temperature.Value;
 
+        if (EsfuerzoRazonamiento(model) is { } esfuerzo)
+            payload["reasoning_effort"] = esfuerzo;
+
         return payload;
     }
 
-    private static bool SupportsCustomTemperature(string? model)
+    // gpt-5, gpt-5-mini y gpt-5-nano (con o sin fecha): sólo aceptan la temperatura por defecto.
+    private static readonly Regex ModeloGpt5Original = new(@"^gpt-5(-mini|-nano)?(-\d{4}-\d{2}-\d{2})?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    internal static bool SupportsCustomTemperature(string? model)
         => string.IsNullOrWhiteSpace(model)
-           || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
+           || !(model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase) || ModeloGpt5Original.IsMatch(model.Trim()));
+
+    /// <summary>
+    /// Modelos que "piensan" antes de contestar (2026-11-26, prueba directa contra OpenAI): sin bajarles el
+    /// razonamiento tardaban 10-13 s y gastaban hasta 1.800 tokens de más por respuesta, y gpt-5.6 / gpt-6
+    /// rechazan las herramientas en chat/completions. Para un chat alcanza con la respuesta directa.
+    /// </summary>
+    internal static string? EsfuerzoRazonamiento(string? model)
+    {
+        var m = (model ?? string.Empty).Trim();
+        if (m.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase) || m.StartsWith("gpt-6", StringComparison.OrdinalIgnoreCase))
+            return "none";
+        return ModeloGpt5Original.IsMatch(m) ? "minimal" : null;
+    }
 
     internal const string DatoSinCargar = "(sin dato cargado)";
 

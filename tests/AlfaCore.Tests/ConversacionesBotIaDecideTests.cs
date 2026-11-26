@@ -229,7 +229,7 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.Contains("AND (@Horas <= 0 OR FechaHora >= DATEADD(hour, -@Horas, GETDATE()))", source, StringComparison.Ordinal);
         // Modelo de la base, sólo de la lista (cada uno con precio en la central).
         Assert.Contains("modelo: config.AsistenteModelo,", source, StringComparison.Ordinal);
-        Assert.Equal("gpt-4.1", ConversacionesConfigService.NormalizarModeloAsistente(" GPT-4.1 "));
+        Assert.Equal("gpt-6-luna", ConversacionesConfigService.NormalizarModeloAsistente(" GPT-6-LUNA "));
         Assert.Equal(string.Empty, ConversacionesConfigService.NormalizarModeloAsistente("gpt-5-turbo-inventado"));
         foreach (var modelo in AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles)
         {
@@ -238,12 +238,32 @@ public sealed class ConversacionesBotIaDecideTests
             Assert.Contains($"VALUES (N'{modelo.Codigo}', ", CentralIaSchema.Script, StringComparison.Ordinal);
             Assert.Contains(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{modelo.UsdEntrada:0.00}, "), CentralIaSchema.Script, StringComparison.Ordinal);
         }
-        var avanzado = AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles.Single(m => m.Codigo == "gpt-4.1");
-        Assert.Equal(13.3m, avanzado.VecesElEconomico);
-        Assert.Equal("Avanzado (gpt-4.1) · ≈ 13,3 créditos por respuesta", avanzado.Etiqueta);
+        var recomendado = AlfaCore.Models.ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles[0];
+        Assert.Equal("gpt-6-luna", recomendado.Codigo);
+        Assert.Equal("Recomendado (gpt-6-luna) · ≈ 0,4 créditos por respuesta", recomendado.Etiqueta);
+        Assert.Contains("N'gpt-6.1-terra')", CentralIaSchema.VerificacionSql, StringComparison.Ordinal);
         Assert.Contains("N'gpt-4.1-mini')", CentralIaSchema.VerificacionSql, StringComparison.Ordinal);
         // No se ofrece a hacer lo que sólo hace una persona.
         Assert.Contains("No te ofrezcas a revisar, probar, verificar, configurar o ver algo junto con el cliente", Prompt(), StringComparison.Ordinal);
+    }
+
+    // Prueba directa contra OpenAI (2026-11-26): los modelos que "piensan" tardaban 10-13 s y gastaban de más,
+    // y gpt-5.6 / gpt-6 rechazan las herramientas si no se les baja el razonamiento.
+    [Theory]
+    [InlineData("gpt-4o-mini", true, null)]
+    [InlineData("gpt-4.1", true, null)]
+    [InlineData("gpt-5.4-mini", true, null)]
+    [InlineData("gpt-5.4-nano", true, null)]
+    [InlineData("gpt-5", false, "minimal")]
+    [InlineData("gpt-5-mini", false, "minimal")]
+    [InlineData("gpt-5-nano-2025-08-07", false, "minimal")]
+    [InlineData("gpt-5.6-luna", false, "none")]
+    [InlineData("gpt-6-luna", true, "none")]
+    [InlineData("gpt-6.1-terra", true, "none")]
+    public void ModelosNuevos_TemperaturaYRazonamiento(string modelo, bool temperatura, string? esfuerzo)
+    {
+        Assert.Equal(temperatura, ConversacionAsistenteService.SupportsCustomTemperature(modelo));
+        Assert.Equal(esfuerzo, ConversacionAsistenteService.EsfuerzoRazonamiento(modelo));
     }
 
     private static string FindRepoRoot()
