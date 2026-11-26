@@ -390,7 +390,8 @@ public sealed class PuntoVentaService(
 
             var rows = (await cn.QueryAsync<PuntoVentaRubroDto>(new CommandDefinition("""
                 SELECT LTRIM(RTRIM(IdRubro)) AS IdRubro,
-                       ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion
+                       ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion,
+                       COLOR AS Color
                 FROM dbo.V_TA_Rubros
                 ORDER BY Descripcion, IdRubro;
                 """, cancellationToken: token))).ToList();

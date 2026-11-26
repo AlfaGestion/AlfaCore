@@ -253,6 +253,11 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!string.IsNullOrWhiteSpace(_openModuleKey))
+        {
+            try { await JS.InvokeVoidAsync("alfaHomePositionPanel"); } catch { }
+        }
+
         if (!firstRender)
             return;
 
