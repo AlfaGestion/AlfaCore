@@ -422,7 +422,7 @@ public sealed class ActualizacionesService(
         ["2026-11-03-005__compras_carga_servicios_menu_web.sql"] = "2026-11-03-020__compras_carga_servicios_menu_web.sql",
         ["2026-11-03-006__compras_registro_operaciones.sql"] = "2026-11-03-021__compras_registro_operaciones.sql",
         ["2026-11-24-001__ventas_pos_mesas_formato.sql"] = "2026-11-24-004__ventas_pos_mesas_formato.sql",
-        ["2026-11-26-020__archivos_tabla_comprobantes_menu_web.sql"] = "2026-11-26-012__archivos_tabla_comprobantes_menu_web.sql",
+        ["2026-11-26-012__archivos_tabla_comprobantes_menu_web.sql"] = "2026-11-26-020__archivos_tabla_comprobantes_menu_web.sql",
         ["2026-11-26-004__ventas_pos_salon_predeterminado.sql"] = "2026-11-26-021__ventas_pos_salon_predeterminado.sql",
         ["2026-11-16-001__ventas_pos_puntoventa_rubros_lista.sql"] = "2026-11-16-002__ventas_pos_puntoventa_rubros_lista.sql",
         ["2026-11-17-001__ventas_pos_turno_transferencia.sql"] = "2026-11-18-080__ventas_pos_turno_transferencia.sql",
@@ -446,8 +446,8 @@ public sealed class ActualizacionesService(
         ["2026-11-26-003__ayuda_ia_historial.sql"] = "2026-11-26-010__ayuda_ia_historial.sql",
         // Ese mismo día otros dos scripts usaron la 003; las bases que ya pasaron la 003 no los corrían nunca.
         ["2026-11-26-003__ventas_pos_catalogo_top.sql"] = "2026-11-26-011__ventas_pos_catalogo_top.sql",
-        // Aplicado en ALFANET desde una copia local con la 003 y todavía no publicado: se publica como 012.
-        ["2026-11-26-003__archivos_tabla_comprobantes_menu_web.sql"] = "2026-11-26-012__archivos_tabla_comprobantes_menu_web.sql",
+        // Aplicado en ALFANET desde una copia local con la 003; se publicó como 020 (rama feature/mcp-dir-consulta-ia).
+        ["2026-11-26-003__archivos_tabla_comprobantes_menu_web.sql"] = "2026-11-26-020__archivos_tabla_comprobantes_menu_web.sql",
     };
 
     /// <summary>

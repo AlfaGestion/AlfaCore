@@ -9641,6 +9641,13 @@ public sealed partial class ConversacionesService(
             WHERE IdConversacion = @Id AND Direction = N'SALIENTE';
             IF @Atendido > @Desde SET @Desde = @Atendido;
         END
+        -- Lo de antes del último cierre ya es otra charla: "Hola" después de cerrar recibía la respuesta a una
+        -- pregunta vieja que había quedado sin contestar (ALFANET, 2026-11-26).
+        DECLARE @UltimoCierre bigint;
+        SELECT @UltimoCierre = MAX(IdMensaje) FROM dbo.CONV_MENSAJES
+        WHERE IdConversacion = @Id AND Direction = N'NOTA_INTERNA' AND MessageType = N'SYSTEM'
+          AND (Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%');
+        IF ISNULL(@UltimoCierre, 0) > @Desde SET @Desde = @UltimoCierre;
         """;
 
     private void AgregarParametrosDesdeSinResponder(SqlCommand cmd, long idConversacion, long? desdeIdMensaje)
@@ -10046,7 +10053,11 @@ public sealed partial class ConversacionesService(
                 // archivo estuviera sano. Se repregunta qué necesita (ACLARA) sin llamar al modelo.
                 var aclaracionMediaSinTexto = ConstruirAclaracionMediaSinTexto(texto);
                 var usaKnowledge = aclaracionMediaSinTexto is null && !EsMensajeSocial(texto) && texto != TextoImagenSinTexto
-                    && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                    && config.AsistenteUsaKnowledge
+                    // EnsureConfiguredAsync lee la configuración si hace falta. IsConfigured sólo mira lo ya cargado,
+                    // y cada mensaje de WhatsApp crea el servicio de cero: el bot nunca consultaba AlfaKnowledge
+                    // (ALFANET, 2026-11-26).
+                    && await alfaKnowledgeService.EnsureConfiguredAsync(token).ConfigureAwait(false);
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
                     : new AsistenteKnowledgeContext();
