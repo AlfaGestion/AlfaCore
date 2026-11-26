@@ -4105,15 +4105,15 @@ public sealed partial class ConversacionesService(
                     SistemaAccion,
                     Observaciones
                 )
-                VALUES
-                (
+                SELECT
                     @IdConversacion,
                     GETDATE(),
                     @IdTecnico,
-                    @UsuarioAccion,
-                    @SistemaAccion,
+                    -- Las asignaciones del sistema (reglas, SLA: "AlfaCore") van sin usuario: la FK a TA_USUARIOS
+                    -- (FK_CONV_ASIGNACIONES_USUARIO_ACCION) las rechazaba y cortaba el proceso (2026-11-26).
+                    CASE WHEN @UsuarioAccion IS NULL OR @UsuarioAccion = N'AlfaCore' THEN NULL ELSE @UsuarioAccion END,
+                    CASE WHEN @UsuarioAccion IS NULL OR @UsuarioAccion = N'AlfaCore' THEN NULL ELSE @SistemaAccion END,
                     @Observaciones
-                )
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -12128,8 +12128,10 @@ public sealed partial class ConversacionesService(
             WHERE IdConversacion = @IdConversacion
               AND NULLIF(LTRIM(RTRIM(ISNULL(IdTecnico, N''))), N'') IS NULL;
 
+            -- Sin usuario: es del sistema. UsuarioAccion/SistemaAccion tienen FK a TA_USUARIOS en las bases
+            -- (FK_CONV_ASIGNACIONES_USUARIO_ACCION) y "AlfaCore"/"BOT" no es un usuario: el bot fallaba (ALFANET, 2026-11-26).
             INSERT INTO dbo.CONV_ASIGNACIONES (IdConversacion, FechaHora, IdTecnico, UsuarioAccion, SistemaAccion, Observaciones)
-            VALUES (@IdConversacion, GETDATE(), @IdTecnico, N'AlfaCore', N'BOT', @Observaciones);
+            VALUES (@IdConversacion, GETDATE(), @IdTecnico, NULL, NULL, @Observaciones);
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct).ConfigureAwait(false);
@@ -12460,9 +12462,14 @@ public sealed partial class ConversacionesService(
                 -- dentro de las últimas 24 h. En WhatsApp cada cliente tiene UNA conversación para
                 -- siempre: contar desde el principio dejaría al asistente mudo para siempre con los
                 -- clientes habituales (2026-10-15).
+                -- También desde el último cierre: una charla nueva arranca de cero. Antes contaba las de antes del
+                -- cierre y el bot se callaba sin aviso en la charla nueva (ALFANET, 2026-11-26).
                 (SELECT COUNT(1) FROM dbo.CONV_MENSAJES b
                  WHERE b.IdConversacion = @Id AND b.Direction = N'SALIENTE' AND {AutorMensajeSql("b")} = N'BOT'
                    AND b.FechaHora >= DATEADD(hour, -24, GETDATE())
+                   AND b.IdMensaje > ISNULL((SELECT MAX(z.IdMensaje) FROM dbo.CONV_MENSAJES z
+                                             WHERE z.IdConversacion = @Id AND z.Direction = N'NOTA_INTERNA' AND z.MessageType = N'SYSTEM'
+                                               AND (z.Texto LIKE N'%cerró la conversación%' OR z.Texto LIKE N'%cerro la conversacion%')), 0)
                    AND b.IdMensaje > ISNULL((SELECT MAX(h.IdMensaje) FROM dbo.CONV_MENSAJES h
                                              WHERE h.IdConversacion = @Id AND h.Direction = N'SALIENTE'
                                                AND {AutorMensajeSql("h")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0)),
