@@ -270,6 +270,18 @@ public sealed class ConversacionesBotIaDecideTests
         Assert.Equal(esfuerzo, ConversacionAsistenteService.EsfuerzoRazonamiento(modelo));
     }
 
+    // ALFANET (2026-11-26): con 60 mensajes de charla AlfaKnowledge tardaba 31 s y AlfaCore cortaba a los 30;
+    // el bot respondía "no tengo cargados los pasos" aunque AlfaKnowledge tenía el documento.
+    [Fact]
+    public void AlfaKnowledge_RecibeSoloLosUltimosMensajes()
+    {
+        Assert.Equal(8, new AlfaCore.Configuration.AlfaKnowledgeOptions().MensajesContexto);
+        var servicio = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "AlfaKnowledgeSuggestionService.cs"));
+        Assert.Contains(".TakeLast(Math.Max(1, settings.MensajesContexto))", servicio, StringComparison.Ordinal);
+        Assert.Contains("'CONV_ALFAKNOWLEDGE_MENSAJES_CONTEXTO'", servicio, StringComparison.Ordinal);
+        Assert.DoesNotContain(".TakeLast(60)", servicio, StringComparison.Ordinal);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

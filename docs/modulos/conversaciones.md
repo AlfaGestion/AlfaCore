@@ -346,6 +346,13 @@ respuesta) y "Avanzado" (gpt-6.1-terra, ≈ 3,3). Sin elegir, el asistente usa e
 de IA). Pasar a un modelo que consume más pide confirmación (`AlfaConfirmDialog` con `Tone=Primary`) avisando
 que se descuenta del plan y que el excedente se factura al cierre del mes.
 
+**AlfaKnowledge (2026-11-26):** a AlfaKnowledge se le mandan sólo los últimos `CONV_ALFAKNOWLEDGE_MENSAJES_CONTEXTO`
+mensajes de la charla (8 por defecto; antes 60). En ALFANET, con 60 tardaba 31 s y AlfaCore corta a los
+`CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS` (30): el bot quedaba sin el conocimiento y contestaba "no tengo cargados los pasos".
+Con 6 a 8 mensajes tarda unos 17 s. Ojo: el endpoint externo (`/api/external/suggest-reply`) no elige los mismos
+documentos que el chat propio de AlfaKnowledge (para "cómo hago una nota de crédito" trae la guía del cajero del
+punto de venta, el chat trae "Manejo de Stock con Alfa Gestión - 04"); eso se corrige del lado de AlfaKnowledge.
+
 #### Comparación de modelos (2026-11-26)
 
 Mismas 6 charlas (impresora con datos sumados, pedido de desarrollo, "2,3y4", calculadora, foto de un error,
