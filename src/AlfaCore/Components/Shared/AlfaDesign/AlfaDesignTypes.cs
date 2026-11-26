@@ -22,6 +22,13 @@ public enum AlfaDialogSize
     Xl
 }
 
+/// <summary>Estilo de AlfaConfirmDialog: Danger para bajas, Primary para confirmar un cambio.</summary>
+public enum AlfaConfirmDialogTone
+{
+    Danger,
+    Primary
+}
+
 public enum AlfaTagTone
 {
     Neutral,

@@ -69,6 +69,75 @@
     grid-column: 1 / -1;
 }
 
+/* Modelos de IA del asistente (2026-11-26): opciones como tarjetas de selección. */
+.cfg-card__body ::deep .cfg-modelos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: .6rem;
+}
+
+.cfg-card__body ::deep .cfg-modelos__opcion {
+    display: flex;
+    align-items: flex-start;
+    gap: .65rem;
+    width: 100%;
+    padding: .75rem .85rem;
+    border: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .28));
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+
+.cfg-card__body ::deep .cfg-modelos__opcion:hover {
+    border-color: var(--alfa-border-strong, rgba(148, 163, 184, .5));
+}
+
+.cfg-card__body ::deep .cfg-modelos__opcion.is-elegido {
+    border-color: var(--alfa-accent, #14b8a6);
+    background: rgb(20 184 166 / 8%);
+}
+
+.cfg-card__body ::deep .cfg-modelos__marca {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    border: 2px solid var(--alfa-text-secondary, #a6abb5);
+    border-radius: 50%;
+}
+
+.cfg-card__body ::deep .cfg-modelos__opcion.is-elegido .cfg-modelos__marca {
+    border-color: var(--alfa-accent, #14b8a6);
+    box-shadow: inset 0 0 0 3px var(--alfa-bg-surface, #1a1d24), inset 0 0 0 8px var(--alfa-accent, #14b8a6);
+}
+
+.cfg-card__body ::deep .cfg-modelos__texto {
+    display: grid;
+    gap: .25rem;
+}
+
+.cfg-card__body ::deep .cfg-modelos__titulo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+}
+
+.cfg-card__body ::deep .cfg-modelos__descripcion,
+.cfg-card__body ::deep .cfg-modelos__consumo {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.45;
+}
+
+.cfg-card__body ::deep .cfg-modelos__consumo {
+    font-weight: 650;
+}
+
 .cfg-card__body ::deep .cfg-hint {
     margin: 0;
     color: var(--alfa-text-secondary, #a6abb5);

@@ -1002,6 +1002,12 @@ public sealed class ConversacionesConfigService(
                 // 0 es un valor válido (no agrupa): ReadIntValue lo tomaría como "sin cargar".
                 BotAgruparSegundos = int.TryParse(ReadValue(values, "CONV_BOT_AGRUPAR_SEGUNDOS", string.Empty), out var agrupar)
                     ? Math.Clamp(agrupar, 0, 60) : 6,
+                BotPausaTrasTecnicoHoras = int.TryParse(ReadValue(values, "CONV_BOT_PAUSA_TECNICO_HORAS", string.Empty), out var pausaTecnico)
+                    ? Math.Clamp(pausaTecnico, 0, 720) : 24,
+                BotTicketCriterio = ReadValue(values, "CONV_BOT_TICKET_CRITERIO", string.Empty),
+                BotContextoHoras = int.TryParse(ReadValue(values, "CONV_BOT_CONTEXTO_HORAS", string.Empty), out var contextoHoras)
+                    ? Math.Clamp(contextoHoras, 0, 2160) : 48,
+                AsistenteModelo = NormalizarModeloAsistente(ReadValue(values, "CONV_ASISTENTE_MODELO", string.Empty)),
                 BotCanales = ParseBotCanales(ReadValue(values, "CONV_BOT_CANALES", string.Empty)),
                 BotGeneraTicket = ReadValue(values, "CONV_BOT_GENERA_TICKET", string.Empty, "1") != "0",
                 BotTicketEtiqueta = ReadValue(values, "CONV_BOT_TICKET_ETIQUETA", string.Empty, "Bot"),
@@ -1161,6 +1167,10 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_BOT_CANALES", FormatBotCanales(config.BotCanales)));
             items.Add(("CONV_BOT_GENERA_TICKET", config.BotGeneraTicket ? "1" : "0"));
             items.Add(("CONV_BOT_TICKET_ETIQUETA", (config.BotTicketEtiqueta ?? string.Empty).Trim()));
+            items.Add(("CONV_BOT_TICKET_CRITERIO", (config.BotTicketCriterio ?? string.Empty).Trim()));
+            items.Add(("CONV_BOT_PAUSA_TECNICO_HORAS", Math.Clamp(config.BotPausaTrasTecnicoHoras, 0, 720).ToString(inv)));
+            items.Add(("CONV_BOT_CONTEXTO_HORAS", Math.Clamp(config.BotContextoHoras, 0, 2160).ToString(inv)));
+            items.Add(("CONV_ASISTENTE_MODELO", NormalizarModeloAsistente(config.AsistenteModelo)));
             items.Add(("CONV_BOT_WEB_PIDE_DATOS", config.BotWebPideDatos ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()));
@@ -3173,6 +3183,14 @@ public sealed class ConversacionesConfigService(
     // CONV_BOT_CANALES: lista de canales separada por coma. Sin valor = todos (compatibilidad con
     // bases que ya tenían el bot activo); "NINGUNO" = el bot no responde en ningún canal.
     internal const string BotCanalesNinguno = "NINGUNO";
+
+    /// <summary>Sólo los modelos de la lista (tienen precio cargado); cualquier otro valor = el del servidor.</summary>
+    internal static string NormalizarModeloAsistente(string? value)
+    {
+        var v = (value ?? string.Empty).Trim();
+        return ConversacionAutomatizacionesConfigDto.AsistenteModelosDisponibles
+            .FirstOrDefault(m => string.Equals(m.Codigo, v, StringComparison.OrdinalIgnoreCase))?.Codigo ?? string.Empty;
+    }
 
     internal static List<string> ParseBotCanales(string? value)
     {

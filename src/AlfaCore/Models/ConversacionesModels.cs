@@ -511,6 +511,29 @@ public sealed class ConversacionEventoInternoRequest
     public string? SistemaAccion { get; set; }
 }
 
+/// <summary>Pausar o reactivar a mano el asistente en una conversación (queda como evento en la charla).</summary>
+public sealed class ConversacionAsistentePausaRequest
+{
+    public long IdConversacion { get; set; }
+    public bool Pausar { get; set; }
+    public string? IdTecnicoAutor { get; set; }
+    public string? NombreTecnicoAccion { get; set; }
+    public string? UsuarioAccion { get; set; }
+    public string? SistemaAccion { get; set; }
+}
+
+/// <summary>Si el asistente puede responder en la conversación y, si no, por qué.</summary>
+public enum ConversacionAsistenteEstado
+{
+    /// <summary>El asistente está apagado en la base (o no aplica al canal).</summary>
+    NoAplica = 0,
+    Activo = 1,
+    /// <summary>Alguien del equipo lo pausó a mano; vuelve al reactivarlo o al cerrar la conversación.</summary>
+    PausadoAMano = 2,
+    /// <summary>Una persona del equipo le contestó al cliente o se asignó la charla: el caso es suyo.</summary>
+    AtiendeElEquipo = 3
+}
+
 public sealed class ConversacionAsignacionRequest
 {
     public long IdConversacion { get; set; }

@@ -390,6 +390,53 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// con una sola respuesta. 0 = contesta cada mensaje apenas llega.</summary>
     public int BotAgruparSegundos { get; set; } = 6;
 
+    /// <summary>Horas que el bot queda callado en una conversación después de que una persona del equipo le
+    /// contesta al cliente o se asigna la charla: el caso es suyo. Se corta antes si la conversación se cierra o
+    /// si alguien reactiva el asistente. 0 = sólo calla ante el mensaje que ya contestó la persona.</summary>
+    public int BotPausaTrasTecnicoHoras { get; set; } = 24;
+
+    /// <summary>Horas hacia atrás que lee el asistente de la charla actual (desde el último cierre). Si nadie
+    /// cierra la conversación, evita que mezcle temas viejos. 0 = todo desde el último cierre.</summary>
+    public int BotContextoHoras { get; set; } = 48;
+
+    /// <summary>Modelo de OpenAI del asistente (CONV_ASISTENTE_MODELO). Vacío = el Estándar
+    /// (<see cref="AsistenteModeloPorDefecto"/>).</summary>
+    public string AsistenteModelo { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Modelos que se pueden elegir. Cada uno necesita su precio en ALFA_CENTRAL.IA_PRECIO_MODELO
+    /// (CentralIaSchema) para que su consumo cuente en el tope de créditos. Precios de lista de OpenAI
+    /// (USD por millón de tokens: entrada / entrada en caché / salida) verificados el 26/11/2026 en
+    /// https://developers.openai.com/api/docs/pricing. "Veces el anterior" es el costo medido por respuesta
+    /// con el bot completo y las mismas 6 charlas para cada modelo (2026-11-26, 20 respuestas por modelo);
+    /// el anterior (gpt-4o-mini) gastó 1 crédito por respuesta en el consumo real de ALFANET de noviembre.
+    /// Se probaron también gpt-4.1-mini, gpt-4.1, gpt-5-nano, gpt-5-mini, gpt-5.4-nano y gpt-5.6-luna: más
+    /// caros, más largos o con fallas (ver docs/modulos/conversaciones.md).
+    /// </summary>
+    // gpt-4o-mini (el modelo hasta noviembre de 2026) quedó fuera de la lista: es peor y más caro que el
+    // Estándar. Su precio sigue en la central porque lo usan otras funciones de IA.
+    public static readonly IReadOnlyList<AsistenteModeloOpcion> AsistenteModelosDisponibles =
+    [
+        new("gpt-6-luna", "Estándar", 0.10m, 0.01m, 0.50m, 0.4m,
+            "Interpreta el contexto de la conversación y resuelve la mayoría de las consultas de atención y soporte."),
+        new("gpt-6.1-terra", "Avanzado", 1.00m, 0.05m, 5.00m, 3.3m,
+            "Mayor capacidad de análisis, para conversaciones extensas o consultas de mayor complejidad.")
+    ];
+
+    /// <summary>El modelo del asistente cuando la base no eligió ninguno (el Estándar).</summary>
+    public const string AsistenteModeloPorDefecto = "gpt-6-luna";
+
+    /// <summary>El modelo que usa el asistente: el elegido o, si no hay, el Estándar.</summary>
+    public string AsistenteModeloEfectivo
+        => string.IsNullOrWhiteSpace(AsistenteModelo) ? AsistenteModeloPorDefecto : AsistenteModelo.Trim();
+
+    /// <summary>Lo que gastó, en promedio, una respuesta del asistente con el modelo anterior (créditos).</summary>
+    public const decimal CreditosPorRespuestaEconomico = 1.0m;
+
+    /// <summary>Cuándo el bot abre un ticket al derivar (texto para la IA). Vacío = criterio por defecto
+    /// (ConversacionAsistenteService.CriterioTicketPorDefecto): sólo trabajo a fondo.</summary>
+    public string BotTicketCriterio { get; set; } = string.Empty;
+
     /// <summary>
     /// Canales en los que responde el bot (CONV_BOT_CANALES). Sin configurar = todos, para que una base
     /// que ya tenía el bot activo siga igual. Ej: activo en Chat web e Instagram, apagado en WhatsApp.
@@ -653,4 +700,15 @@ public sealed class ConversacionReglaDto
 
     /// <summary>La regla solo dispara en el primer mensaje entrante de la conversación.</summary>
     public bool SoloPrimerContacto { get; set; }
+}
+
+/// <summary>Un modelo de OpenAI que se puede elegir para el asistente, con su precio de lista (USD por millón de tokens).</summary>
+public sealed record AsistenteModeloOpcion(string Codigo, string Nombre, decimal UsdEntrada, decimal UsdEntradaCache, decimal UsdSalida,
+    decimal VecesElEconomico, string Descripcion)
+{
+    /// <summary>Créditos aproximados por respuesta del asistente.</summary>
+    public decimal CreditosPorRespuesta => Math.Round(ConversacionAutomatizacionesConfigDto.CreditosPorRespuestaEconomico * VecesElEconomico, 1);
+
+    /// <summary>Consumo para mostrar: "Aprox. 0,4 créditos por respuesta".</summary>
+    public string ConsumoTexto => $"Aprox. {CreditosPorRespuesta.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))} crédito{(CreditosPorRespuesta == 1 ? string.Empty : "s")} por respuesta";
 }
