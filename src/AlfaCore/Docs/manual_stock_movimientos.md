@@ -22,11 +22,11 @@ Para entrar directo a cargar un tipo podés usar `?tipo=TR` (o IR, VS, AJP, SI) 
 
 ## Cargar un movimiento
 
-1. Tocá **Nuevo movimiento** (arriba). Elegí el tipo, la unidad de negocio, la fecha y el depósito (en una transferencia, también el depósito de destino). El motivo de stock viene completado con el que está configurado por defecto.
+1. Tocá [[bi:plus-circle]] **Nuevo movimiento** (arriba). Elegí el tipo, la unidad de negocio, la fecha y el depósito (en una transferencia, también el depósito de destino). El motivo de stock viene completado con el que está configurado por defecto.
 2. Escribí el código o el código de barras del artículo y apretá Enter. Con `3*código` se agrega directo con cantidad 3.
 3. Escribí la cantidad y apretá Enter: la línea se agrega y el cursor vuelve al código.
 4. Si el artículo se maneja por bultos, cargá los **Bultos** en la línea y el sistema calcula las unidades con la equivalencia del artículo.
-5. Tocá **Grabar** (arriba). El sistema vuelve a calcular todo, muestra un resumen y graba cuando confirmás; después vuelve a la lista. **Cancelar** descarta la carga (pide confirmación si cargaste artículos).
+5. Tocá **Grabar** (arriba a la izquierda). El sistema vuelve a calcular todo, muestra un resumen y graba cuando confirmás; después vuelve a la lista. [[bi:x-circle]] **Cancelar** descarta la carga (pide confirmación si cargaste artículos).
 
 Si cargás el mismo artículo dos veces, se suman las cantidades. En un conteo eso sirve para lo que contaste en dos lugares.
 
@@ -59,7 +59,7 @@ Los depósitos de otra empresa (otra base) no aparecen: esas transferencias se s
 
 ## Modificar o anular
 
-Buscalo en la lista y tocalo: se abre en modo consulta. Tocá **Modificar**, cambiá lo que haga falta y tocá **Grabar cambios** (o **Cancelar** para volver sin cambios). **Anular** está en el menú … de la barra de arriba. Anular no borra el comprobante: lo marca como anulado y deja de contar en el stock, igual que en Alfa Gestión.
+Buscalo en la lista y tocalo: se abre en modo consulta. Tocá [[bi:pencil]] **Modificar**, cambiá lo que haga falta y tocá **Grabar cambios** (o [[bi:x-circle]] **Cancelar** para volver sin cambios). [[bi:x-circle]] **Anular** está en el menú … de la barra de arriba. Anular no borra el comprobante: lo marca como anulado y deja de contar en el stock, igual que en Alfa Gestión.
 
 No se pueden modificar ni anular desde acá los comprobantes que:
 
@@ -87,7 +87,7 @@ Se activa en **Configuración general → Artículos → Trabajar con productos 
 
 ## Reportes de stock
 
-Pantalla **Stock → Reportes de stock** (`/stock/reportes`). Reemplaza en la web a la Consulta de Stock de Alfa Gestión (ficha de stock). Cada solapa se genera sola al entrar. Los filtros están en la barra de búsqueda de arriba (texto del artículo y, con el embudo, fecha o período, depósito, rubro, familia y opciones) y el paginador también está arriba. Con **Excel** bajás la solapa completa.
+Pantalla **Stock → Reportes de stock** (`/stock/reportes`). Reemplaza en la web a la Consulta de Stock de Alfa Gestión (ficha de stock). Cada solapa se genera sola al entrar. Los filtros están en la barra de búsqueda de arriba (texto del artículo y, con el embudo, fecha o período, depósito, rubro, familia y opciones) y el paginador también está arriba. Con [[bi:file-earmark-excel]] **Excel** bajás la solapa completa.
 
 - **Saldos:** saldo de cada artículo por depósito a la fecha elegida (**Saldo al**), con los movimientos hasta ese día inclusive. Si la base tiene configurada la unidad de bultos, muestra también los **Bultos**, calculados con la equivalencia del artículo. Con **Depósitos en columnas** sale un renglón por artículo y una columna por depósito.
 - **Movimientos del período:** saldo inicial, entradas, salidas y saldo final de cada artículo entre dos fechas.
