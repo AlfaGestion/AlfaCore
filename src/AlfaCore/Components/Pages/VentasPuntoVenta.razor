@@ -7529,6 +7529,7 @@
                    @bind="_paymentMethodCodeFilter"
                    @bind:event="oninput"
                    @onkeydown="HandlePaymentMethodFilterKeyDown"
+                   @onblur="HandlePaymentMethodFilterBlur"
                    placeholder="Código o descripción" />
             <div class="pos-charge-modal__selected-method">
                 <span>Medio seleccionado</span>
@@ -12019,6 +12020,7 @@
 
     private async Task HandlePaymentMethodClickAsync(string codigo)
     {
+        _chargeError = null;
         SelectPaymentMethod(codigo);
         await FocusChargeAmountAsync();
     }
@@ -12079,24 +12081,46 @@
         if (e.Key != "Enter")
             return;
 
-        var filtrados = PaymentMethodsFiltrados;
-        var texto = _paymentMethodCodeFilter.Trim();
-        var coincidenciaCodigo = !string.IsNullOrWhiteSpace(texto)
-            ? _paymentMethods.FirstOrDefault(x =>
-                string.Equals(x.Codigo?.Trim(), texto, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x.CodigoOpcional?.Trim(), texto, StringComparison.OrdinalIgnoreCase))
-            : null;
-        var medio = coincidenciaCodigo ?? (filtrados.Count == 1 ? filtrados[0] : null);
-
+        var (medio, coincidencias) = ResolverMedioDelFiltro();
         if (medio is null)
         {
-            if (filtrados.Count > 1)
+            if (coincidencias > 1)
                 await FocusPaymentMethodListAsync();
             return;
         }
 
         SelectPaymentMethod(medio.Codigo);
         await FocusChargeAmountAsync();
+    }
+
+    // Código exacto (código o código opcional) o, si el texto deja un único medio, ese medio.
+    private (PuntoVentaPaymentMethodDto? Medio, int Coincidencias) ResolverMedioDelFiltro()
+    {
+        var filtrados = PaymentMethodsFiltrados;
+        var texto = _paymentMethodCodeFilter.Trim();
+        var coincidenciaCodigo = !string.IsNullOrWhiteSpace(texto)
+            ? filtrados.FirstOrDefault(x =>
+                string.Equals(x.Codigo?.Trim(), texto, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.CodigoOpcional?.Trim(), texto, StringComparison.OrdinalIgnoreCase))
+            : null;
+        return (coincidenciaCodigo ?? (filtrados.Count == 1 ? filtrados[0] : null), filtrados.Count);
+    }
+
+    // Al salir del código con Tab (o con el mouse) se resuelve igual que con Enter. Si el texto no identifica un medio
+    // se quita la selección anterior, para no cargar el importe en un medio distinto del que se escribió.
+    private void HandlePaymentMethodFilterBlur()
+    {
+        if (_paymentMethodCodeFilter.Trim().Length == 0)
+            return;
+        var (medio, coincidencias) = ResolverMedioDelFiltro();
+        if (medio is not null)
+        {
+            SelectPaymentMethod(medio.Codigo);
+            return;
+        }
+        _selectedPaymentCode = string.Empty;
+        if (coincidencias == 0)
+            _chargeError = $"No hay un medio de pago con el código «{_paymentMethodCodeFilter.Trim()}».";
     }
 
     private async Task AddSelectedPaymentAsync(bool focusFilterAfterAdd = true)
