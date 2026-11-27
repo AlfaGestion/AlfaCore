@@ -264,6 +264,8 @@ public sealed class PuntoVentaPaymentLineDto
 
 public sealed class PuntoVentaSaleRequestDto
 {
+    /// <summary>Id de una NP existente cuando se están guardando sus modificaciones.</summary>
+    public int? IdNotaPedidoEdicion { get; set; }
     public int? IdNotaPedidoOrigen { get; set; }
     public string ComprobanteNotaPedidoOrigen { get; set; } = string.Empty;
     public int IdCobranzaAnticipo { get; set; }

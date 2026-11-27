@@ -4238,11 +4238,40 @@
 
     /* Consulta de pedidos: adaptación visual local a AlfaDesign v1. */
     .pos-encargos-modal {
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh;
         background: var(--alfa-bg-surface);
         border: 1px solid var(--alfa-border-default);
         color: var(--alfa-text-primary);
-        border-radius: var(--alfa-radius-md);
+        border-radius: 0;
         box-shadow: var(--alfa-shadow-lg, 0 18px 50px rgba(0, 0, 0, .28));
+    }
+
+    .pos-encargos-kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .65rem;
+    }
+    .pos-encargos-kpi {
+        padding: .7rem .85rem;
+        border: 1px solid var(--alfa-border-default);
+        border-radius: var(--alfa-radius-sm, 10px);
+        background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface));
+    }
+    .pos-encargos-kpi span { display: block; color: var(--alfa-text-secondary); font-size: .72rem; }
+    .pos-encargos-kpi strong { display: block; margin-top: .2rem; color: var(--alfa-text-primary); font-size: 1.05rem; }
+    .pos-encargos-kpi--accent { border-color: color-mix(in srgb, var(--alfa-accent) 55%, var(--alfa-border-default)); }
+    .pos-charge-modal__mode {
+        margin: .2rem 0 0;
+        color: var(--alfa-accent);
+        font-size: .82rem;
+        font-weight: 700;
+    }
+    .pos-encargos-detail .pos-encargo-actions { display: flex; flex-wrap: wrap; gap: .55rem; align-items: center; }
+    @@media (max-width: 760px) {
+        .pos-encargos-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .pos-encargos-modal { width: calc(100vw - 1rem); height: calc(100vh - 1rem); max-height: calc(100vh - 1rem); }
     }
 
     .pos-encargos-modal .pos-settings-modal__header { border-bottom-color: var(--alfa-border-default); }
@@ -7295,6 +7324,10 @@
         <div class="pos-charge-modal__header">
             <div>
                 <h3>@(EsRemitoONotaPedido ? TipoComprobanteSeleccionadoLabel() : "Cobranza")</h3>
+                @if (_editandoNotaPedidoId is > 0)
+                {
+                    <p class="pos-charge-modal__mode">Editando nota de pedido @_facturandoNotaPedidoComprobante</p>
+                }
             </div>
             <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal" disabled="@_chargeSaving"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -8003,6 +8036,22 @@
             </div>
         </div>
 
+        @if (_npAnticiposResultado is null && _npAnticiposListado is { } resumenPedidos)
+        {
+            var pedidosVisibles = resumenPedidos.Items;
+            var totalPedidos = pedidosVisibles.Count;
+            var importePedidos = pedidosVisibles.Sum(x => x.ImporteComercial);
+            var senasPedidos = pedidosVisibles.Where(x => x.TotalAnticiposVerificado).Sum(x => x.TotalAnticiposVigentes ?? 0m);
+            var saldoPedidos = pedidosVisibles.Where(x => x.TotalAnticiposVerificado)
+                .Sum(x => Math.Max(x.ImporteComercial - (x.TotalAnticiposVigentes ?? 0m), 0m));
+            <div class="pos-encargos-kpis" aria-label="Resumen de pedidos visibles">
+                <div class="pos-encargos-kpi"><span>Pedidos pendientes visibles</span><strong>@totalPedidos</strong></div>
+                <div class="pos-encargos-kpi"><span>Importe comercial</span><strong>@FmtMoney(importePedidos)</strong></div>
+                <div class="pos-encargos-kpi pos-encargos-kpi--accent"><span>Señas verificadas</span><strong>@FmtMoney(senasPedidos)</strong></div>
+                <div class="pos-encargos-kpi"><span>Saldo verificado</span><strong>@FmtMoney(saldoPedidos)</strong></div>
+            </div>
+        }
+
         @if (!string.IsNullOrWhiteSpace(_npAnticiposError))
         {
             <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">@_npAnticiposError</div>
@@ -8112,6 +8161,13 @@
                     <button type="button" class="btn btn--secondary" @onclick="() => ImprimirTicketProduccionAsync(np)" disabled="@_npPrinting">
                         <i class="bi bi-card-checklist"></i> Ticket de producción
                     </button>
+                    @if (!string.Equals(np.EstadoComprobante, "ANULADA", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(np.EstadoComprobante, "FINALIZADA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <button type="button" class="btn btn--secondary" @onclick="() => EditarNotaPedidoAsync(np)">
+                            <i class="bi bi-pencil"></i> Editar pedido
+                        </button>
+                    }
                     @if (!string.Equals(np.EstadoComprobante, "ANULADA", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(np.EstadoComprobante, "FINALIZADA", StringComparison.OrdinalIgnoreCase))
                     {
@@ -9318,6 +9374,7 @@
     private bool _npAnticiposLoading;
     private string _npAnticiposIdComprobante = string.Empty;
     private string _npAnticiposCuenta = string.Empty;
+    private int? _editandoNotaPedidoId;
     private DateTime? _npFechaDesdeInput;
     private DateTime? _npFechaHastaInput;
     private string _npEstadoInput = string.Empty;
@@ -11412,7 +11469,6 @@
         try
         {
             _cargandoNpEnPos = true;
-            _showNpAnticiposModal = false;
             _npAnticiposLoading = true;
             _npAnticiposError = null;
             var np = await AnticiposSvc.GetNotaPedidoParaFacturarAsync(encargo.IdComprobante, encargo.Cuenta);
@@ -11493,6 +11549,56 @@
             EstadoComprobante = np.EstadoComprobante,
             ImporteComercial = np.ImporteComercial
         });
+
+    private async Task EditarNotaPedidoAsync(PuntoVentaNpAnticiposDto np)
+    {
+        if (_npAnticiposLoading || np.Items.Count == 0)
+            return;
+
+        try
+        {
+            _cargandoNpEnPos = true;
+            CartState.Clear();
+            foreach (var item in np.Items)
+            {
+                _cartItems.Add(new PuntoVentaCartItemDto
+                {
+                    OrigenLineaId = item.LineaId,
+                    IdArticulo = item.IdArticulo,
+                    Descripcion = item.Descripcion,
+                    Presentacion = item.Presentacion,
+                    PrecioUnitario = item.Precio,
+                    PrecioOriginal = item.Precio,
+                    Cantidad = item.Cantidad,
+                    Observaciones = item.Observaciones
+                });
+            }
+
+            _editandoNotaPedidoId = np.Id;
+            _facturandoNotaPedidoId = null;
+            _facturandoNotaPedidoComprobante = np.IdComprobante.Trim();
+            _cuentaCliente = np.Cuenta.Trim();
+            _cuentaClienteNombre = np.Cliente.Trim();
+            _tipoComprobanteSeleccionado = "NP";
+            _showNpAnticiposModal = false;
+            _npAnticiposResultado = null;
+            await OpenChargeModalAsync();
+            _npNombreContactoInput = np.Cliente.Trim();
+            _npTelefonoInput = np.Telefono.Trim();
+            _npFechaEntregaDateInput = np.FechaEntrega?.Date;
+            _npHoraEntregaInput = np.FechaEntrega is { } entrega ? TimeOnly.FromDateTime(entrega) : null;
+            _npObservacionesInput = np.Observaciones.Trim();
+        }
+        catch (Exception ex)
+        {
+            _npAnticiposError = ex.Message;
+            _showNpAnticiposModal = true;
+        }
+        finally
+        {
+            _cargandoNpEnPos = false;
+        }
+    }
 
     private async Task ConsultarNpAnticiposAsync()
     {
@@ -11921,6 +12027,8 @@
             MpPaymentSvc.SolicitarCancelacion();
 
         _showChargeModal = false;
+        _editandoNotaPedidoId = null;
+        _facturandoNotaPedidoComprobante = string.Empty;
         _chargeError = null;
         _chargeAmountInput = string.Empty;
         _selectedPaymentCode = string.Empty;
@@ -12768,8 +12876,9 @@
                 })
                 .ToList();
 
-            var result = await PuntoVentaSvc.CreateSaleAsync(new PuntoVentaSaleRequestDto
+            var saleRequest = new PuntoVentaSaleRequestDto
             {
+                IdNotaPedidoEdicion = _editandoNotaPedidoId,
                 CuentaCliente = !string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal,
                 ClienteEventual = _clienteEventual is null
                     ? null
@@ -12809,7 +12918,20 @@
                 ComprobanteCobranzaAnticipo = soldPayments.FirstOrDefault(x => x.EsAnticipo)?.ComprobanteAnticipo ?? string.Empty,
                 ImporteAnticipo = soldPayments.Where(x => x.EsAnticipo).Sum(x => x.Importe),
                 Progreso = ActualizarProgresoGrabacion
-            });
+            };
+
+            if (_editandoNotaPedidoId is > 0)
+            {
+                await PuntoVentaSvc.ActualizarNotaPedidoAsync(saleRequest);
+                _chargeSuccess = $"Nota de pedido { _facturandoNotaPedidoComprobante } actualizada correctamente.";
+                _cartItems.Clear();
+                _paymentLines.Clear();
+                _editandoNotaPedidoId = null;
+                _showChargeModal = false;
+                return;
+            }
+
+            var result = await PuntoVentaSvc.CreateSaleAsync(saleRequest);
 
             _lastSaleResult = result;
 
