@@ -46,6 +46,101 @@
             }
             else
             {
+                @* Lo que más se pregunta, arriba y simple (2026-11-27): cuántos clientes escribieron, a cuántos se
+                   les respondió (equipo o solo el asistente) y cuántos siguen esperando. El resto, en "Más detalle". *@
+                <section class="est-clientes-kpis" aria-label="Clientes del rango">
+                    <button type="button" class="est-ck @(_filtroClientes == "" ? "is-activo" : null)" @onclick='() => _filtroClientes = ""'>
+                        <span class="est-ck__icono"><i class="bi bi-people"></i></span>
+                        <span class="est-ck__label">Clientes que escribieron</span>
+                        <strong class="est-ck__value">@FormatNumber(_stats.ClientesHablaron)</strong>
+                        <span class="est-ck__detail">@FormatNumber(_stats.RespuestasEquipo + _stats.RespuestasBot) respuestas enviadas</span>
+                    </button>
+                    <button type="button" class="est-ck est-ck--ok @(_filtroClientes == "RESPONDIDOS" ? "is-activo" : null)" @onclick='() => _filtroClientes = "RESPONDIDOS"'>
+                        <span class="est-ck__icono"><i class="bi bi-check2-circle"></i></span>
+                        <span class="est-ck__label">Tuvieron respuesta</span>
+                        <strong class="est-ck__value">@FormatNumber(_stats.ClientesRespondidos)</strong>
+                        <span class="est-ck__detail">
+                            <span><i class="bi bi-person-fill"></i> @FormatNumber(_stats.ClientesRespondidosEquipo) por el equipo</span>
+                            <span><i class="bi bi-robot"></i> @FormatNumber(_stats.ClientesRespondidosSoloBot) solo por el asistente</span>
+                        </span>
+                    </button>
+                    <button type="button" class="est-ck est-ck--alerta @(_filtroClientes == ClienteAtencionEstado.SinResponder ? "is-activo" : null)" @onclick="() => _filtroClientes = ClienteAtencionEstado.SinResponder">
+                        <span class="est-ck__icono"><i class="bi bi-hourglass-split"></i></span>
+                        <span class="est-ck__label">Quedaron sin responder</span>
+                        <strong class="est-ck__value">@FormatNumber(_stats.ClientesSinResponder)</strong>
+                        <span class="est-ck__detail">Su último mensaje no tuvo respuesta</span>
+                    </button>
+                </section>
+
+                <ConversacionesConfigTarjeta Titulo="@TituloListaClientes" Descripcion="Tocá un cliente para abrir su conversación. Cada cliente cuenta una vez aunque haya escrito por varios canales.">
+                    <Extra>
+                        <div class="est-filtro-chips" role="group" aria-label="Filtrar clientes">
+                            @foreach (var (clave, texto) in FiltrosClientes)
+                            {
+                                <button type="button" class="est-chip-filtro @(_filtroClientes == clave ? "is-activo" : null)" @onclick="() => _filtroClientes = clave">@texto</button>
+                            }
+                        </div>
+                    </Extra>
+                    <ChildContent>
+                        @if (ClientesFiltrados.Count == 0)
+                        {
+                            <p class="cfg-hint">No hay clientes para mostrar con este filtro.</p>
+                        }
+                        else
+                        {
+                            <div class="est-table-wrap">
+                                <table class="est-table est-atendidos">
+                                    <thead>
+                                        <tr>
+                                            <th>Cliente</th>
+                                            <th>Estado</th>
+                                            <th class="num">Mensajes del cliente</th>
+                                            <th class="num">Respuestas equipo</th>
+                                            <th class="num">Respuestas asistente</th>
+                                            <th>Último mensaje</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var c in ClientesFiltrados.Take(_verClientes))
+                                        {
+                                            <tr @onclick="() => OpenConversation(c.IdConversacion)">
+                                                <td>
+                                                    <strong>@c.Nombre</strong>
+                                                    <span class="est-muted">@CanalTexto(c.Canal)@(string.IsNullOrWhiteSpace(c.TecnicoNombre) ? "" : $" · {c.TecnicoNombre}")</span>
+                                                </td>
+                                                <td>
+                                                    @if (c.Estado == ClienteAtencionEstado.SinResponder)
+                                                    {
+                                                        <span class="est-estado est-estado--alerta"><i class="bi bi-hourglass-split"></i> Sin responder</span>
+                                                    }
+                                                    else if (c.Estado == ClienteAtencionEstado.SoloBot)
+                                                    {
+                                                        <span class="est-estado est-estado--bot"><i class="bi bi-robot"></i> Solo asistente</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="est-estado est-estado--ok"><i class="bi bi-person-fill"></i> Equipo</span>
+                                                    }
+                                                </td>
+                                                <td class="num">@c.MensajesCliente</td>
+                                                <td class="num">@c.RespuestasEquipo</td>
+                                                <td class="num">@c.RespuestasBot</td>
+                                                <td>@FormatUltimo(c.UltimoMensajeCliente)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            @if (ClientesFiltrados.Count > _verClientes)
+                            {
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="() => _verClientes += 50">Ver más (@(ClientesFiltrados.Count - _verClientes) restantes)</AlfaButton>
+                            }
+                        }
+                    </ChildContent>
+                </ConversacionesConfigTarjeta>
+
+                <details class="est-mas">
+                    <summary><i class="bi bi-chevron-right"></i> Más detalle: mensajes, cierres, tickets, equipo y temas (solo WhatsApp)</summary>
                 <section class="est-kpis" aria-label="Indicadores del rango">
                     <a class="est-kpi est-kpi--accent" href="@GetAuditUrl("entrantes")">
                         <span class="est-kpi__label">Mensajes entrantes</span>
@@ -331,6 +426,7 @@
                         </ConversacionesConfigTarjeta>
                     </div>
                 </section>
+                </details>
             }
         </ChildContent>
     </ConversacionesConfigPagina>
@@ -378,6 +474,47 @@
             return $"{FormatNumber(total)} mensajes totales";
         }
     }
+
+    // Clientes atendidos (2026-11-27).
+    private string _filtroClientes = "";
+    private int _verClientes = 50;
+    private static readonly (string Clave, string Texto)[] FiltrosClientes =
+    [
+        ("", "Todos"),
+        (ClienteAtencionEstado.SinResponder, "Sin responder"),
+        ("RESPONDIDOS", "Con respuesta"),
+        (ClienteAtencionEstado.Equipo, "Equipo"),
+        (ClienteAtencionEstado.SoloBot, "Solo asistente")
+    ];
+    private IReadOnlyList<ConversacionesEstadisticaClienteAtendidoDto> ClientesFiltrados
+        => _stats is null ? [] : _filtroClientes switch
+        {
+            "" => _stats.ClientesAtendidos,
+            "RESPONDIDOS" => _stats.ClientesAtendidos.Where(c => c.Estado != ClienteAtencionEstado.SinResponder).ToList(),
+            var f => _stats.ClientesAtendidos.Where(c => c.Estado == f).ToList()
+        };
+    private string TituloListaClientes => _filtroClientes switch
+    {
+        ClienteAtencionEstado.SinResponder => "Clientes sin responder",
+        "RESPONDIDOS" => "Clientes con respuesta",
+        ClienteAtencionEstado.Equipo => "Clientes respondidos por el equipo",
+        ClienteAtencionEstado.SoloBot => "Clientes que solo atendió el asistente",
+        _ => "Clientes que escribieron"
+    };
+    private static string CanalTexto(string canal) => canal switch
+    {
+        "WHATSAPP" => "WhatsApp",
+        "INSTAGRAM" => "Instagram",
+        "FACEBOOK" => "Facebook",
+        "WEBCHAT" => "Sitio web",
+        "MERCADOLIBRE" => "Mercado Libre",
+        _ => canal
+    };
+    private static string FormatUltimo(DateTime fecha)
+        => fecha == DateTime.MinValue ? "—"
+            : fecha.Date == DateTime.Today ? $"Hoy {fecha:HH:mm}"
+            : fecha.Date == DateTime.Today.AddDays(-1) ? $"Ayer {fecha:HH:mm}"
+            : fecha.ToString("dd/MM HH:mm");
 
     private ConversacionesEstadisticaClienteDto? TopCliente => _stats?.PorCliente.FirstOrDefault();
     private int MaxStateCount => Math.Max(1, _stats?.PorEstado.Select(x => x.Cantidad).DefaultIfEmpty(0).Max() ?? 1);

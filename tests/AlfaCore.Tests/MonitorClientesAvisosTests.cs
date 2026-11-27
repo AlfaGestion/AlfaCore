@@ -164,4 +164,47 @@ public sealed class MonitorClientesAvisosTests
         Assert.Equal("llamar", filas[1].Nota);
         Assert.False(filas[1].Tomado);
     }
+
+    // Backups diarios en su propio hilo, visible en la bandeja Todos (2026-11-27).
+    [Fact]
+    public void Backups_AvisaUnaVezCuandoFallaYCuandoVuelveAFuncionar()
+    {
+        var falla = Fila(7, "BACKUP", "", MonitorEstado.Aviso, prioridad: "3", razon: "FERNANDEZ");
+        var vieja = Fila(8, "BACKUP", "", MonitorEstado.Critico, razon: "OLIVA");
+        var tomada = Fila(9, "BACKUP", "", MonitorEstado.Critico, razon: "TOMADA");
+        tomada.TomadoPor = "franco";
+        var filas = new[] { falla, vieja, tomada, Fila(7, "ENVIO_PDV", "A", MonitorEstado.Critico), Fila(10, "BACKUP", "", MonitorEstado.SinDatos) };
+
+        // Entran todas las prioridades (la P3 también); no las tomadas, ni otros controles, ni "sin datos".
+        var fallidos = MonitorClientesAvisos.BackupsFallidos(filas);
+        Assert.Equal(new[] { vieja.Clave, falla.Clave }, fallidos.Select(f => f.Clave));
+
+        // Primera vez: avisa las dos.
+        var primero = MonitorClientesAvisos.MensajeBackups(fallidos, new HashSet<string>(), filas);
+        Assert.NotNull(primero);
+        Assert.Contains("Falló el backup diario de 2 clientes", primero);
+        Assert.Contains("P3 FERNANDEZ", primero);
+
+        // Mismo estado en el ciclo siguiente: no repite.
+        var firma = MonitorClientesAvisos.ClavesDeFirma(MonitorClientesAvisos.Firma(fallidos));
+        Assert.Null(MonitorClientesAvisos.MensajeBackups(fallidos, firma, filas));
+
+        // Se recupera FERNANDEZ: avisa que volvió a funcionar y que sigue uno con problemas.
+        var ok = Fila(7, "BACKUP", "", MonitorEstado.Ok, prioridad: "3", razon: "FERNANDEZ");
+        var filas2 = new[] { ok, vieja };
+        var recuperado = MonitorClientesAvisos.MensajeBackups(MonitorClientesAvisos.BackupsFallidos(filas2), firma, filas2);
+        Assert.NotNull(recuperado);
+        Assert.Contains("Volvió a funcionar el backup de 1 cliente", recuperado);
+        Assert.Contains("Sigue 1 backup con problemas", recuperado);
+        Assert.DoesNotContain("Falló", recuperado);
+    }
+
+    [Fact]
+    public void Backups_UnoQueSeTomaNoCuentaComoRecuperado()
+    {
+        var falla = Fila(7, "BACKUP", "", MonitorEstado.Critico);
+        var firma = MonitorClientesAvisos.ClavesDeFirma(MonitorClientesAvisos.Firma([falla]));
+        falla.TomadoPor = "favio";
+        Assert.Null(MonitorClientesAvisos.MensajeBackups(MonitorClientesAvisos.BackupsFallidos([falla]), firma, [falla]));
+    }
 }

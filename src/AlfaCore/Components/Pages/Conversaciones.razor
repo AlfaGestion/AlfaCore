@@ -964,7 +964,11 @@
                                  @onclick="() => SelectInboxItemAsync(item, showMobileChat: true)"
                                  @onkeydown="args => HandleInboxRowKeyDownAsync(args, item)">
                                 <span class="conversation-row__avatar @GetConversationAvatarClass(item)" style="--avatar-color:@GetAvatarColorHex(item);" title="@GetDisplayName(item)" aria-hidden="true">
-                                    @if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
+                                    @if (item.EsAvisoSistema)
+                                    {
+                                        <i class="bi bi-shield-exclamation conversation-row__aviso-icono"></i>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
                                     {
                                         <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
                                     }
@@ -972,9 +976,12 @@
                                     {
                                         <span class="conversation-abono-avatar__letter">@GetConversationInitials(item)</span>
                                     }
+                                    @if (!item.EsAvisoSistema)
+                                    {
                                     <span class="conversation-row__channel-badge conversation-row__channel-badge--@item.Canal.ToLowerInvariant()" title="@GetCanalLabel(item.Canal)">
                                         <i class="bi @GetCanalIcon(item.Canal)"></i>
                                     </span>
+                                    }
                                     @if (!string.IsNullOrWhiteSpace(item.ClasificacionCodigo))
                                     {
                                         <span class="conversation-row__priority"
@@ -1010,6 +1017,12 @@
                                     </span>
                                 </div>
                                 <div class="conversation-row__badges">
+                                    @if (item.EsAvisoSistema)
+                                    {
+                                        <span class="conversation-badge conversation-badge--aviso-sistema" title="Aviso automático del Monitor de Clientes">
+                                            <i class="bi bi-shield-exclamation"></i> Aviso del sistema
+                                        </span>
+                                    }
                                     <span class="conversation-badge conversation-badge--state conversation-badge--icon-only" title="@item.EstadoDescripcion">
                                         <i class="bi @GetEstadoIcon(item.CodigoEstado)"></i>
                                     </span>
@@ -6437,6 +6450,9 @@
             classes += " is-pinned";
         if (!string.IsNullOrWhiteSpace(item.IdTecnico))
             classes += " has-technician";
+        // Avisos del sistema (Monitor de Clientes, backups) en la bandeja Todos: resaltados para que se vean.
+        if (item.EsAvisoSistema)
+            classes += " is-aviso-sistema";
         return classes;
     }
 
@@ -6452,6 +6468,8 @@
 
     private static string GetConversationAvatarClass(ConversacionInboxItemDto item)
     {
+        if (item.EsAvisoSistema)
+            return "conversation-row__avatar--aviso";
         if (item.Canal == "MERCADOLIBRE")
             return "conversation-row__avatar--mercadolibre";
         // Avatar sin foto: estilo genérico (borde/sombra + color por nombre). Sin tier de abono.

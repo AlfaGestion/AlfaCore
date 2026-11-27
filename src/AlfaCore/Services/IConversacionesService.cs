@@ -139,6 +139,8 @@ public interface IConversacionesService
     /// </summary>
     Task<string> GetContextoClienteAsistenteAsync(long idConversacion, CancellationToken ct = default);
     Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default);
+    /// <summary>Marca un hilo interno como de avisos del sistema (se ve en Todos, resaltado). No toca otros canales.</summary>
+    Task MarcarAvisoSistemaAsync(long idConversacion, string avisoSistema, CancellationToken ct = default);
     Task<ConversacionCrearWhatsAppResultDto> CreateOrGetWhatsAppConversationAsync(ConversacionCrearWhatsAppRequest request, CancellationToken ct = default);
     Task<int> ProcessWhatsAppWebInboxAsync(CancellationToken ct = default);
 

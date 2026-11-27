@@ -98,6 +98,46 @@ public sealed class ConversacionesEstadisticasDto
     public List<ConversacionesEstadisticaConversacionDto> TopConversaciones { get; set; } = [];
     public List<ConversacionesEstadisticaTemaDto> TemasFrecuentes { get; set; } = [];
     public List<ConversacionesEstadisticaTemaDto> FrasesFrecuentes { get; set; } = [];
+
+    // Clientes atendidos (2026-11-27): "¿cuántos clientes atendimos hoy?" sin mezclar mensajes y conversaciones.
+    // Un cliente = cuenta vinculada, o el contacto, o el teléfono. Todos los canales salvo el chat interno.
+    /// <summary>Clientes que escribieron en el rango.</summary>
+    public int ClientesHablaron { get; set; }
+    /// <summary>Respondidos por alguien del equipo (aunque también haya respondido el asistente).</summary>
+    public int ClientesRespondidosEquipo { get; set; }
+    /// <summary>Respondidos solo por el asistente de IA.</summary>
+    public int ClientesRespondidosSoloBot { get; set; }
+    /// <summary>Su último mensaje del rango no tuvo respuesta (ni del equipo ni del asistente).</summary>
+    public int ClientesSinResponder { get; set; }
+    public int ClientesRespondidos => ClientesRespondidosEquipo + ClientesRespondidosSoloBot;
+    /// <summary>Mensajes que mandó el asistente de IA en el rango.</summary>
+    public int RespuestasBot { get; set; }
+    /// <summary>Mensajes que mandó el equipo en el rango.</summary>
+    public int RespuestasEquipo { get; set; }
+    public List<ConversacionesEstadisticaClienteAtendidoDto> ClientesAtendidos { get; set; } = [];
+}
+
+/// <summary>Cómo quedó atendido un cliente en el rango.</summary>
+public static class ClienteAtencionEstado
+{
+    public const string Equipo = "EQUIPO";
+    public const string SoloBot = "BOT";
+    public const string SinResponder = "SIN_RESPONDER";
+}
+
+public sealed class ConversacionesEstadisticaClienteAtendidoDto
+{
+    public string Nombre { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public long IdConversacion { get; set; }
+    public string Canal { get; set; } = string.Empty;
+    /// <summary><see cref="ClienteAtencionEstado"/>.</summary>
+    public string Estado { get; set; } = string.Empty;
+    public int MensajesCliente { get; set; }
+    public int RespuestasEquipo { get; set; }
+    public int RespuestasBot { get; set; }
+    public DateTime UltimoMensajeCliente { get; set; }
+    public string TecnicoNombre { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionesEstadisticaEstadoDto
@@ -216,6 +256,8 @@ public sealed class ConversacionInboxItemDto
     public DateTime? FechaHoraFijada { get; set; }
     public string MercadoLibreQuestionStatus { get; set; } = string.Empty;
     public string MercadoLibreItemStatus { get; set; } = string.Empty;
+    /// <summary>Hilo interno de avisos del sistema (Monitor de Clientes, backups): se ve en Todos, resaltado.</summary>
+    public bool EsAvisoSistema { get; set; }
 }
 
 public sealed class ConversacionDetalleDto
@@ -615,6 +657,11 @@ public sealed class ConversacionAdjuntosRecoveryResultDto
 public sealed class ConversacionCrearHiloInternoRequest
 {
     public string NombreHilo { get; set; } = string.Empty;
+    /// <summary>
+    /// Hilo de avisos automáticos del sistema (por ejemplo "MONITOR"): se ve también en la bandeja Todos,
+    /// resaltado (2026-11-27). Se guarda como "SISTEMA:{valor}" en IdentificadorExternoConversacion.
+    /// </summary>
+    public string? AvisoSistema { get; set; }
     public string? IdTecnico { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }

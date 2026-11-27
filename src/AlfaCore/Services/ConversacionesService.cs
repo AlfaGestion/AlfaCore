@@ -875,9 +875,161 @@ public sealed partial class ConversacionesService(
                 stats.TemasFrecuentes = BuildFrequentTerms(incomingTexts);
                 stats.FrasesFrecuentes = BuildFrequentPhrases(incomingTexts);
             }
+            await rd.DisposeAsync();
 
+            await CargarClientesAtendidosAsync(cn, stats, desde, hastaExclusive, technicianId, token);
             return stats;
         }, "No se pudieron cargar las estad\u00edsticas de conversaciones.", ct);
+
+    /// <summary>
+    /// "\u00bfCu\u00e1ntos clientes atendimos hoy?" (2026-11-27): clientes que escribieron en el rango, cu\u00e1ntos tuvieron
+    /// respuesta (del equipo, o solo del asistente de IA) y cu\u00e1ntos siguen sin respuesta. Un cliente es su cuenta
+    /// vinculada, o el contacto, o el tel\u00e9fono; varias conversaciones del mismo cliente cuentan una vez. Todos los
+    /// canales salvo el chat interno. "Sin responder" = despu\u00e9s de su \u00faltimo mensaje del rango nadie le escribi\u00f3
+    /// (ni el equipo ni el asistente); una respuesta fuera del rango (al otro d\u00eda) igual cuenta.
+    /// Las automatizaciones que no son respuestas (bienvenida, fuera de horario, encuesta\u2026) no cuentan.
+    /// </summary>
+    private static async Task CargarClientesAtendidosAsync(SqlConnection cn, ConversacionesEstadisticasDto stats,
+        DateTime desde, DateTime hastaExclusive, string? technicianId, CancellationToken ct)
+    {
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
+        var sql = $"""
+            WITH Conv AS
+            (
+                SELECT
+                    c.IdConversacion,
+                    c.Canal,
+                    COALESCE(
+                        N'CLI:' + NULLIF(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N''))), N''),
+                        N'CON:' + CONVERT(nvarchar(20), c.IdContacto),
+                        N'TEL:' + NULLIF(LTRIM(RTRIM(ISNULL(c.TelefonoWhatsApp, N''))), N''),
+                        N'CONV:' + CONVERT(nvarchar(20), c.IdConversacion)) AS Clave,
+                    LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N''))) AS ClienteCodigo,
+                    COALESCE(NULLIF(LTRIM(RTRIM(cli.RAZON_SOCIAL)), N''), NULLIF(LTRIM(RTRIM(c.NombreVisible)), N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre') AS Nombre,
+                    ISNULL(t.Nombre, N'') AS TecnicoNombre,
+                    ISNULL(est.EsCerrado, 0) AS EsCerrada
+                FROM dbo.CONV_CONVERSACIONES c
+                LEFT JOIN dbo.CONV_ESTADOS est ON est.CodigoEstado = c.CodigoEstado
+                LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = c.ClienteCodigo
+                LEFT JOIN dbo.V_TA_Tecnicos t ON t.IdTecnico = c.IdTecnico
+                WHERE c.Canal <> N'INTERNO'
+                  AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)
+            ),
+            Entrantes AS
+            (
+                SELECT m.IdConversacion, COUNT(1) AS Cantidad, MAX(m.IdMensaje) AS UltimoId, MAX(m.FechaHora) AS Ultimo, MIN(m.IdMensaje) AS PrimerId
+                FROM dbo.CONV_MENSAJES m
+                INNER JOIN Conv c ON c.IdConversacion = m.IdConversacion
+                WHERE m.Direction = N'ENTRANTE'
+                  AND m.FechaHora >= @Desde AND m.FechaHora < @HastaExclusive
+                GROUP BY m.IdConversacion
+            ),
+            PorConversacion AS
+            (
+                SELECT
+                    c.Clave, c.ClienteCodigo, c.Nombre, c.Canal, c.IdConversacion, c.TecnicoNombre,
+                    e.Cantidad, e.Ultimo,
+                    resp.Equipo, resp.Bot,
+                    -- Una conversación cerrada ya se atendió aunque el cliente haya escrito "gracias" al final.
+                    CASE WHEN c.EsCerrada = 1 OR EXISTS (
+                        SELECT 1 FROM dbo.CONV_MENSAJES r
+                        WHERE r.IdConversacion = e.IdConversacion AND r.IdMensaje > e.UltimoId
+                          AND r.Direction = N'SALIENTE'
+                          AND {AutorMensajeSql("r")} NOT IN ({RespuestaNoCuentaSqlList})
+                    ) THEN 1 ELSE 0 END AS UltimoRespondido
+                FROM Entrantes e
+                INNER JOIN Conv c ON c.IdConversacion = e.IdConversacion
+                OUTER APPLY (
+                    SELECT
+                        SUM(CASE WHEN {AutorMensajeSql("r")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList}) THEN 1 ELSE 0 END) AS Equipo,
+                        SUM(CASE WHEN {AutorMensajeSql("r")} = N'BOT' THEN 1 ELSE 0 END) AS Bot
+                    FROM dbo.CONV_MENSAJES r
+                    WHERE r.IdConversacion = e.IdConversacion
+                      AND r.Direction = N'SALIENTE'
+                      AND r.IdMensaje > e.PrimerId
+                ) resp
+            ),
+            PorCliente AS
+            (
+                SELECT
+                    Clave,
+                    MAX(ClienteCodigo) AS ClienteCodigo,
+                    MAX(Nombre) AS Nombre,
+                    SUM(Cantidad) AS MensajesCliente,
+                    SUM(ISNULL(Equipo, 0)) AS Equipo,
+                    SUM(ISNULL(Bot, 0)) AS Bot,
+                    MAX(Ultimo) AS Ultimo,
+                    -- La conversaci\u00f3n donde escribi\u00f3 \u00faltimo: su respuesta dice si sigue esperando.
+                    MAX(CASE WHEN rn = 1 THEN UltimoRespondido END) AS UltimoRespondido,
+                    MAX(CASE WHEN rn = 1 THEN IdConversacion END) AS IdConversacion,
+                    MAX(CASE WHEN rn = 1 THEN Canal END) AS Canal,
+                    MAX(CASE WHEN rn = 1 THEN TecnicoNombre END) AS TecnicoNombre
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY Clave ORDER BY Ultimo DESC, IdConversacion DESC) AS rn
+                    FROM PorConversacion
+                ) x
+                GROUP BY Clave
+            )
+            SELECT
+                ClienteCodigo, Nombre, IdConversacion, Canal, TecnicoNombre, MensajesCliente, Equipo, Bot, Ultimo,
+                CASE
+                    WHEN ISNULL(UltimoRespondido, 0) = 0 THEN N'{ClienteAtencionEstado.SinResponder}'
+                    WHEN Equipo = 0 AND Bot > 0 THEN N'{ClienteAtencionEstado.SoloBot}'
+                    ELSE N'{ClienteAtencionEstado.Equipo}'
+                END AS Estado
+            FROM PorCliente
+            ORDER BY CASE WHEN ISNULL(UltimoRespondido, 0) = 0 THEN 0 ELSE 1 END, Ultimo DESC;
+
+            SELECT
+                SUM(CASE WHEN {AutorMensajeSql("m")} = N'BOT' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN {AutorMensajeSql("m")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList}) THEN 1 ELSE 0 END)
+            FROM dbo.CONV_MENSAJES m
+            INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+            WHERE m.Direction = N'SALIENTE'
+              AND c.Canal <> N'INTERNO'
+              AND m.FechaHora >= @Desde AND m.FechaHora < @HastaExclusive
+              AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico);
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn) { CommandTimeout = 60 };
+        cmd.Parameters.AddWithValue("@Desde", desde);
+        cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive);
+        cmd.Parameters.AddWithValue("@IdTecnico", string.IsNullOrWhiteSpace(technicianId) ? DBNull.Value : technicianId);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            var item = new ConversacionesEstadisticaClienteAtendidoDto
+            {
+                ClienteCodigo = GetString(rd, 0),
+                Nombre = GetString(rd, 1),
+                IdConversacion = rd.IsDBNull(2) ? 0 : Convert.ToInt64(rd.GetValue(2), CultureInfo.InvariantCulture),
+                Canal = GetString(rd, 3),
+                TecnicoNombre = GetString(rd, 4),
+                MensajesCliente = GetInt(rd, 5),
+                RespuestasEquipo = GetInt(rd, 6),
+                RespuestasBot = GetInt(rd, 7),
+                UltimoMensajeCliente = rd.IsDBNull(8) ? DateTime.MinValue : rd.GetDateTime(8),
+                Estado = GetString(rd, 9)
+            };
+            stats.ClientesAtendidos.Add(item);
+        }
+        stats.ClientesHablaron = stats.ClientesAtendidos.Count;
+        stats.ClientesRespondidosEquipo = stats.ClientesAtendidos.Count(x => x.Estado == ClienteAtencionEstado.Equipo);
+        stats.ClientesRespondidosSoloBot = stats.ClientesAtendidos.Count(x => x.Estado == ClienteAtencionEstado.SoloBot);
+        stats.ClientesSinResponder = stats.ClientesAtendidos.Count(x => x.Estado == ClienteAtencionEstado.SinResponder);
+        if (await rd.NextResultAsync(ct) && await rd.ReadAsync(ct))
+        {
+            stats.RespuestasBot = GetInt(rd, 0);
+            stats.RespuestasEquipo = GetInt(rd, 1);
+        }
+    }
+
+    /// <summary>
+    /// Salientes que no son una respuesta al cliente: automatizaciones que salen solas (bienvenida, fuera de
+    /// horario, encuesta\u2026). El asistente (BOT) s\u00ed cuenta como respuesta.
+    /// </summary>
+    private static string RespuestaNoCuentaSqlList
+        => string.Join(", ", AutomatedOutgoingSistemaAutores.Where(a => a != "BOT").Select(a => $"N'{a}'"));
 
     /// <summary>Wrapper de compatibilidad: mantiene la firma histórica para los callers que solo necesitan
     /// la página de resultados (sin total). Ver <see cref="GetInboxPagedAsync"/> para paginación real.</summary>
@@ -966,7 +1118,8 @@ public sealed partial class ConversacionesService(
                          )
                         THEN CAST(1 AS bit)
                         ELSE CAST(0 AS bit)
-                    END AS EsWhatsAppQr
+                    END AS EsWhatsAppQr,
+                    CASE WHEN {AvisoSistemaSql} THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS EsAvisoSistema
                 """;
 
             // Bloque FROM/WHERE compartido entre la consulta paginada y el COUNT de respaldo
@@ -1144,6 +1297,7 @@ public sealed partial class ConversacionesService(
                     (
                         @Canal IS NULL
                         OR (@Canal = N'SOCIAL' AND c.Canal IN (N'WHATSAPP', N'INSTAGRAM', N'FACEBOOK', N'WEBCHAT'))
+                        OR (@Canal = N'SOCIAL' AND {AvisoSistemaSql})
                         OR (@Canal <> N'SOCIAL' AND c.Canal = @Canal)
                     )
                     AND (
@@ -1474,12 +1628,13 @@ public sealed partial class ConversacionesService(
                     ClasificacionDescripcion = GetString(rd, 30),
                     ClasificacionCodigo = GetString(rd, 31),
                     ClasificacionColorHex = rd.IsDBNull(32) ? string.Empty : VbColorIntToHex(Convert.ToInt32(rd.GetValue(32))),
-                    EsWhatsAppQr = !rd.IsDBNull(33) && rd.GetBoolean(33)
+                    EsWhatsAppQr = !rd.IsDBNull(33) && rd.GetBoolean(33),
+                    EsAvisoSistema = !rd.IsDBNull(34) && rd.GetBoolean(34)
                 });
 
                 if (!hasTotalCount)
                 {
-                    totalCount = rd.GetInt32(34);
+                    totalCount = rd.GetInt32(35);
                     hasTotalCount = true;
                 }
             }
@@ -5680,6 +5835,7 @@ public sealed partial class ConversacionesService(
                     NombreVisible,
                     CodigoEstado,
                     IdTecnico,
+                    IdentificadorExternoConversacion,
                     FechaHoraUltimoMensaje,
                     FechaHora_Grabacion
                 )
@@ -5689,6 +5845,7 @@ public sealed partial class ConversacionesService(
                     @NombreVisible,
                     N'ABIERTA',
                     @IdTecnico,
+                    @Identificador,
                     GETDATE(),
                     GETDATE()
                 );
@@ -5701,6 +5858,9 @@ public sealed partial class ConversacionesService(
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@NombreVisible", request.NombreHilo.Trim());
             cmd.Parameters.AddWithValue("@IdTecnico", DbNullablePreserve(technicianId));
+            cmd.Parameters.AddWithValue("@Identificador", string.IsNullOrWhiteSpace(request.AvisoSistema)
+                ? DBNull.Value
+                : AvisoSistemaPrefijo + request.AvisoSistema.Trim().ToUpperInvariant());
             var result = await cmd.ExecuteScalarAsync(token);
             var id = Convert.ToInt64(result, CultureInfo.InvariantCulture);
 
@@ -5715,6 +5875,26 @@ public sealed partial class ConversacionesService(
 
             return id;
         }, "No se pudo crear el hilo interno.", ct);
+
+    public Task MarcarAvisoSistemaAsync(long idConversacion, string avisoSistema, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "MarcarAvisoSistema", async token =>
+        {
+            // Solo hilos internos sin marca (el del Monitor creado antes de 2026-11-27): nunca toca otro canal.
+            const string sql = """
+                UPDATE dbo.CONV_CONVERSACIONES
+                SET IdentificadorExternoConversacion = @Identificador
+                WHERE IdConversacion = @IdConversacion
+                  AND Canal = N'INTERNO'
+                  AND ISNULL(IdentificadorExternoConversacion, N'') = N'';
+                """;
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            cmd.Parameters.AddWithValue("@Identificador", AvisoSistemaPrefijo + avisoSistema.Trim().ToUpperInvariant());
+            await cmd.ExecuteNonQueryAsync(token);
+            return true;
+        }, "No se pudo marcar el hilo de avisos.", ct);
 
     private async Task<ConversacionMercadoLibreConfigDto> RefreshMercadoLibreAccessTokenAsync(
         ConversacionMercadoLibreConfigDto config,
@@ -12448,6 +12628,16 @@ public sealed partial class ConversacionesService(
 
     private static readonly string AutomatedOutgoingSistemaAutorSqlList =
         string.Join(", ", AutomatedOutgoingSistemaAutores.Select(a => $"N'{a}'"));
+
+    /// <summary>Prefijo de IdentificadorExternoConversacion de los hilos internos de avisos del sistema.</summary>
+    internal const string AvisoSistemaPrefijo = "SISTEMA:";
+
+    /// <summary>
+    /// SQL: la conversación "c" es un hilo interno de avisos del sistema (Monitor de Clientes, backups). Se ve
+    /// también en la bandeja Todos, resaltado: en el chat interno no lo miraba nadie (2026-11-27).
+    /// </summary>
+    internal static string AvisoSistemaSql
+        => $"(c.Canal = N'INTERNO' AND ISNULL(c.IdentificadorExternoConversacion, N'') LIKE N'{AvisoSistemaPrefijo}%')";
 
     /// <summary>SQL: el mensaje <paramref name="alias"/> es una respuesta escrita por una persona (no una automatización).</summary>
     internal static string SalienteHumanoSql(string alias)
