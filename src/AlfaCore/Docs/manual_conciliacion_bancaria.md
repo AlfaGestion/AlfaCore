@@ -1,16 +1,41 @@
 # Conciliación bancaria asistida con IA
 
+## La pantalla de conciliación bancaria
+
+Se entra desde **Caja y Bancos → Conciliación bancaria**. Tiene cuatro solapas, debajo de la barra de arriba:
+
+1. **Importación**: subir el extracto del banco (Excel, CSV o PDF) y ver las importaciones recientes.
+2. **Revisión de movimientos**: revisar cada movimiento del banco, asignar el cliente, cobrar o generar el asiento.
+3. **Liquidación**: para los cobros con tarjeta que entran por un procesador (por ejemplo **NAVE**), donde el banco acredita solo el neto. Subí el Excel **Detalle de operaciones** del procesador, revisá la cuenta de cada medio de pago y las de comisión e IVA, y generá los asientos propuestos por día.
+4. **Conciliar cuenta**: unir los movimientos del banco con los de la contabilidad.
+
+Los botones de la barra de arriba:
+
+- [[bi:upload]] **Importar extracto** (el botón azul de la izquierda).
+- [[bi:arrow-clockwise]] **Actualizar**.
+- [[bi:bank]] **Asiento de gastos bancarios**: arma un asiento con los gastos y los impuestos del banco.
+- [[bi:journal-text]] **Cuentas para asientos**: qué cuenta contable usa cada tipo de movimiento.
+
+En el medio está el buscador (**Todos los bancos…**) y a la derecha la cantidad de registros y las flechas [[bi:chevron-left]] [[bi:chevron-right]] para pasar de página.
+
+### Paso a paso de una conciliación
+
+1. En **Importación**, tocá **Elegir archivo** y elegí el extracto. Confirmá la cuenta contable del banco y revisá la cantidad de movimientos. Importalo.
+2. En **Revisión de movimientos**, revisá cada movimiento: el sistema propone qué es (cobranza, gasto, transferencia…) y a qué cliente o factura corresponde.
+3. Cobrá las transferencias de clientes con **Cobrar** (ver el manual de **Cobranzas**) o marcá las que ya estaban cobradas con **Marcar como cobrado**.
+4. Generá los asientos de los gastos e impuestos con [[bi:journal-plus]] **Generar asiento** o [[bi:bank]] **Asiento de gastos bancarios**.
+5. En **Conciliar cuenta**, elegí la cuenta y el período y conciliá lo que coincide. [[bi:stars]] **Asistir con IA** propone las coincidencias que faltan.
 ## Importar un extracto PDF
 
 En **Importación**, seleccioná el PDF igual que un Excel o CSV. Por ahora se reconocen los resúmenes de cuenta corriente en pesos de **Nación e Hipotecario** con texto seleccionable. El sistema detecta el banco; confirmá la cuenta contable y revisá la cantidad de movimientos antes de importar. Después se revisan y concilian con las mismas herramientas habituales.
 
 La lectura verifica importes y saldos del resumen; los saldos iniciales, finales y transportes no se crean como movimientos. Si faltan filas o los saldos no cierran, se rechaza el archivo completo para revisarlo. Los PDF escaneados, liquidaciones de tarjetas y otros diseños no se interpretan como extractos: utilizá el módulo o formato que corresponda.
 
-Se reutiliza el Python configurado en Recepción documental, con `pypdf` instalado en el servidor. La lectura es local, sin enviar el PDF a IA.
+La lectura del PDF se hace en el servidor, sin enviarlo a la IA.
 
 ## Archivo original como testigo
 
-Las nuevas importaciones conservan el Excel, CSV o PDF original, sin modificarlo, junto con los movimientos y su huella de integridad. En **Importación → Importaciones recientes → Original** podés descargarlo. El respaldo de la base incluye el archivo. Las importaciones anteriores muestran **Sin original**: sus movimientos no permiten reconstruir el documento recibido. El administrador debe aplicar la actualización de originales antes de realizar nuevas importaciones.
+Las nuevas importaciones conservan el Excel, CSV o PDF original, sin modificarlo, junto con los movimientos y su huella de integridad. En **Importación → Importaciones recientes → Original** podés descargarlo. El respaldo de la base incluye el archivo. Las importaciones anteriores muestran **Sin original**: sus movimientos no permiten reconstruir el documento recibido.
 
 ## Ayuda y preguntas sobre el módulo
 
@@ -20,7 +45,7 @@ Ingresá a **Caja y Bancos → Conciliación bancaria asistida con IA** con la e
 
 ## Asistir con IA
 
-En **Conciliar cuenta**, elegí cuenta y período, aplicá los filtros y pulsá **Asistir con IA** (estrellas). Analiza los pendientes del resultado completo, incluidas otras páginas. Reutiliza primero las coincidencias únicas por reglas y consulta IA para los restantes. Puede proponer uno o varios movimientos de cada lado y explicar la relación. No modifica movimientos durante el análisis.
+En **Conciliar cuenta**, elegí cuenta y período, aplicá los filtros y pulsá [[bi:stars]] **Asistir con IA** (estrellas). Analiza los pendientes del resultado completo, incluidas otras páginas. Reutiliza primero las coincidencias únicas por reglas y consulta IA para los restantes. Puede proponer uno o varios movimientos de cada lado y explicar la relación. No modifica movimientos durante el análisis.
 
 Revisá fechas, conceptos, comprobantes, totales y diferencias. Seleccioná las propuestas que correspondan; inicialmente ninguna queda marcada. Podés seleccionar hasta 100 y confirmarlas juntas. Si tienen diferencias dentro de la tolerancia, debés aceptarlas e ingresar un motivo. Si algún movimiento cambió o ya se concilió, se rechaza la confirmación del lote completo para revisarlo. El análisis, su modelo, motivos y las propuestas quedan registrados.
 
@@ -34,15 +59,15 @@ El análisis admite inicialmente hasta 300 pendientes por lista. Si se supera el
 2. El sistema detecta Provincia, Santander o Mercado Pago por el contenido. El selector **Formato del extracto** aparece solo si no se reconoce el formato y se oculta al procesarlo correctamente; el archivo permanece seleccionado.
 3. El sistema propone la cuenta bancaria cuando hay una coincidencia clara con el banco detectado. Si hay varias cuentas posibles, seleccioná la que corresponde al extracto. Podés corregir la cuenta sugerida; se muestran las cuentas activas del plan de cuentas con medio de pago `DB`.
 4. Revisá la cantidad de movimientos, ingresos, egresos y total neto.
-5. Presioná **Importar extracto** en la barra superior.
+5. Presioná [[bi:upload]] **Importar extracto** en la barra superior.
 
 Al terminar se abre **Revisión de movimientos** con la importación recién procesada. Se muestran fecha, descripción original, referencia, importe, clasificación, cliente probable, propuesta, confianza y estado.
 
-En **Revisión de movimientos**, la búsqueda ocupa una sola barra en el encabezado, sin el bloque de filtros sobre la tabla. Escribí un importe, descripción o referencia y pulsá **Enter**. Abrí el **embudo** para combinar **Clasificación**, **Cliente probable** (nombre o código), **Registración** (Pendiente, Cobrado, Registrado o Revisado) y **Conciliación** (Pendiente o Conciliado), y pulsá **Aplicar**. **Limpiar** quita todos los filtros. La barra indica la importación y la cantidad de filtros activos; al pulsar el indicador de importación podés ampliar a todos los bancos conservando los filtros aplicados. Por ejemplo, elegí Cobranza + Cobrado + conciliación Pendiente para revisar ingresos ya cobrados que todavía falta conciliar.
+En **Revisión de movimientos**, la búsqueda ocupa una sola barra en el encabezado, sin el bloque de filtros sobre la tabla. Escribí un importe, descripción o referencia y pulsá **Enter**. Abrí el **embudo** para combinar **Clasificación**, **Cliente probable** (nombre o código), **Registración** (Pendiente, Cobrado, Registrado o Revisado) y **Conciliación** (Pendiente o Conciliado), y pulsá [[bi:search]] **Aplicar**. **Limpiar** quita todos los filtros. La barra indica la importación y la cantidad de filtros activos; al pulsar el indicador de importación podés ampliar a todos los bancos conservando los filtros aplicados. Por ejemplo, elegí Cobranza + Cobrado + conciliación Pendiente para revisar ingresos ya cobrados que todavía falta conciliar.
 
 Si no sabés en qué banco está un movimiento, usá **Todos los bancos: importe, detalle o referencia…** en la barra superior y pulsá **Enter**, incluso desde **Importación**. Se abre **Revisión de movimientos** con todas las importaciones, sin limitarse al banco ni a los filtros anteriores. La búsqueda por importe reconoce formatos como `1.234.567,89`, `$ 1.234.567,89` y `1234567.89`.
 
-En ventanas de hasta 1440 píxeles, **Generar asiento** y **Revisar propuestas** se encuentran en **…**. Hasta 1280 píxeles, la barra superior usa dos filas y la búsqueda ocupa la segunda. El panel de filtros se ajusta al ancho y alto disponibles; si necesitás desplazarte dentro del panel, **Limpiar** y **Aplicar** permanecen visibles al pie.
+En ventanas de hasta 1440 píxeles, [[bi:journal-plus]] **Generar asiento** y **Revisar propuestas** se encuentran en **…**. Hasta 1280 píxeles, la barra superior usa dos filas y la búsqueda ocupa la segunda. El panel de filtros se ajusta al ancho y alto disponibles; si necesitás desplazarte dentro del panel, **Limpiar** y **Aplicar** permanecen visibles al pie.
 
 Hacé clic en el encabezado de cualquier columna de datos para ordenar; otro clic invierte el sentido. Las flechas indican el orden activo. Todos los filtros y el orden abarcan los movimientos del alcance seleccionado y se conservan al pasar de página, abrir otra importación o usar **Ver todas**. Al importar un archivo nuevo, la revisión comienza sin filtros.
 
@@ -130,7 +155,7 @@ Una coincidencia de importe no confirma que sea la misma transferencia: compará
 
 La pestaña **Comprobantes** conserva la comparación de facturas y su botón **Cobrar**. La cuenta corriente sirve para consultar y verificar.
 
-También podés abrir **Cuenta corriente** directamente desde cada fila de **Revisión de movimientos**, o desde el icono **Cuenta corriente del cliente** en las acciones del extracto de **Conciliar cuenta**. La consulta se abre en una ventana flotante, con el cliente, saldo por moneda, últimos 30/50/100 movimientos y posibles recibos ya registrados. Si falta identificar al cliente, asignalo desde el detalle del movimiento antes de consultar.
+También podés abrir **Cuenta corriente** directamente desde cada fila de **Revisión de movimientos**, o desde el icono [[bi:person-lines-fill]] **Cuenta corriente del cliente** en las acciones del extracto de **Conciliar cuenta**. La consulta se abre en una ventana flotante, con el cliente, saldo por moneda, últimos 30/50/100 movimientos y posibles recibos ya registrados. Si falta identificar al cliente, asignalo desde el detalle del movimiento antes de consultar.
 
 **Ver asiento** abre directamente el mismo visor contable completo de **Ver comprobante → Ver asientos**: incluye la cuenta del cliente, todas las contrapartidas, débitos y créditos, totales e historial de acciones. Al cerrar el asiento volvés a la cuenta corriente. **Ver recibo** conserva la revisión de aplicaciones y la opción de reconocer el cobro existente. **Ver comprobante** abre el visor completo en otra ventana flotante; desde las aplicaciones también podés abrir la factura correspondiente. **Volver a cuenta corriente** cierra solo el comprobante y conserva la consulta. Cerrar la cuenta corriente conserva los movimientos tildados para conciliar. El clic fuera de estas ventanas no las cierra.
 
@@ -167,7 +192,7 @@ La importación prepara propuestas para revisión. La acción **Confirmar cobran
 ### Conciliar la cuenta bancaria
 
 1. Abrí la pestaña **Conciliar cuenta** y elegí la cuenta bancaria en pesos.
-2. Indicá **Desde**, **Hasta**, el estado (**Pendientes**, **Conciliados** o **Todos**) y, si hace falta, un texto de búsqueda. Pulsá **Comparar**.
+2. Indicá **Desde**, **Hasta**, el estado (**Pendientes**, **Conciliados** o **Todos**) y, si hace falta, un texto de búsqueda. Pulsá [[bi:arrow-left-right]] **Comparar**.
 3. A la izquierda aparecen los movimientos de los extractos importados; a la derecha, los de esa cuenta bancaria registrados en Alfa. Las fechas se pueden ampliar para incluir acreditaciones o débitos posteriores.
 4. Marcá uno o varios movimientos de cada lado. Podés cambiar de página sin perder la selección. Los totales deben coincidir exactamente y todos los movimientos deben ser ingresos o todos egresos.
 5. **Conciliar selección** abre la revisión de todos los movimientos elegidos. **Confirmar conciliación** guarda el vínculo y marca los registros como conciliados.
@@ -180,7 +205,7 @@ Los totales superiores corresponden a movimientos del período, sin saldos inici
 
 Para revisar o corregir un vínculo, elegí **Historial** en el movimiento del banco o **Ver vínculo** en Alfa. Podés **Desconciliar este vínculo** con un motivo: se libera todo el grupo y se conserva quién lo confirmó y quién lo deshizo. La cobranza o el asiento permanecen registrados. Si los registros cambiaron o tienen una conciliación legacy, se informa el impedimento para evitar liberar una marca incorrecta.
 
-Una importación con historial de conciliación no puede eliminarse. Un movimiento conciliado tampoco permite generar otra cobranza rápida. Para registrar comisiones, impuestos y otros conceptos sin registración previa, usá **Generar asiento** y revisá las cuentas configuradas antes de confirmar.
+Una importación con historial de conciliación no puede eliminarse. Un movimiento conciliado tampoco permite generar otra cobranza rápida. Para registrar comisiones, impuestos y otros conceptos sin registración previa, usá [[bi:journal-plus]] **Generar asiento** y revisá las cuentas configuradas antes de confirmar.
 
 ### Cobrar dos o más facturas con un mismo depósito
 
@@ -207,7 +232,7 @@ El reconocimiento guarda recibo, usuario y fecha; impide reconocer el mismo reci
 
 ## Comparar varias importaciones y conciliar propuestas
 
-En **Conciliar cuenta**, elegí la cuenta y las fechas y pulsá **Comparar**. Se incluyen todos los archivos importados asociados a esa cuenta cuyos movimientos estén dentro del período; Alfa muestra los movimientos contables de la misma cuenta y fechas.
+En **Conciliar cuenta**, elegí la cuenta y las fechas y pulsá [[bi:arrow-left-right]] **Comparar**. Se incluyen todos los archivos importados asociados a esa cuenta cuyos movimientos estén dentro del período; Alfa muestra los movimientos contables de la misma cuenta y fechas.
 
 Podés filtrar por pendientes/conciliados, buscar texto, elegir ingresos o egresos y establecer un rango de importe. El rango utiliza el valor absoluto: para buscar un egreso de $5.000, elegí Egresos y el importe 5000 positivo. **Limpiar filtros** conserva la cuenta y el período. Ordená haciendo clic en los títulos de las columnas de cada lista; el orden incluye todas sus páginas.
 
@@ -228,18 +253,18 @@ La lupa y el embudo de la barra superior permiten buscar y cambiar cuenta, perí
 
 En ese filtro también podés elegir **Clasificación del extracto** y **50 o 100 registros por página** para cada lista. La clasificación filtra únicamente el banco: Alfa conserva sus movimientos para que puedas encontrar la contrapartida. Ordená haciendo clic en el título de cada columna; otro clic invierte el sentido, indicado por la flecha. Fecha/referencia y fecha/comprobante tienen títulos independientes para ordenar por cada dato. El orden se aplica a todo el resultado, no solo a las filas de la página actual.
 
-Los títulos Banco/Alfa, los encabezados de columnas y los pies de página permanecen visibles al desplazar las filas. Los indicadores resumen banco, Alfa, diferencias, selección y coincidencias. Para generar un asiento, seleccioná un único movimiento bancario pendiente y usá **Generar asiento** en la barra superior; también aparece en las filas aptas. Si ya está registrado o corresponde a Cobranza/TransferenciaInterna, se utiliza su circuito específico.
+Los títulos Banco/Alfa, los encabezados de columnas y los pies de página permanecen visibles al desplazar las filas. Los indicadores resumen banco, Alfa, diferencias, selección y coincidencias. Para generar un asiento, seleccioná un único movimiento bancario pendiente y usá [[bi:journal-plus]] **Generar asiento** en la barra superior; también aparece en las filas aptas. Si ya está registrado o corresponde a Cobranza/TransferenciaInterna, se utiliza su circuito específico.
 
-Las acciones de cada fila del banco se muestran como iconos compactos: vínculo para revisar una propuesta, asiento para generar un CC e historial. Al apoyar el mouse aparece el nombre de la acción. La barra superior mantiene **Generar asiento** y **Asistir con IA** con texto. **Cuentas para asientos** también está disponible entre sus acciones adicionales.
+Las acciones de cada fila del banco se muestran como iconos compactos: vínculo para revisar una propuesta, asiento para generar un CC e historial. Al apoyar el mouse aparece el nombre de la acción. La barra superior mantiene **Generar asiento** y [[bi:stars]] **Asistir con IA** con texto. [[bi:journal-text]] **Cuentas para asientos** también está disponible entre sus acciones adicionales.
 
 
 ## Generar asientos desde los movimientos del banco
 
-Primero abrí **Cuentas para asientos** en la barra superior, o **Cuentas y conceptos** desde el editor de un asiento. Al cerrar la configuración se conserva el asiento que estabas preparando. Si guardás conceptos nuevos y todavía no elegiste una contrapartida, se propone la regla que coincida de forma única; una distribución manual ya ingresada se conserva. Agregá un concepto, elegí su clasificación y cuenta de contrapartida; opcionalmente indicá banco, texto a reconocer y detalle predeterminado. Guardá la configuración. Los cambios se comparten con los usuarios de esta base.
+Primero abrí [[bi:journal-text]] **Cuentas para asientos** en la barra superior, o **Cuentas y conceptos** desde el editor de un asiento. Al cerrar la configuración se conserva el asiento que estabas preparando. Si guardás conceptos nuevos y todavía no elegiste una contrapartida, se propone la regla que coincida de forma única; una distribución manual ya ingresada se conserva. Agregá un concepto, elegí su clasificación y cuenta de contrapartida; opcionalmente indicá banco, texto a reconocer y detalle predeterminado. Guardá la configuración. Los cambios se comparten con los usuarios de esta base.
 
 Si todavía no hay conceptos, se precarga una **propuesta inicial según el plan de cuentas**: gastos bancarios, intereses, retenciones bancarias de IIBB, IVA bancario y Ley 25.413 cuando existen cuentas específicas sin ambigüedad. Podés corregir, quitar o agregar conceptos antes de guardar. Se activan al pulsar **Guardar cuentas y conceptos**; cancelar no modifica nada. Si ya tenés conceptos guardados, se conservan. Los impuestos sin una cuenta específica y los gastos sin concepto reconocido requieren imputación manual.
 
-En **Revisión de movimientos**, en su detalle o en **Conciliar cuenta**, elegí **Generar asiento** para un movimiento pendiente. Revisá concepto, fecha, unidad de negocio y talonario CC. La cuenta bancaria y su importe provienen del extracto. Podés cambiar la contrapartida, editar el detalle y agregar renglones para distribuir el importe. La vista previa muestra Debe y Haber; la diferencia por distribuir debe quedar en cero.
+En **Revisión de movimientos**, en su detalle o en **Conciliar cuenta**, elegí [[bi:journal-plus]] **Generar asiento** para un movimiento pendiente. Revisá concepto, fecha, unidad de negocio y talonario CC. La cuenta bancaria y su importe provienen del extracto. Podés cambiar la contrapartida, editar el detalle y agregar renglones para distribuir el importe. La vista previa muestra Debe y Haber; la diferencia por distribuir debe quedar en cero.
 
 Si aparecen registraciones parecidas, revisalas antes de marcar que corresponde generar un asiento nuevo. Al confirmar se genera el comprobante contable CC y se concilia el movimiento en la misma operación. Se informa el número de CC, el asiento y el vínculo de conciliación. La caja corresponde al usuario que graba.
 

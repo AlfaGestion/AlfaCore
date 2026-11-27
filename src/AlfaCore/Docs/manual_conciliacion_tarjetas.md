@@ -2,6 +2,22 @@
 
 Desde **Caja y Bancos → Conciliación de tarjetas asistida con IA**, compará las tarjetas presentadas en Alfa con las operaciones incluidas en los resúmenes de liquidación. Esta etapa no genera LT, asientos ni libro de IVA. La acreditación bancaria efectiva se verifica por separado con los extractos bancarios.
 
+## La pantalla de conciliación de tarjetas
+
+Tiene dos solapas debajo de la barra de arriba:
+
+- **Importación**: tocá **Elegir archivo** y subí la liquidación PDF del banco (Nación, Patagonia o Hipotecario), el extracto de Galicia o el Excel **Detalle de operaciones** de NAVE. Abajo se listan las importaciones, con sus **Acciones** (descargar el **Original**, [[bi:trash]] **Anular importación**). **Mostrar también importaciones anuladas** las incluye.
+- **Conciliar tarjetas**: comparar las tarjetas cargadas en Alfa con las operaciones de la liquidación y confirmar las que coinciden.
+
+En la barra de arriba: [[bi:upload]] **Importar y preparar**, [[bi:arrow-clockwise]] **Actualizar** y, en **Conciliar tarjetas**, [[bi:link]] **Conciliar selección**. A la derecha, la cantidad de importaciones y las flechas para pasar de página.
+
+### Paso a paso
+
+1. En **Importación**, subí la liquidación y confirmá la cuenta contable de la tarjeta.
+2. En **Conciliar tarjetas**, elegí la importación y el período.
+3. Tocá [[bi:stars]] **Asistir con IA** → [[bi:stars]] **Aplicar y analizar**: el sistema propone qué tarjeta de Alfa corresponde a cada operación del banco.
+4. Revisá las propuestas, marcá las correctas y tocá [[bi:link]] **Conciliar selección**.
+5. [[bi:file-earmark-excel]] **Descargar Excel** baja el resultado.
 ## Importar el documento testigo
 
 1. Elegí un PDF mensual de Nación, Patagonia o Hipotecario, o el extracto de cuenta corriente en pesos de Galicia, de hasta 20 MB.
@@ -39,7 +55,7 @@ El **Resumen de cuenta BNA** es un extracto bancario, no una liquidación de tar
 
 **Proponer selección** busca pares únicos por fecha e importe en todo el resultado consultado, incluidas otras páginas, hasta 2.000. No confirma automáticamente ni selecciona coincidencias ambiguas. También podés seleccionar varios registros de cada lado y comparar sus totales brutos.
 
-Revisá el original y presioná **Conciliar selección**. Una diferencia dentro de la tolerancia requiere motivo y no modifica importes. Si el detalle extraído no coincide con el bruto del PDF, el documento queda disponible para revisar pero se bloquea la confirmación. No se ajustan ventas ni impuestos artificialmente para balancear.
+Revisá el original y presioná [[bi:link]] **Conciliar selección**. Una diferencia dentro de la tolerancia requiere motivo y no modifica importes. Si el detalle extraído no coincide con el bruto del PDF, el documento queda disponible para revisar pero se bloquea la confirmación. No se ajustan ventas ni impuestos artificialmente para balancear.
 
 Los movimientos sin liquidación encontrada no son automáticamente impagos: revisá fechas, sucursal y plazos. Las marcas de liquidación existentes del desktop se respetan. Esta pantalla no modifica esos registros.
 
@@ -56,13 +72,13 @@ Los indicadores distinguen los totales consultados de la diferencia de selecció
 - **Comparar**: vuelve a consultar las listas con los filtros elegidos. Actualiza la comparación y limpia la selección anterior; no propone ni guarda conciliaciones.
 - **Proponer selección**: marca pares únicos con la misma fecha e importe entre los pendientes consultados, incluidas otras páginas. No usa IA. Revisá las marcas antes de confirmar.
 - **Asistir con IA**: analiza los pendientes y propone coincidencias o agrupaciones, con el margen de fechas y tolerancia configurados. Presenta la evidencia para revisar cada propuesta.
-- **Conciliar selección**: abre la confirmación para guardar el vínculo de lo seleccionado. Las otras tres acciones no lo guardan automáticamente.
+- [[bi:link]] **Conciliar selección**: abre la confirmación para guardar el vínculo de lo seleccionado. Las otras tres acciones no lo guardan automáticamente.
 
 Mientras se ejecuta la IA aparece **Analizando con IA…**, un indicador animado y un mensaje persistente. Primero prepara los pendientes; después informa las cantidades de ambos lados que se están analizando. Puede demorar unos minutos. El aviso permanece visible hasta terminar o informar un error, y los botones quedan bloqueados para evitar ejecutar dos operaciones a la vez.
 
 ## Asistir con IA
 
-En **Conciliar tarjetas**, elegí **Asistir con IA** en la barra superior, revisá los criterios y pulsá **Aplicar y analizar**. Se consultan nuevamente los pendientes con las fechas, sucursal y búsqueda actuales, incluyendo otras páginas. Primero se buscan agrupaciones locales y solo se envían a la IA los casos restantes cuando está habilitada esa opción; el PDF original no se envía.
+En **Conciliar tarjetas**, elegí **Asistir con IA** en la barra superior, revisá los criterios y pulsá [[bi:stars]] **Aplicar y analizar**. Se consultan nuevamente los pendientes con las fechas, sucursal y búsqueda actuales, incluyendo otras páginas. Primero se buscan agrupaciones locales y solo se envían a la IA los casos restantes cuando está habilitada esa opción; el PDF original no se envía.
 
 La IA puede proponer pares individuales y grupos de ventas que suman un lote, comparando importes brutos, fechas y referencias de cupón/presentación. La fecha de pago es informativa. No se compara el neto con ventas brutas ni se descuentan comisiones para forzar una coincidencia. Los casos ambiguos pueden quedar pendientes.
 
@@ -74,10 +90,10 @@ El margen inicial es de 3 días, con hasta 2.000 pendientes por lado en cada pet
 
 Pulsá **Ver conciliados** junto a **Cambiar cuenta** y **Documento original**. También podés elegir **Conciliados** o **Todos** en el filtro general. En cualquier fila del grupo, pulsá **Deshacer #…**, escribí un motivo y confirmá **Deshacer conciliación completa**. Se libera todo ese vínculo (todos sus registros de ambos lados), no solo la fila donde hiciste clic. Después se muestran los pendientes para seleccionarlos en otra conciliación. Se consulta el vínculo completo sin exigir ampliar las fechas o sucursales de la pantalla; necesitás permisos sobre todas sus unidades. La reversión mantiene el historial; no borra el PDF ni modifica asientos. Los movimientos alterados después de confirmar se señalan para revisión.
 
-Para corregir varias juntas, pulsá **Deshacer varias**. Se abre una ventana con todas las conciliaciones activas de la importación, incluso las que los filtros generales o rápidos no muestran. Allí sí podés tildarlas, usar **Seleccionar todas** o limpiar la selección. La selección abarca todas las páginas y admite hasta 1.000 conciliaciones por operación. Las casillas de las listas principales siguen reservadas para conciliar movimientos pendientes.
+Para corregir varias juntas, pulsá [[bi:arrow-counterclockwise]] **Deshacer varias**. Se abre una ventana con todas las conciliaciones activas de la importación, incluso las que los filtros generales o rápidos no muestran. Allí sí podés tildarlas, usar **Seleccionar todas** o limpiar la selección. La selección abarca todas las páginas y admite hasta 1.000 conciliaciones por operación. Las casillas de las listas principales siguen reservadas para conciliar movimientos pendientes.
 
 La ventana se abre mientras consulta y muestra el progreso. Si no puede terminar, el mensaje y el
-código quedan visibles allí; pulsá **Volver a consultar** para reintentar. **Seleccionar todas** elige
+código quedan visibles allí; pulsá [[bi:arrow-clockwise]] **Volver a consultar** para reintentar. **Seleccionar todas** elige
 solo las conciliaciones habilitadas. Las que requieran revisar permisos o identificar movimientos
 aparecen deshabilitadas con su estado; no se liberan sin superar esos controles.
 
@@ -112,9 +128,9 @@ Si el período supera 10.000 movimientos entre las cuentas TJ, no se sugiere a p
 
 Si todavía estás en la vista previa, **Descartar archivo seleccionado** quita esa selección sin afectar las importaciones existentes.
 
-Para un archivo ya importado, en **Importación** buscá su fila y pulsá **Anular**. Revisá el nombre y la cuenta, escribí un motivo de al menos tres caracteres y confirmá **Anular importación**. Se conservan el PDF original, las operaciones y el historial como testigo. La importación deja de aparecer entre las activas y podés importar nuevamente el archivo correcto.
+Para un archivo ya importado, en **Importación** buscá su fila y pulsá **Anular**. Revisá el nombre y la cuenta, escribí un motivo de al menos tres caracteres y confirmá [[bi:trash]] **Anular importación**. Se conservan el PDF original, las operaciones y el historial como testigo. La importación deja de aparecer entre las activas y podés importar nuevamente el archivo correcto.
 
-Se permite cuando no quedan conciliaciones activas, aunque haya vínculos ya deshechos. Si todavía tiene conciliaciones, usá primero **Deshacer varias**. No modifica asientos, cuentas contables ni asociaciones recordadas. La anulación queda auditada con usuario, fecha y motivo.
+Se permite cuando no quedan conciliaciones activas, aunque haya vínculos ya deshechos. Si todavía tiene conciliaciones, usá primero [[bi:arrow-counterclockwise]] **Deshacer varias**. No modifica asientos, cuentas contables ni asociaciones recordadas. La anulación queda auditada con usuario, fecha y motivo.
 
 **Mostrar también importaciones anuladas** permite consultar su estado y descargar el original. No pueden conciliarse ni cambiar de cuenta. Para trabajar nuevamente, importá el archivo como una nueva importación.
 
@@ -144,7 +160,7 @@ El análisis exige ahora una respuesta estructurada con los campos y tipos esper
 
 ## Exportar la conciliación a Excel
 
-En **Conciliar tarjetas**, pulsá **Exportar Excel**. Elegí **Comparación actual**, **Solo pendientes** o **Solo conciliados** y confirmá **Descargar Excel**. Las dos últimas opciones reemplazan solo el estado general. Se respetan el período de Alfa, la búsqueda, las sucursales, las fechas locales y **Solo seleccionados** si está activo. Se incluyen todas las páginas del alcance elegido; no hace falta seleccionar todo para exportar la consulta completa.
+En **Conciliar tarjetas**, pulsá **Exportar Excel**. Elegí **Comparación actual**, **Solo pendientes** o **Solo conciliados** y confirmá [[bi:file-earmark-excel]] **Descargar Excel**. Las dos últimas opciones reemplazan solo el estado general. Se respetan el período de Alfa, la búsqueda, las sucursales, las fechas locales y **Solo seleccionados** si está activo. Se incluyen todas las páginas del alcance elegido; no hace falta seleccionar todo para exportar la consulta completa.
 
 El archivo tiene cuatro hojas:
 
@@ -160,7 +176,7 @@ Las fechas e importes son valores de Excel; los códigos conservan sus ceros ini
 
 ## Cambiar límites y probar agrupaciones
 
-Al pulsar **Asistir con IA** se abre **Criterios de búsqueda**. Modificá los valores y pulsá **Aplicar y analizar**. Podés repetir el análisis cambiando los límites; no se confirma nada automáticamente. Los valores elegidos quedan para esa pantalla, sin modificar los de otros usuarios ni los predeterminados de la base. **Valores de la base** recupera los predeterminados.
+Al pulsar **Asistir con IA** se abre **Criterios de búsqueda**. Modificá los valores y pulsá [[bi:stars]] **Aplicar y analizar**. Podés repetir el análisis cambiando los límites; no se confirma nada automáticamente. Los valores elegidos quedan para esa pantalla, sin modificar los de otros usuarios ni los predeterminados de la base. **Valores de la base** recupera los predeterminados.
 
 | Criterio | Inicial | Rango | Uso |
 |---|---:|---:|---|
@@ -192,9 +208,9 @@ Durante las consultas de IA se indica el lote actual, el total, cuántos termina
 
 ## Recuperar un análisis al volver a entrar
 
-Al terminar **Aplicar y analizar**, el resultado se guarda automáticamente en la base, asociado a esa liquidación y a tu usuario. Conserva las propuestas, evidencias, modelo, filtros y límites de búsqueda, incluso si no encontró coincidencias. No guarda casillas seleccionadas ni confirma conciliaciones.
+Al terminar [[bi:stars]] **Aplicar y analizar**, el resultado se guarda automáticamente en la base, asociado a esa liquidación y a tu usuario. Conserva las propuestas, evidencias, modelo, filtros y límites de búsqueda, incluso si no encontró coincidencias. No guarda casillas seleccionadas ni confirma conciliaciones.
 
-Al abrir nuevamente la liquidación aparece **Análisis guardado**, con fecha y hora, y **Ver análisis guardado**. Este botón recupera el último análisis de tu usuario, restaura su período y filtros y verifica los movimientos actuales, sin volver a consultar la IA. Se informa cuántas propuestas siguen disponibles y cuántas se omitieron. Los conteos y el resumen de búsqueda corresponden al análisis original.
+Al abrir nuevamente la liquidación aparece **Análisis guardado**, con fecha y hora, y [[bi:folder2-open]] **Ver análisis guardado**. Este botón recupera el último análisis de tu usuario, restaura su período y filtros y verifica los movimientos actuales, sin volver a consultar la IA. Se informa cuántas propuestas siguen disponibles y cuántas se omitieron. Los conteos y el resumen de búsqueda corresponden al análisis original.
 
 Si un movimiento cambió, ya fue conciliado o dejó de estar disponible con tus permisos, se omite toda la propuesta afectada. Si cambió la cuenta de la liquidación, hay que generar un análisis nuevo. Al confirmar se mantienen los controles transaccionales habituales. Podés confirmar las propuestas vigentes y volver a recuperar las restantes.
 
@@ -213,22 +229,13 @@ La ficha muestra **En cola → Leyendo PDF → Analizando → Listo para revisar
 
 Si no hay una cuenta identificable queda **Esperando cuenta**. Elegí una cuenta TJ activa, imputable y en pesos; podés indicar una sucursal de Alfa o dejarla vacía para incluir todas. Pulsá **Aplicar cuenta y continuar**. La ficha muestra las cuentas candidatas cuando la lectura las identificó.
 
-El worker usa los límites predeterminados de la base para buscar agrupaciones y consultar la IA para los casos restantes. Guarda las propuestas y su evidencia; no las confirma. Cuando termina, **Revisar en Conciliación de tarjetas** abre esa importación y ese análisis, restaurando su alcance y verificando los movimientos actuales. El análisis sigue asociado al usuario que encoló el documento; necesitás ingresar con ese usuario. En acceso restringido por `directo=1` se oculta el acceso al otro módulo.
+El worker usa los límites predeterminados de la base para buscar agrupaciones y consultar la IA para los casos restantes. Guarda las propuestas y su evidencia; no las confirma. Cuando termina, [[bi:box-arrow-up-right]] **Revisar en Conciliación de tarjetas** abre esa importación y ese análisis, restaurando su alcance y verificando los movimientos actuales. El análisis sigue asociado al usuario que encoló el documento; necesitás ingresar con ese usuario. En acceso restringido por `directo=1` se oculta el acceso al otro módulo.
 
 Si falla, reintenta hasta tres veces, con cinco minutos de espera. Después queda **Requiere revisión**, con código de incidente y **Reintentar**. El original y la importación ya creada se conservan. Un reinicio normal del servidor devuelve el trabajo a la cola; ante una interrupción brusca, otro ciclo lo recupera al vencer su reserva. El PDF idéntico de la misma cuenta se reutiliza si ya estaba importado: no se duplican sus movimientos.
 
-### Preparación del servidor
+### Si no aparece la opción
 
-- Publicar la aplicación y ejecutar las actualizaciones hasta **2026-10-31-003** (incluye los límites y el análisis persistente).
-- En **Administrar → Bases**, marcar **Incluir** en **Recepción documental · compras y tarjetas** para la base correspondiente. Se reutiliza la selección de bases del worker documental existente. El cliente debe tener **Comprobantes con IA** activo o en prueba vigente en la central.
-- Ejecutar los workers en la instancia asignada por Administrar; `ProcesosSegundoPlano:Deshabilitados=true` impide ejecutarlos en esa instalación.
-- Configurar Python con pypdf en **Administrar → Servidor** y la conexión de IA de esa instalación. Se reutiliza la configuración existente; no se cambia appsettings.json ni .env automáticamente.
-- El usuario que carga y prepara debe estar autorizado en esa base y tener permiso de Conciliación de tarjetas. El worker consulta movimientos con ese usuario y sus unidades; no utiliza un administrador genérico.
-
-`TARJETAS-DOCUMENTAL-HABILITADO` habilita este procesamiento en la base (inicial SI). `TARJETAS-DOCUMENTAL-MINUTOS` limita cada intento (inicial 20, de 1 a 120 minutos). Los límites de agrupación y de IA siguen siendo los de tarjetas. La confirmación final sigue siendo manual; no se generan LT, IVA ni asientos.
-
-Una recepción preparada conserva el PDF con el que se encoló. Para corregir el archivo creá otra recepción: el worker verifica que el adjunto siga siendo el original y no reemplaza silenciosamente un análisis por el de otro documento.
-
+Este procesamiento lo habilita el administrador del sistema (ver el manual **Administración del servidor**). Para usarlo hace falta el permiso **Conciliación de tarjetas** en esa base. La confirmación final siempre es manual: no se generan LT, IVA ni asientos.
 
 ## Búsqueda automática guiada por IA
 
