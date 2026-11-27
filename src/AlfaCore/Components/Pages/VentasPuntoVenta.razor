@@ -6337,6 +6337,173 @@
             grid-column: auto;
         }
     }
+    /* Tamaño y distribución por PC (wwwroot/js/pos-layout.js). Las variables viven en el elemento html:
+       --pos-tile-scale (botones), --pos-cart-width (carrito), --pos-rubros-alto / --pos-rubros-ancho.
+       Sin valores guardados, todo queda igual que el layout definitivo de arriba. */
+    .pos-catalog { position: relative; }
+
+    .pos-catalog__search { grid-template-columns: minmax(0, 1fr) auto auto; }
+
+    .pos-catalog__body {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .pos-catalog__body > .pos-catalog__rubros {
+        flex: 0 0 auto;
+        max-height: var(--pos-rubros-alto, 150px);
+        padding: 0.35rem 0.7rem;
+        background: rgba(10, 20, 35, 0.72);
+        box-sizing: border-box;
+    }
+
+    html[data-theme="light"] .pos-catalog__body > .pos-catalog__rubros { background: var(--color-panel); }
+
+    .pos-split {
+        flex: 0 0 auto;
+        background: var(--color-border);
+        touch-action: none;
+        transition: background-color .12s ease;
+    }
+
+    .pos-split:hover,
+    .pos-split.is-dragging { background: var(--color-primary); }
+
+    .pos-split--rubros { height: 6px; cursor: row-resize; }
+
+    .pos-split--carrito {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 3;
+        width: 6px;
+        background: transparent;
+        cursor: col-resize;
+    }
+
+    html.pos-arrastrando,
+    html.pos-arrastrando * { user-select: none !important; }
+    html.pos-arrastrando .pos-split--rubros { cursor: inherit; }
+
+    /* Rubros al costado: columna a la izquierda de los artículos. */
+    html[data-pos-rubros="costado"] .pos-catalog__body { flex-direction: row; }
+
+    html[data-pos-rubros="costado"] .pos-catalog__body > .pos-catalog__rubros {
+        width: var(--pos-rubros-ancho, 170px);
+        max-height: none;
+        height: 100%;
+        grid-template-columns: repeat(auto-fill, minmax(95px, 1fr));
+    }
+
+    html[data-pos-rubros="costado"] .pos-split--rubros { width: 6px; height: auto; cursor: col-resize; }
+    html[data-pos-rubros="costado"] .pos-catalog__articles { flex: 1 1 auto; }
+
+    /* Ancho del carrito elegido a mano (solo en pantallas con carrito y catálogo lado a lado). */
+    @@media (min-width: 961px) {
+        html[data-pos-cart="custom"] .pos-stage,
+        html[data-pos-cart="custom"] .pos-stage.pos-stage--quick {
+            grid-template-columns: var(--pos-cart-width) minmax(0, 1fr);
+        }
+    }
+
+    @@media (max-width: 960px) {
+        .pos-split { display: none; }
+    }
+
+    /* Tamaño de los botones de artículos. */
+    .pos-catalog__articles .pos-grid {
+        grid-template-columns: repeat(auto-fill, minmax(calc(112px * var(--pos-tile-scale, 1)), 1fr));
+        gap: calc(5px * var(--pos-tile-scale, 1));
+    }
+
+    .pos-catalog__articles .pos-product {
+        grid-template-rows: calc(64px * var(--pos-tile-scale, 1)) calc(60px * var(--pos-tile-scale, 1));
+        min-height: calc(124px * var(--pos-tile-scale, 1)) !important;
+        height: calc(124px * var(--pos-tile-scale, 1));
+        max-height: calc(124px * var(--pos-tile-scale, 1));
+    }
+
+    .pos-catalog__articles .pos-product__text strong { font-size: calc(0.7rem * var(--pos-tile-scale, 1)); }
+
+    .pos-catalog__articles .pos-product__price {
+        min-height: calc(1.35rem * var(--pos-tile-scale, 1));
+        font-size: calc(0.67rem * var(--pos-tile-scale, 1));
+    }
+
+    .pos-catalog__articles .pos-product__fallback { font-size: calc(1.45rem * var(--pos-tile-scale, 1)); }
+
+    /* Panel "Tamaño y distribución". */
+    .pos-layout { position: relative; display: flex; }
+
+    .pos-layout__toggle {
+        min-width: 2.5rem;
+        min-height: 2.5rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 1.05rem;
+        cursor: pointer;
+    }
+
+    .pos-layout__toggle:hover,
+    .pos-layout__toggle.is-open { border-color: var(--color-primary); color: var(--color-primary); }
+
+    .pos-layout__backdrop { position: fixed; inset: 0; z-index: 40; }
+
+    .pos-layout__panel {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 41;
+        display: grid;
+        gap: 0.55rem;
+        width: 300px;
+        padding: 0.85rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: var(--color-panel-strong, var(--color-panel));
+        color: var(--color-text);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, .35);
+    }
+
+    .pos-layout__panel header { display: grid; gap: 0.1rem; }
+    .pos-layout__panel header small,
+    .pos-layout__hint { color: var(--color-muted); font-size: 0.78rem; margin: 0; }
+    .pos-layout__label { font-size: 0.8rem; font-weight: 700; color: var(--color-muted); margin: 0.2rem 0 0; }
+
+    .pos-layout__size { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 3rem; align-items: center; gap: 0.45rem; }
+    .pos-layout__size input[type="range"] { width: 100%; accent-color: var(--color-primary); }
+    .pos-layout__size output { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .pos-layout__size button,
+    .pos-layout__seg button,
+    .pos-layout__reset {
+        min-height: 2.4rem;
+        padding: 0.3rem 0.7rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .pos-layout__seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+
+    html:not([data-pos-rubros="costado"]) .pos-layout__seg [data-pos-layout="rubros-arriba"],
+    html[data-pos-rubros="costado"] .pos-layout__seg [data-pos-layout="rubros-costado"] {
+        border-color: var(--color-primary);
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    .pos-layout__reset { justify-self: start; background: transparent; }
 </style>
 
 <script>
@@ -7058,6 +7225,8 @@
             </aside>
 
             <div class="pos-catalog">
+                <div class="pos-split pos-split--carrito" data-pos-split="carrito" role="separator" aria-orientation="vertical"
+                     title="Arrastrá para cambiar el ancho del carrito · Doble clic: ancho original"></div>
                 <section class="pos-catalog__toolbar">
                     <div class="pos-catalog__search">
                         <input @bind="_filters.Texto"
@@ -7069,8 +7238,40 @@
                         <button type="button" class="pos-search-btn" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading">
                             @( _catalogLoading ? "Buscando..." : "Buscar" )
                         </button>
+                        <div class="pos-layout">
+                            <button type="button" class="pos-layout__toggle @(_showLayoutPanel ? "is-open" : null)" @onclick="ToggleLayoutPanel"
+                                    title="Tamaño de los botones y distribución (se guarda en esta PC)" aria-expanded="@(_showLayoutPanel ? "true" : "false")">
+                                <i class="bi bi-arrows-angle-expand" aria-hidden="true"></i>
+                            </button>
+                            @if (_showLayoutPanel)
+                            {
+                                <div class="pos-layout__backdrop" @onclick="() => _showLayoutPanel = false"></div>
+                                <section class="pos-layout__panel" aria-label="Tamaño y distribución">
+                                    <header>
+                                        <strong>Tamaño y distribución</strong>
+                                        <small>Se guarda en esta PC</small>
+                                    </header>
+                                    <label class="pos-layout__label">Tamaño de los botones</label>
+                                    <div class="pos-layout__size">
+                                        <button type="button" data-pos-layout="menos" title="Más chicos" aria-label="Botones más chicos">A−</button>
+                                        <input type="range" min="0.7" max="2" step="0.1" value="1" data-pos-layout="escala" aria-label="Tamaño de los botones" />
+                                        <button type="button" data-pos-layout="mas" title="Más grandes" aria-label="Botones más grandes">A+</button>
+                                        <output data-pos-layout-valor>100%</output>
+                                    </div>
+                                    <label class="pos-layout__label">Rubros</label>
+                                    <div class="pos-layout__seg">
+                                        <button type="button" data-pos-layout="rubros-arriba"><i class="bi bi-layout-text-window" aria-hidden="true"></i> Arriba</button>
+                                        <button type="button" data-pos-layout="rubros-costado"><i class="bi bi-layout-sidebar" aria-hidden="true"></i> Al costado</button>
+                                    </div>
+                                    <p class="pos-layout__hint">Arrastrá las barras para cambiar el ancho del carrito y el espacio de los rubros. Doble clic en una barra la vuelve a su medida original.</p>
+                                    <button type="button" class="pos-layout__reset" data-pos-layout="restablecer"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Restablecer todo</button>
+                                </section>
+                            }
+                        </div>
                     </div>
+                </section>
 
+                <div class="pos-catalog__body">
                     <div class="pos-catalog__rubros" aria-label="Rubros">
                         @if (_topConfiguradoCount > 0)
                         {
@@ -7083,7 +7284,8 @@
                         }
                     </div>
 
-                </section>
+                    <div class="pos-split pos-split--rubros" data-pos-split="rubros" role="separator"
+                         title="Arrastrá para dar más o menos lugar a los rubros · Doble clic: medida original"></div>
 
                 <div class="pos-catalog__articles">
                     <section class="pos-catalog__meta">
@@ -7166,6 +7368,7 @@
                             <div class="pos-grid-status pos-grid-status--more">Deslizá hacia abajo para seguir cargando artículos.</div>
                         }
                     }
+                </div>
                 </div>
             </div>
         </section>
@@ -9095,6 +9298,15 @@
     private List<PuntoVentaPaymentLineDto> _paymentLines => CartState.PaymentLines;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private ElementReference _catalogGridRef;
+    private bool _showLayoutPanel;
+    private bool _syncLayoutPanel;
+
+    // Panel "Tamaño y distribución": los valores viven en el navegador (pos-layout.js, por PC).
+    private void ToggleLayoutPanel()
+    {
+        _showLayoutPanel = !_showLayoutPanel;
+        _syncLayoutPanel = _showLayoutPanel;
+    }
     private ElementReference _mobileContentRef;
     private ElementReference _scanInputRef;
     private bool _needScanFocus = true;
@@ -10075,6 +10287,12 @@
                 await RecoverPendingDraftAsync();
             else
                 _pendingDraftRecoveryChecked = true;
+        }
+
+        if (_syncLayoutPanel)
+        {
+            _syncLayoutPanel = false;
+            try { await Js.InvokeVoidAsync("alfaPosLayout.sincronizar"); } catch { /* el ajuste visual no bloquea la venta */ }
         }
 
         if (_pendingDraftRecoveryChecked
