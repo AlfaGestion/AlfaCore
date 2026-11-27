@@ -4,13 +4,13 @@ Entrá en **Compras → Reportes** o **Ventas → Reporte de Ventas**. Ambas pan
 
 ## Buscar y generar
 
-Usá la barra superior para buscar por nombre o cuenta. Abrí el embudo para elegir los filtros:
+Usá el buscador de la barra de arriba para buscar por nombre o cuenta. Tocá el embudo [[bi:funnel-fill]] (**Abrir filtros**) para elegir los filtros:
 
 - **Período**: tocá un rango rápido (Hoy, Esta semana, Últimos 7 días, Mes actual, Mes anterior, Últimos 30 días, Últimos 3 meses, Trimestre actual, Trimestre anterior o Año actual) o escribí **Desde** y **Hasta**. Al hacer clic en una fecha se abre el calendario. El rango elegido queda marcado en azul.
 - **Unidades de negocio**: desplegable con selección múltiple debajo de las fechas. Cerrado muestra **Todas**, el nombre de la unidad elegida o la cantidad seleccionada. Abierto, marcá las que quieras; la lista tiene su propio desplazamiento.
 - **Comprobante** y **Cartera del cliente**: tipo de comprobante y datos del maestro (ver más abajo).
 
-Presioná **Generar reporte** o Enter para aplicar los filtros. Elegir un rango no genera solo: así podés combinar varios filtros antes de consultar.
+Tocá [[bi:play-fill]] **Generar reporte** (abajo del panel de filtros) o Enter para aplicar los filtros; [[bi:eraser]] **Limpiar** los saca. Elegir un rango no genera solo: así podés combinar varios filtros antes de consultar.
 
 - **Resumen**: importes del período agrupados por cuenta, neto, IVA, total y participación.
 - **Detalle**: comprobantes con fecha, cuenta, motivo, neto, IVA, total y usuario. **Ver** abre el detalle del comprobante encima del reporte; al cerrarlo se conservan la página y los filtros.
@@ -76,7 +76,7 @@ En **Compras** se conserva la inclusión de proformas según las vistas del sist
 
 Para Detalle y Cuenta corriente, usá las flechas superiores y seleccioná 25, 50 o 100 registros por página en el pie. La paginación y Excel usan los filtros del último reporte generado. Cambiar un campo del buscador requiere generar nuevamente para aplicarlo.
 
-**Excel** descarga todos los registros del filtro aplicado, incluyendo Cuenta corriente. **PDF** abre la impresión de los resultados visibles; en una vista paginada imprime la página actual. No crea comprobantes ni cambia movimientos.
+[[bi:file-earmark-excel]] **Excel** descarga todos los registros del filtro aplicado, incluyendo Cuenta corriente. [[bi:printer]] **PDF** abre la impresión de los resultados visibles; en una vista paginada imprime la página actual. No crea comprobantes ni cambia movimientos.
 
 Si cambiás de base o cerrás sesión durante una consulta, el resultado se descarta. Volvé a generar en la base activa. Si aparece un error con código, conservalo para soporte.
 

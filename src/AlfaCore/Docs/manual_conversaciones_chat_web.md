@@ -7,13 +7,13 @@ junto con los de WhatsApp, Instagram, Facebook y Mercado Libre.
 ## Activarlo
 
 1. Entrá a **Conversaciones → Configuración → Canales → Chat del sitio web**.
-2. Tocá **Generar clave**. Se hace una sola vez por base.
+2. Tocá [[bi:key]] **Generar clave**. Se hace una sola vez por base.
 3. Tildá **Activar chat del sitio web**.
 4. Elegí el título, el color y el mensaje de bienvenida que ve el visitante.
 5. En **Dominios permitidos** escribí el dominio de tu sitio (por ejemplo `misitio.com`). Así el chat
    solo funciona desde tu página. Si lo dejás vacío, funciona desde cualquier sitio que tenga el código.
 6. Tocá **Guardar chat del sitio web**.
-7. Tocá **Copiar código** y pegalo en tu sitio, antes de `</body>`. En WordPress podés usar un plugin
+7. Tocá [[bi:clipboard]] **Copiar código** y pegalo en tu sitio, antes de `</body>`. En WordPress podés usar un plugin
    para insertar código en el pie de página, o un bloque **HTML personalizado** dentro de una entrada.
 
 ## Distinguir desde qué página escriben
@@ -29,7 +29,7 @@ En la bandeja, la conversación muestra la página desde la que escribió el vis
 
 ## Atender las consultas
 
-- Las conversaciones del sitio aparecen en la bandeja con el ícono de globo, en **Todos** o filtrando
+- Las conversaciones del sitio aparecen en la bandeja con el ícono de globo [[bi:globe2]], en **Todos** o filtrando
   por **Chat del sitio web**.
 - Si el **Asistente IA** está activo y tiene marcado el canal **Chat del sitio web** (Configuración →
   Asistente IA → General → Canales), responde primero. Cuando no puede resolver la consulta, la deriva

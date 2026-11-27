@@ -8,7 +8,7 @@ Alta, edición y baja de los usuarios que entran al sistema.
 
 **Crear un usuario**
 
-1. Pulsá **Nuevo usuario**.
+1. Tocá [[bi:plus-circle]] **Nuevo usuario**, el botón azul de arriba a la izquierda.
 2. Completá **Nombre** (con ese nombre ingresa al sistema) y **Email**.
 3. Definí la contraseña inicial. Si marcás **Clave próximo inicio**, el usuario tiene que cambiarla la primera vez que entra.
 4. Pulsá **Guardar**.
@@ -17,7 +17,7 @@ Después, en **Autorización de tareas**, definí qué puede usar (o asignale un
 
 **Editar o dar de baja**
 
-Hacé clic en el usuario para abrir su ficha y editarla. **Dar de baja** lo deja inactivo: no puede ingresar, pero su historial se conserva. Para varios usuarios, marcalos y usá **Dar de baja** desde la selección.
+Hacé clic en el usuario para abrir su ficha y editarla; [[bi:x-circle]] **Cancelar** sale sin guardar. [[bi:person-dash]] **Dar de baja** lo deja inactivo: no puede ingresar, pero su historial se conserva. Para varios usuarios, marcá sus casillas y tocá [[bi:person-dash]] **Dar de baja** en la barra de arriba ([[bi:x-lg]] **Cancelar selección** desmarca).
 
 **Buscar y filtrar**
 
@@ -29,11 +29,11 @@ Define qué opciones del menú web de AlfaCore puede usar cada usuario y sus asi
 
 **Elegir el usuario**
 
-1. Abrí el embudo de la barra superior.
+1. Abrí el embudo del buscador, en la barra de arriba.
 2. En **Usuario** elegí a quién querés revisar.
 3. Pulsá **Aplicar**. El nombre del usuario queda en el chip del buscador y debajo se carga su árbol de permisos.
 
-Si se agregó un usuario mientras tenías la pantalla abierta, pulsá **Recargar usuarios**.
+Si se agregó un usuario mientras tenías la pantalla abierta, tocá [[bi:arrow-clockwise]] **Recargar usuarios** en la barra de arriba.
 
 **Buscar una opción del menú**
 
@@ -42,9 +42,9 @@ Escribí en la barra superior parte del nombre de la opción, por ejemplo «cobr
 **Marcar permisos**
 
 - Marcá o desmarcá cada opción. Una carpeta con la etiqueta **PARCIAL** tiene algunas opciones habilitadas y otras no.
-- **Seleccionar visible** y **Deseleccionar visible** actúan solo sobre lo que se ve en el árbol. Combinado con la búsqueda, sirve para habilitar de una vez todas las opciones que coinciden.
-- **Expandir todo** y **Contraer todo** abren o cierran las carpetas.
-- **Aplicar mismos permisos que…** copia los permisos de otro usuario: elegí el usuario de origen y pulsá **Copiar permisos**. Revisá el resultado antes de grabar.
+- [[bi:check2-square]] **Seleccionar visible** y [[bi:square]] **Deseleccionar visible** actúan solo sobre lo que se ve en el árbol. Combinado con la búsqueda, sirve para habilitar de una vez todas las opciones que coinciden.
+- [[bi:arrows-expand]] **Expandir todo** y [[bi:arrows-collapse]] **Contraer todo** abren o cierran las carpetas.
+- **Aplicar mismos permisos que…** copia los permisos de otro usuario: elegí el usuario de origen y pulsá [[bi:copy]] **Copiar permisos**. Revisá el resultado antes de grabar.
 
 **Asignaciones del usuario**
 
@@ -55,7 +55,7 @@ Escribí en la barra superior parte del nombre de la opción, por ejemplo «cobr
 
 **Grabar o cancelar**
 
-- Con el primer cambio se habilitan **Grabar** y **Cancelar** en la barra superior.
+- Con el primer cambio se habilitan [[bi:floppy]] **Grabar** y [[bi:x-lg]] **Cancelar** en la barra de arriba, a la izquierda.
 - **Grabar** guarda los cambios del usuario.
 - **Cancelar** descarta todo lo que no grabaste y vuelve a mostrar lo que estaba guardado.
 - Mientras haya cambios sin grabar no podés consultar otro usuario. Primero grabá o cancelá.
@@ -77,10 +77,10 @@ Un perfil es un grupo de permisos con nombre (por ejemplo **Vendedor** o **Admin
 
 **Crear un perfil**
 
-1. Entrá a **Seguridad → Perfiles** y pulsá **Nuevo perfil**.
+1. Entrá a **Seguridad → Perfiles** y tocá [[bi:plus-lg]] **Nuevo perfil**, arriba a la izquierda.
 2. Poné el **Nombre** y, si querés, una **Descripción**.
 3. Tildá las opciones del árbol. Podés buscar una opción escribiendo parte de su nombre.
-4. Pulsá **Grabar**.
+4. Pulsá [[bi:floppy]] **Grabar**.
 
 **Asignarlo a un usuario**
 
@@ -89,7 +89,7 @@ En **Seguridad → Autorización de tareas**, consultá el usuario, elegí el pe
 **Cambiar o eliminar un perfil**
 
 - Elegí el perfil en la lista, cambiá lo que necesites y pulsá **Grabar**: se aplica en el momento a todos sus usuarios (la pantalla dice quiénes lo tienen).
-- **Eliminar** borra el perfil. Sus usuarios se quedan sin perfil y conservan solo sus opciones propias.
+- [[bi:trash]] **Eliminar** borra el perfil. Sus usuarios se quedan sin perfil y conservan solo sus opciones propias.
 
 ## Accesos a Conversaciones
 

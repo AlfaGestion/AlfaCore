@@ -3,8 +3,8 @@
 El modo **Salón** del Punto de Venta es para bares, cafeterías y restaurantes. Tiene tres partes que trabajan juntas:
 
 - **Salón** (`Ventas → Punto de Venta` → el punto de venta de salón): el plano de mesas. Lo usan los mozos y el encargado.
-- **Cocina** (botón **Cocina** del salón): la pantalla de comandas de la cocina y de la barra. También puede imprimir en una comandera.
-- **Carta QR**: cada mesa tiene un QR. El cliente lo escanea con la cámara del celular y ve la carta; si el local lo habilita, también pide, llama al mozo y pide la cuenta. No tiene que descargar nada ni registrarse.
+- [[bi:fire]] **Cocina** (botón **Cocina** del salón): la pantalla de comandas de la cocina y de la barra. También puede imprimir en una comandera.
+- [[bi:qr-code]] **Carta QR**: cada mesa tiene un QR. El cliente lo escanea con la cámara del celular y ve la carta; si el local lo habilita, también pide, llama al mozo y pide la cuenta. No tiene que descargar nada ni registrarse.
 
 El cobro es el mismo del Mostrador: los mismos comprobantes, medios de pago, Mercado Pago Point y turno de caja.
 
@@ -12,13 +12,13 @@ El cobro es el mismo del Mostrador: los mismos comprobantes, medios de pago, Mer
 
 Lo prepara una sola vez el administrador:
 
-1. En **Agregar o editar puntos**, creá un punto de venta con modo **Salón** y elegí la caja y la sucursal. Ahí también elegís los **rubros** que vende (por ejemplo, solo *Bar y cocina*), la **lista de precios** y la **clase de precio**: valen para el salón, el Mostrador y la carta QR.
+1. En [[bi:pencil-square]] **Agregar o editar puntos**, creá un punto de venta con modo **Salón** y elegí la caja y la sucursal. Ahí también elegís los **rubros** que vende (por ejemplo, solo *Bar y cocina*), la **lista de precios** y la **clase de precio**: valen para el salón, el Mostrador y la carta QR.
 2. En el mismo lugar, cargá los **sectores** (Salón, Terraza, Barra…) y las **mesas** de cada sector, con su capacidad.
 3. Entrá al salón y acomodá las mesas en el plano (ver **Editar el plano**).
 4. En cada artículo que se prepara, indicá a dónde va: en el campo de destino del artículo (**TalleDefault**) poné **C** para cocina, **B** para barra o **R** para barra 2. Es el mismo dato que usa el salón de Alfa Gestión. Lo que no tiene letra (gaseosas, agua, cubiertos) no pasa por la cocina.
 5. Los **mozos** son los vendedores de Alfa Gestión. Si querés que sea obligatorio elegir mozo al abrir una mesa, activá **Requiere mozo** en la configuración del salón.
 6. Si cobrás **cubierto**, configurá el artículo de cubierto: se agrega uno por persona al abrir la mesa.
-7. Si vas a usar la carta en el celular, configurala desde **Carta QR** e imprimí los QR (ver **Carta QR: configuración**).
+7. Si vas a usar la carta en el celular, configurala desde [[bi:qr-code]] **Carta QR** e imprimí los QR (ver **Carta QR: configuración**).
 
 ## Trabajar con el salón
 
@@ -47,11 +47,11 @@ Tocá una mesa ocupada para ver su detalle a la derecha: lo cargado, el estado d
 
 ## Cargar lo que piden
 
-1. En el detalle de la mesa, tocá **Agregar artículos**.
+1. En el detalle de la mesa, tocá [[bi:plus-lg]] **Agregar artículos**.
 2. Se abre el Mostrador con el carrito vacío. Buscá y agregá los artículos como siempre.
 3. Tocá **Enviar comanda**. Lo cargado se suma a la mesa y sale a la cocina o a la barra, según el artículo.
 
-Si entraste por error o no querés mandar nada, tocá **Volver al salón** (arriba, en el aviso de la mesa). Si ya habías cargado algo, te pregunta antes de salir sin enviarlo.
+Si entraste por error o no querés mandar nada, tocá [[bi:arrow-left]] **Volver al salón** (arriba, en el aviso de la mesa). Si ya habías cargado algo, te pregunta antes de salir sin enviarlo.
 
 Cada vez que agregás es una **ronda** nueva: lo que ya se mandó a la cocina no se toca.
 
@@ -82,8 +82,8 @@ Cuando un cliente toca **Llamar al mozo** o **Pedir la cuenta** en el celular, a
 
 ## Precuenta y cobro
 
-- **Precuenta:** imprime el ticket con lo consumido y el total (no es factura) y marca que la mesa pidió la cuenta. Si después agregan algo, la mesa vuelve a quedar abierta sola. También podés tocar **Reabrir**.
-- **Cobrar:** abre directamente la ventana de cobranza con toda la mesa. Lo que se pidió en varias rondas aparece junto (por ejemplo, 3 cafés en una sola línea). Elegí los medios de pago y tocá **Aceptar** o **Aceptar e imprimir**. Al terminar (también después de imprimir), la mesa queda libre y volvés al salón.
+- [[bi:printer]] **Precuenta:** imprime el ticket con lo consumido y el total (no es factura) y marca que la mesa pidió la cuenta. Si después agregan algo, la mesa vuelve a quedar abierta sola. También podés tocar **Reabrir**.
+- [[bi:cash-stack]] **Cobrar:** abre directamente la ventana de cobranza con toda la mesa. Lo que se pidió en varias rondas aparece junto (por ejemplo, 3 cafés en una sola línea). Elegí los medios de pago y tocá **Aceptar** o **Aceptar e imprimir**. Al terminar (también después de imprimir), la mesa queda libre y volvés al salón.
 
 Para cobrar tiene que estar abierto el turno de la caja. Si está cerrado, primero te pide abrirla y después sigue con el cobro.
 
@@ -94,14 +94,14 @@ Con **Factura proforma** no se consulta a ARCA: no aparece el cartel de facturac
 El botón **Caja** de la barra del salón tiene las mismas opciones que el menú del Mostrador:
 
 - **Abrir caja:** abre el turno con el saldo inicial (podés contar los billetes). Propone el fondo que dejó el turno anterior.
-- **Corte X:** control parcial del efectivo sin cerrar el turno.
+- [[bi:clipboard-check]] **Corte X:** control parcial del efectivo sin cerrar el turno.
 - **Cambio de turno:** cierra el turno actual (arqueo y transferencia) y enseguida abre el siguiente con el fondo que quedó, por ejemplo para el cajero de la tarde.
 - **Cierre de caja del día:** cierra el turno con el arqueo final y transfiere lo cobrado a la caja recaudadora (la configurada; se puede cambiar). Conviene hacerlo con todas las mesas cobradas.
 
 Al cerrar, contá el efectivo y revisá el **Fondo que queda en la caja**: se transfiere lo contado menos ese fondo, y las tarjetas, cheques y débitos completos. Podés corregir cada importe. Al final te muestra el comprobante de la transferencia.
 - **Ingresos / egresos de caja:** retiros o entradas de dinero (pago a un proveedor, cambio, etc.) imputados a una cuenta.
-- **Detalle de caja**, **Saldos por caja** y **Reimprimir comprobantes**.
-- **Informe del punto de venta:** abre el informe de ventas del punto de venta.
+- [[bi:journal-text]] **Detalle de caja**, **Saldos por caja** y **Reimprimir comprobantes**.
+- [[bi:bar-chart]] **Informe del punto de venta:** abre el informe de ventas del punto de venta.
 
 Cada opción abre la ventana correspondiente y, al cerrarla, volvés solo al salón.
 
@@ -109,14 +109,14 @@ Cada opción abre la ventana correspondiente y, al cerrarla, volvés solo al sal
 
 Desde el detalle de la mesa:
 
-- **Mozo / cubiertos:** cambia el mozo, la cantidad de personas o la observación. El cubierto se ajusta solo.
+- [[bi:pencil]] **Mozo / cubiertos:** cambia el mozo, la cantidad de personas o la observación. El cubierto se ajusta solo.
 - **Cambiar mesa:** pasa todo a una mesa libre (por ejemplo, si se mudan a la terraza).
 - **Unir con…:** junta la cuenta con otra mesa ocupada. Todo pasa a la mesa elegida y esta queda libre.
-- **Liberar sin cobrar:** deja la mesa libre y anula lo cargado. Si algo ya había salido a la cocina, te pide el motivo. Queda registrado.
+- [[bi:x-circle]] **Liberar sin cobrar:** deja la mesa libre y anula lo cargado. Si algo ya había salido a la cocina, te pide el motivo. Queda registrado.
 
 ## Editar el plano
 
-1. Tocá **Editar plano**.
+1. Tocá [[bi:arrows-move]] **Editar plano**.
 2. Arrastrá cada mesa a su lugar, con el mouse o con el dedo.
 3. Arrastrá el tirador de la esquina inferior derecha para agrandarla o achicarla a gusto.
 4. Para cambiar la forma, entrá a **Puntos de Venta → mesas → Editar**, elegí **Cuadrada**, **Circular** o **Triangular** y guardá.
@@ -126,7 +126,7 @@ Las mesas nuevas, que todavía no tienen lugar, aparecen ordenadas en fila hasta
 
 ## Pantalla de cocina y barra
 
-Abrila con el botón **Cocina** del salón, en la tablet o en la PC de la cocina.
+Abrila con el botón [[bi:fire]] **Cocina** del salón, en la tablet o en la PC de la cocina.
 
 - Arriba elegí qué mostrar: **Todo**, **Cocina**, **Barra** o **Barra 2**. Cada dispositivo recuerda lo que elegiste.
 - Cada tarjeta es una comanda: la mesa, el número, el destino, el mozo y los minutos desde que llegó. El borde se pone amarillo a los 10 minutos y rojo a los 20.
@@ -139,7 +139,7 @@ Cuando la cocina marca un plato como listo, la mesa se pone verde en el salón y
 
 ## Comandera (imprimir comandas)
 
-Si en la cocina se trabaja con papel, en la PC que tiene la impresora de comandas abrí la pantalla de **Cocina** y tildá **Comandera**. Desde ese momento, cada comanda nueva se imprime sola en la impresora predeterminada de esa PC.
+Si en la cocina se trabaja con papel, en la PC que tiene la impresora de comandas abrí la pantalla de [[bi:fire]] **Cocina** y tildá **Comandera**. Desde ese momento, cada comanda nueva se imprime sola en la impresora predeterminada de esa PC.
 
 - Podés dejar tildados **Pantalla** y **Comandera** a la vez, o destildar Pantalla si solo querés que imprima.
 - Elegí el destino (Cocina o Barra) para que esa comandera imprima solo lo suyo.
@@ -157,7 +157,7 @@ En la pantalla de cocina, tocá **Agotados**:
 
 ## Carta QR: configuración
 
-En el salón, tocá **Carta QR**:
+En el salón, tocá [[bi:qr-code]] **Carta QR**:
 
 - **Uso de la carta:**
   - *Desactivada:* el QR muestra un aviso de que la carta no está disponible.
@@ -165,13 +165,13 @@ En el salón, tocá **Carta QR**:
   - *Ver, pedir, llamar al mozo y pedir la cuenta:* la carta completa.
 - **Enviar a cocina sin que el mozo confirme:** si lo tildás, lo que piden desde el celular sale directo a la cocina. Si no, el mozo lo acepta con un toque (recomendado al empezar).
 - **Mensaje de bienvenida:** aparece arriba de la carta (por ejemplo, *La cocina cierra a las 23:30*).
-- **Qué productos muestra:** la carta toma los artículos con precio de los **rubros** del punto de venta y, si el punto de venta tiene **lista de precios**, solo los que están en esa lista. Se ordenan por familia (cada familia es una pestaña de la carta). Los rubros y la lista se cambian en **Agregar o editar puntos** (hay un enlace en la misma ventana).
+- **Qué productos muestra:** la carta toma los artículos con precio de los **rubros** del punto de venta y, si el punto de venta tiene **lista de precios**, solo los que están en esa lista. Se ordenan por familia (cada familia es una pestaña de la carta). Los rubros y la lista se cambian en [[bi:pencil-square]] **Agregar o editar puntos** (hay un enlace en la misma ventana).
 
 Los precios de la carta son los mismos que usa el Mostrador: la lista y la clase de precio del punto de venta. Los cambios de carta pueden tardar hasta un minuto en verse en los celulares; los agotados se ven al instante.
 
 ## Imprimir los QR de las mesas
 
-En **Carta QR** tocá **Imprimir QR de las mesas**. Sale una tarjeta por mesa con el nombre del local, el nombre de la mesa y su QR. Tocá **Imprimir**, recortalas y pegá cada una en su mesa.
+En [[bi:qr-code]] **Carta QR** tocá [[bi:printer]] **Imprimir QR de las mesas**. Sale una tarjeta por mesa con el nombre del local, el nombre de la mesa y su QR. Tocá [[bi:printer]] **Imprimir**, recortalas y pegá cada una en su mesa.
 
 Cada QR es fijo para su mesa: no hace falta reimprimirlo aunque cambies la carta. Si agregás mesas nuevas, volvé a entrar e imprimí las nuevas.
 

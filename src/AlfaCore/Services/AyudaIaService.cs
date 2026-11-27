@@ -86,6 +86,7 @@ public sealed class AyudaIaService(IHttpClientFactory http,IIaUsoRecorder uso,IS
     internal static string? ComoLlegar(AyudaFuente fuente,IReadOnlyList<ShellMenuSearchItemDto> menu)
     {
         var rutas=AyudaManuales.Pantallas.Where(p=>p.Tema==fuente.Tema && p.Articulo is not null && AyudaManuales.IdArticulo(p.Articulo)==fuente.Articulo).Select(p=>p.Ruta)
+            .Concat(AyudaManuales.PantallaPrincipal.TryGetValue(fuente.Tema,out var principal) ? [principal] : [])
             .Concat(AyudaManuales.Pantallas.Where(p=>p.Tema==fuente.Tema && p.Articulo is null).Select(p=>p.Ruta))
             .Concat(AyudaManuales.Pantallas.Where(p=>p.Tema==fuente.Tema).Select(p=>p.Ruta));
         return rutas.Select(r=>CaminoMenu(r,menu)).FirstOrDefault(c=>c is not null);
@@ -142,6 +143,7 @@ public sealed class AyudaIaService(IHttpClientFactory http,IIaUsoRecorder uso,IS
                 "ubicacion_usuario" es la pantalla desde la que pregunta y "como_llegar" de cada documento es el camino real del menú a esa pantalla (módulo → sección → opción): son datos del sistema, confiables aunque no figuren en el texto.
                 Armá los pasos desde donde está el usuario: si la tarea es en otra pantalla, empezá por cómo llegar (entrá al módulo, después a la sección y a la opción, en ese orden) y recién después los pasos dentro de esa pantalla. Si ya está en esa pantalla, empezá por lo que tiene que hacer ahí. Si no hay "como_llegar" y el texto no dice dónde está, no inventes el camino.
                 En "respuesta" podés usar Markdown simple: listas numeradas para los pasos y **negrita** para los nombres de menús y botones. Sin HTML, sin enlaces y sin títulos.
+                Los fragmentos marcan el ícono de cada botón como [[bi:nombre]] y dicen dónde está (por ejemplo, la barra de arriba de la conversación). Cuando nombres un botón, decí dónde está y copiá su marca tal cual, delante del nombre: el usuario ve el dibujo del botón. Nunca inventes marcas que no estén en los fragmentos.
                 Devolvé SOLO JSON: {"respuesta":"...","fuentes":["id exacto del fragmento usado"]}.
                 Citá únicamente IDs recibidos que respalden la respuesta. Si los fragmentos no alcanzan, devolvé fuentes vacías.
                 """;
@@ -183,6 +185,9 @@ public sealed class AyudaIaService(IHttpClientFactory http,IIaUsoRecorder uso,IS
         if(string.IsNullOrWhiteSpace(texto) || texto.Length>12000)throw new InvalidOperationException("La respuesta de ayuda no es válida.");
         // Si inventa una fuente o no puede fundamentar, no mostrar el procedimiento generado.
         if(ids.Length==0 || ids.Any(id=>!permitidas.Any(f=>f.Id==id)))return new(SinDocumentacion,[]);
+        // Un ícono que no está en los manuales enviados se saca: sería un dibujo inventado (o un cuadro vacío).
+        var iconos=permitidas.SelectMany(f=>AyudaManuales.MarcaIcono.Matches(f.Contenido)).Select(m=>m.Value).ToHashSet();
+        texto=AyudaManuales.MarcaIcono.Replace(texto,m=>iconos.Contains(m.Value) ? m.Value : "");
         return new(texto,permitidas.Where(f=>ids.Contains(f.Id)).ToArray());
     }
     internal static IReadOnlyList<AyudaFuente> Recuperar(string pregunta,string tema)

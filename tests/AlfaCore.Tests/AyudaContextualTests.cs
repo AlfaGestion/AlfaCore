@@ -140,6 +140,12 @@ public sealed class AyudaContextualTests
         var cierre=AyudaIaService.Recuperar("¿Cómo hago el cierre de caja del mostrador?","general").First(f=>f.Tema=="mostrador");
         Assert.Equal("Ventas → Operación → Punto de Venta",AyudaIaService.ComoLlegar(cierre,menu));
         Assert.Null(AyudaIaService.CaminoMenu("/no-existe",menu));
+        // Un artículo sin pantalla propia va a la pantalla principal de su manual: posponer un ticket mandaba a
+        // Partes de horas (2026-11-27).
+        menu.Add(new(){ModuloNombre="Tickets",SeccionNombre="Soporte",Nombre="Mesa de ayuda",RutaWeb="/tickets"});
+        menu.Add(new(){ModuloNombre="Partes de horas",SeccionNombre="Módulo principal",Nombre="Partes de horas",RutaWeb="/crm/partes-horas"});
+        var recordar=AyudaIaService.Recuperar("¿Cómo hago para que un ticket me vuelva a aparecer en 3 días?","general").First(f=>f.Tema=="tickets");
+        Assert.Equal("Tickets → Soporte → Mesa de ayuda",AyudaIaService.ComoLlegar(recordar,menu));
     }
 
     private sealed class NavegacionDePrueba:NavigationManager

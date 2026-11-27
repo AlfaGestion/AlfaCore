@@ -77,20 +77,20 @@ El campo **Código o código de barras** (junto al carrito) es para el lector o 
 
 Si se cierra el navegador o se corta la conexión en medio de una venta, al volver a entrar el sistema pregunta si querés **recuperar el comprobante pendiente** con sus artículos. Los pagos no se recuperan: hay que cargarlos de nuevo.
 
-En el celular la pantalla cambia: primero ves los artículos con − / + en cada tarjeta y abajo **Ver carrito**; desde el carrito tocás **Cobrar**.
+En el celular la pantalla cambia: primero ves los artículos con − / + en cada tarjeta y abajo [[bi:arrow-right]] **Ver carrito**; desde el carrito tocás **Cobrar**.
 
 ## Elegir el cliente
 
 Cada venta arranca con **Consumidor final**. Para cambiarlo tocá el botón del cliente, debajo del carrito:
 
-- En **Buscar cliente** escribí código, CUIT, nombre o teléfono. Con las flechas ↑ ↓ te movés y con Enter lo elegís.
+- En [[bi:search]] **Buscar cliente** escribí código, CUIT, nombre o teléfono. Con las flechas ↑ ↓ te movés y con Enter lo elegís.
 - La **x** del botón vuelve a consumidor final.
 
 Al cambiar de cliente se recalculan los precios del carrito con su lista y clase de precio. La letra de la factura (A o B) la decide el sistema según la condición de IVA del cliente; no se elige a mano. Al terminar la venta el cliente vuelve solo a consumidor final.
 
 ## Cargar un cliente nuevo
 
-En la pestaña **Nuevo cliente** (o con **Ctrl+F**, que abre directo con el cursor en el CUIT):
+En la pestaña [[bi:person-plus]] **Nuevo cliente** (o con **Ctrl+F**, que abre directo con el cursor en el CUIT):
 
 - **Habitual:** se da de alta como cliente. Obligatorios: CUIT/DNI, nombre o razón social, domicilio, provincia, país y localidad.
 - **Eventual:** no se crea un cliente; la venta va a la cuenta de consumidor final, pero los datos que cargues (nombre, documento, etc.) salen impresos en el comprobante y se informan a ARCA.
@@ -173,11 +173,11 @@ Si ARCA no autoriza el comprobante, según la configuración de la empresa:
 
 Arriba aparece un aviso verde con el comprobante y el total, y se abre el **Recibo**:
 
-- **Imprimir recibo:** imprime el comprobante con el diseño de la empresa. Con **ACEPTAR E IMPRIMIR** se imprime directo.
-- **Enviar por email:** viene con el email del cliente; podés cambiarlo y tocar **Enviar**.
+- [[bi:printer]] **Imprimir recibo:** imprime el comprobante con el diseño de la empresa. Con **ACEPTAR E IMPRIMIR** se imprime directo.
+- [[bi:envelope]] **Enviar por email:** viene con el email del cliente; podés cambiarlo y tocar **Enviar**.
 - **QR:** el cliente lo escanea con el celular y ve su factura.
 - **CAE:** muestra el número y su vencimiento. Si dice *CAE pendiente* o *sin autorización*, **no entregues el comprobante como factura** hasta regularizarlo: tocá **Reintentar CAE**.
-- **Nuevo comprobante** deja todo listo para la venta siguiente.
+- [[bi:arrow-right-circle]] **Nuevo comprobante** deja todo listo para la venta siguiente.
 
 Si el navegador muestra el cuadro de impresión cada vez, se puede configurar el equipo para que imprima directo (Chrome en modo *kiosk printing*); consultá con soporte.
 
@@ -189,12 +189,12 @@ Menú ☰ → **Reimprimir comprobantes** (o **Ctrl+P**). Elegí el rango de fec
 
 Desde el menú ☰:
 
-- **Corte X:** arqueo parcial, por ejemplo en un cambio de cajero. Muestra el saldo inicial y el **saldo teórico** (saldo inicial más el efectivo cobrado en el turno). Podés contar el efectivo, cargar una observación (por ejemplo *relevo a Juan*) y tocar **Registrar corte X**. Te muestra la diferencia. **No cierra la caja.**
-- **Cerrar caja:** al final del turno. Contá el efectivo (con la grilla de billetes o cargando el total) en **Saldo final declarado**; se muestra la **diferencia** contra el saldo teórico. Para volver a vender hay que abrir un turno nuevo.
+- [[bi:clipboard-check]] **Corte X:** arqueo parcial, por ejemplo en un cambio de cajero. Muestra el saldo inicial y el **saldo teórico** (saldo inicial más el efectivo cobrado en el turno). Podés contar el efectivo, cargar una observación (por ejemplo *relevo a Juan*) y tocar **Registrar corte X**. Te muestra la diferencia. **No cierra la caja.**
+- [[bi:lock]] **Cerrar caja:** al final del turno. Contá el efectivo (con la grilla de billetes o cargando el total) en **Saldo final declarado**; se muestra la **diferencia** contra el saldo teórico. Para volver a vender hay que abrir un turno nuevo.
 
 ### Transferir a la caja recaudadora al cerrar
 
-En la misma ventana de **Cerrar caja**:
+En la misma ventana de [[bi:lock]] **Cerrar caja**:
 
 1. **Fondo que queda en la caja:** el efectivo que se deja para el turno siguiente (propone el saldo inicial del turno). La próxima **Abrir caja** lo propone como saldo inicial.
 2. **Transferir a otra caja:** viene marcado y con la caja configurada en *TPV_CAJADESTINO* (por ejemplo, la caja recaudadora). Podés elegir otra.
@@ -202,17 +202,17 @@ En la misma ventana de **Cerrar caja**:
 4. Tocá **Cerrar caja y transferir**. Al terminar te muestra el comprobante de la transferencia (por ejemplo *CJA 0001-00000016X*), el importe y el fondo que quedó.
 
 La transferencia queda grabada igual que la del sistema de escritorio (Caja y Bancos → Transferencias), así que se ve en el cierre de caja y en los informes de la caja destino. Para cerrar sin transferir, desmarcá **Transferir a otra caja**.
-- **Ver saldos por caja:** las cajas abiertas en ese punto de venta, con su usuario, desde cuándo están abiertas y su saldo teórico.
+- [[bi:cash-coin]] **Ver saldos por caja:** las cajas abiertas en ese punto de venta, con su usuario, desde cuándo están abiertas y su saldo teórico.
 
 ## Ingresos y egresos de caja
 
-Menú ☰ → **Ingresos/Egresos de caja**, para registrar plata que entra o sale de la caja sin ser una venta (un retiro, un pago a un proveedor, un aporte de cambio):
+Menú ☰ → [[bi:cash-stack]] **Ingresos/Egresos de caja**, para registrar plata que entra o sale de la caja sin ser una venta (un retiro, un pago a un proveedor, un aporte de cambio):
 
 1. Elegí **Ingreso** o **Egreso** y cargá el importe.
 2. En **Imputación** elegí la cuenta contra la que va el movimiento.
 3. Si querés, escribí el motivo y tocá **Confirmar**.
 
-En **Detalle de caja** ves los movimientos del día: el saldo por cuenta y las listas de ingresos y egresos, con hora y usuario.
+En [[bi:journal-text]] **Detalle de caja** ves los movimientos del día: el saldo por cuenta y las listas de ingresos y egresos, con hora y usuario.
 
 ## Pedidos de delivery y take away
 
@@ -224,7 +224,7 @@ Los puntos de venta en modo **Delivery** o **Take Away** trabajan desde el **tab
 4. En delivery son obligatorios el **teléfono**, la **dirección** y la **fecha y hora de entrega**. En take away la hora de retiro es opcional (vacía = lo retira ahora).
 5. Agregá observaciones si hace falta y tocá **Aceptar y cargar artículos**.
 
-Se abre el Mostrador con un aviso arriba con los datos del pedido. Cargá los artículos y tocá **Guardar pedido**: se guarda sin cobrar y volvés al tablero. Para salir sin guardar, tocá **Volver a pedidos** en el aviso.
+Se abre el Mostrador con un aviso arriba con los datos del pedido. Cargá los artículos y tocá **Guardar pedido**: se guarda sin cobrar y volvés al tablero. Para salir sin guardar, tocá [[bi:arrow-left]] **Volver a pedidos** en el aviso.
 
 En el tablero cada pedido muestra su estado: *Pendiente*, *En preparación*, *Listo*, *En camino* (solo delivery), *Entregado* o *Anulado*. Desde ahí:
 
@@ -239,7 +239,7 @@ En **Ventas → Punto de Venta → Informe punto de venta** ves cuánto se vendi
 
 - Arriba: total vendido, cantidad de comprobantes y puntos de venta.
 - La tabla de ventas por unidad de negocio, con comprobantes, clientes, ticket promedio y total.
-- Con la barra de búsqueda elegís el período (hoy, mes actual, mes anterior, últimos 30 días, etc., o un rango de fechas), y filtrás por cliente, usuario, comprobante o unidad. Tocá **Aplicar**.
+- Con la barra de búsqueda elegís el período (hoy, mes actual, mes anterior, últimos 30 días, etc., o un rango de fechas), y filtrás por cliente, usuario, comprobante o unidad. Tocá [[bi:search]] **Aplicar**.
 - Con las opciones agregás el **resumen mensual**, la **venta por productos**, el **detalle por rubro**, el **detalle de cobranzas** y el **detalle de ventas** (hasta 500 comprobantes; tocando uno se abre el comprobante).
 
 ## Atajos de teclado
@@ -250,7 +250,7 @@ En **Ventas → Punto de Venta → Informe punto de venta** ves cuánto se vendi
 - **Ctrl+P:** reimprimir comprobantes.
 - **Esc:** cierra la ventana abierta; sin ventanas abiertas ofrece vaciar el carrito y, con el carrito vacío, salir.
 
-La lista también está en el menú ☰ → **Atajos rápidos**. Desde ese menú, **Instalar Punto de Venta** lo agrega como aplicación en el equipo, y **Salir** vuelve al selector.
+La lista también está en el menú ☰ → **Atajos rápidos**. Desde ese menú, [[bi:download]] **Instalar Punto de Venta** lo agrega como aplicación en el equipo, y [[bi:box-arrow-left]] **Salir** vuelve al selector.
 
 ## Preguntas frecuentes
 
@@ -262,7 +262,7 @@ La lista también está en el menú ☰ → **Atajos rápidos**. Desde ese menú
 
 **Los precios no coinciden.** Salen de la lista y la clase de precio del punto de venta, salvo que el cliente elegido tenga lista o clase propia; al cambiar de cliente se recalculan. Las ofertas solo valen dentro de sus fechas de vigencia.
 
-**No aparece un artículo.** Revisá que su rubro esté entre los **rubros que vende** el punto de venta (en **Agregar o editar puntos**) y que no esté suspendido. El lector de códigos encuentra cualquier artículo, aunque sea de otro rubro.
+**No aparece un artículo.** Revisá que su rubro esté entre los **rubros que vende** el punto de venta (en [[bi:pencil-square]] **Agregar o editar puntos**) y que no esté suspendido. El lector de códigos encuentra cualquier artículo, aunque sea de otro rubro.
 
 **El email no sale.** Falta configurar el correo saliente (servidor, puerto, cuenta y clave). Consultá al administrador.
 

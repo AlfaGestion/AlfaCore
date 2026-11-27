@@ -170,9 +170,9 @@ El **Constructor visual** es una herramienta opcional que genera el SQL automát
 1. **Buscar tabla o vista**: escribí el nombre (o parte) en el campo de búsqueda y presioná Enter o el botón **Buscar**. El sistema consulta `INFORMATION_SCHEMA` de la base activa y muestra hasta 60 resultados.
 2. **Seleccionar fuente**: elegí la tabla o vista del dropdown.
 3. **Columnas**: se muestran todas las columnas disponibles. Tildá las que querés incluir en el SELECT. El buscador de columnas (esquina superior derecha de la grilla) resalta las que coinciden con el texto ingresado sin ocultar las demás.
-4. **Filtros (WHERE)**: hacé clic en **Agregar filtro** para cada condición. Podés marcar **Parámetro `<P>`** para que el valor lo ingrese el usuario al ejecutar.
+4. **Filtros (WHERE)**: hacé clic en [[bi:plus-circle]] **Agregar filtro** para cada condición. Podés marcar **Parámetro `<P>`** para que el valor lo ingrese el usuario al ejecutar.
 5. **Ordenar por**: agregá columnas para el ORDER BY con dirección ASC o DESC.
-6. **Generar SQL**: el sistema arma el SELECT completo y lo pega en el área de SQL.
+6. [[bi:code-slash]] **Generar SQL**: el sistema arma el SELECT completo y lo pega en el área de SQL.
 
 > El SQL generado es editable. Podés ajustarlo manualmente después de generarlo.
 
@@ -180,7 +180,7 @@ El **Constructor visual** es una herramienta opcional que genera el SQL automát
 
 ## 7. Editar y eliminar consultas
 
-Desde la página de detalle de cualquier consulta, hacé clic en **Editar** (botón en la cabecera).
+Desde la página de detalle de cualquier consulta, hacé clic en [[bi:pencil]] **Editar** (botón en la cabecera).
 
 En el editor podés modificar todos los campos. Al guardar, los cambios se aplican inmediatamente.
 
@@ -192,7 +192,7 @@ En la parte inferior del editor aparece el botón **Eliminar**. Requiere confirm
 
 ## 8. Duplicar una consulta
 
-Desde la página de detalle, hacé clic en **Duplicar**. Se abre el editor de nueva consulta con todos los campos pre-completados (nombre con prefijo "Copia de…", descripción, SQL y metadatos).
+Desde la página de detalle, hacé clic en [[bi:copy]] **Duplicar**. Se abre el editor de nueva consulta con todos los campos pre-completados (nombre con prefijo "Copia de…", descripción, SQL y metadatos).
 
 Solo necesitás:
 1. Elegir la **ubicación** en el árbol (nodo padre).
@@ -232,13 +232,13 @@ Hacé clic en el ícono de papelera junto a la sesión que querés borrar. No se
 
 ### Excel
 
-El botón **Excel** descarga el resultado completo (sin límite de filas) en formato `.xlsx` con formato de tabla.
+El botón [[bi:file-earmark-excel]] **Excel** descarga el resultado completo (sin límite de filas) en formato `.xlsx` con formato de tabla.
 
 > Si el resultado fue filtrado con el buscador, Excel descarga **todas las filas** de la consulta, no solo las filtradas.
 
 ### PDF
 
-El botón **PDF** abre el diálogo de impresión del navegador. Recomendamos:
+El botón [[bi:printer]] **PDF** abre el diálogo de impresión del navegador. Recomendamos:
 - Orientación **horizontal** para tablas anchas.
 - Escala al 80% si las columnas no entran en la página.
 

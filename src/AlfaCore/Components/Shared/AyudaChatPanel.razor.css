@@ -107,3 +107,8 @@
 .ayuda-chat__historial .ayuda-chat__nota { margin-top:10px; padding:0 12px; }
 
 @media (hover:none) { .ayuda-chat__historial-borrar { opacity:1; } }
+
+/* Ícono del botón dentro del texto ([[bi:...]] en el manual): parece un botón chiquito, para reconocerlo en pantalla. */
+.ayuda-chat__texto ::deep .ayuda-icono { display:inline-flex; align-items:center; justify-content:center; min-width:1.6em; height:1.6em;
+  padding:0 .25em; margin:0 .15em; vertical-align:-.3em; font-size:.92em; line-height:1; color:var(--alfa-text-primary);
+  background:var(--alfa-bg-surface-raised); border:1px solid var(--alfa-border-strong); border-radius:6px; }

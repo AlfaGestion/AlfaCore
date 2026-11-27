@@ -14,7 +14,7 @@ Las pantallas de **Gestión Contable** consultan la base activa. Los reportes no
 
 El chip del buscador resume el período aplicado, por ejemplo «Año actual» o «01/10/2026 a 31/10/2026».
 
-**PDF** y **Excel** se habilitan cuando hay resultados y exportan exactamente lo generado. **Incluir proformas** aparece solo si tu usuario puede ver proformas.
+**PDF** y [[bi:file-earmark-excel]] **Excel** se habilitan cuando hay resultados y exportan exactamente lo generado. **Incluir proformas** aparece solo si tu usuario puede ver proformas.
 
 En cada movimiento que tiene comprobante aparece **Ver**. Abre el detalle del comprobante encima del reporte. Al cerrarlo seguís en el mismo lugar, con los mismos filtros.
 
@@ -23,13 +23,13 @@ En cada movimiento que tiene comprobante aparece **Ver**. Abre el detalle del co
 Es la lista ordenada de las cuentas de la contabilidad. Los **títulos** agrupan cuentas (por ejemplo, Activo → Disponibilidades → Caja); en las cuentas **imputables** se registran los movimientos.
 
 - Arriba se ve cuántas cuentas, títulos, imputables y cajas o bancos tiene el plan.
-- Al entrar, el plan se muestra resumido hasta los rubros. Tocá un grupo (o su flecha) para abrirlo o cerrarlo; al lado del grupo cerrado se ve cuántas cuentas tiene. **Expandir todo** y **Contraer todo** abren o cierran todos los grupos.
+- Al entrar, el plan se muestra resumido hasta los rubros. Tocá un grupo (o su flecha) para abrirlo o cerrarlo; al lado del grupo cerrado se ve cuántas cuentas tiene. [[bi:arrows-expand]] **Expandir todo** y [[bi:arrows-collapse]] **Contraer todo** abren o cierran todos los grupos.
 - La columna **Tipo** indica con una etiqueta si es Título, Imputable, Caja/Banco, Cliente o Proveedor, y si está dada de baja.
 - **Tocá una cuenta imputable para abrir su Mayor** con el ejercicio actual.
 - Escribí parte del código o de la descripción en el buscador: la lista se filtra mientras escribís, sin pulsar Enter. Por ejemplo, «caja» muestra las cuentas de caja y los títulos que las agrupan, con todo abierto. La **X** borra la búsqueda.
 - En el embudo, **Opciones del plan** permite incluir las cuentas de clientes y proveedores y las dadas de baja. El chip indica qué incluye: «Cuentas activas», «Con clientes y proveedores», «Con dadas de baja» o «Con terceros y bajas».
 
-**Excel** y **PDF** respetan la búsqueda y las opciones aplicadas.
+[[bi:file-earmark-excel]] **Excel** y **PDF** respetan la búsqueda y las opciones aplicadas.
 
 ## Libro diario
 
@@ -96,8 +96,8 @@ Permite consultar asientos y, con permiso, cargar o modificar asientos manuales.
 
 **Abrir y modificar**
 
-- Hacé clic en un asiento para abrirlo. Arriba aparecen **Grabar**, **Anular**, **Guardar como modelo**, **Controlar con ARCA** y **Volver** (o **Cancelar** si hiciste cambios).
-- **Nuevo asiento** solo se habilita si tu usuario puede cargar asientos.
+- Hacé clic en un asiento para abrirlo. Arriba aparecen [[bi:check2]] **Grabar**, [[bi:trash]] **Anular**, [[bi:bookmark-plus]] **Guardar como modelo**, [[bi:shield-check]] **Controlar con ARCA** y **Volver** (o [[bi:x-lg]] **Cancelar** si hiciste cambios).
+- [[bi:plus-lg]] **Nuevo asiento** solo se habilita si tu usuario puede cargar asientos.
 - Muchos asientos se abren en **solo lectura** y la pantalla dice por qué. Por ejemplo: es de un comprobante del libro de IVA, es un asiento resumen o de cierre de ejercicio, tiene movimientos conciliados con el banco, o lo generó otro módulo (cobranzas, pagos, sueldos). En esos casos se corrige desde el comprobante o módulo de origen.
 - En los asientos generados por comprobantes, **Ver** abre el comprobante de origen.
 
@@ -112,7 +112,7 @@ Lista las retenciones y percepciones del período y arma los archivos para prese
 1. Elegí **Desde** y **Hasta**, o usá **Mes anterior** o **Este mes**.
 2. En **Ver** elegí **Sufridas** (las que te practicaron), **Practicadas** (las que practicaste como agente) o **Todas**.
 3. Opcional: filtrá por **Unidad**.
-4. Pulsá **Consultar**.
+4. Tocá [[bi:search]] **Consultar**.
 
 Arriba se resume el importe por impuesto. En la grilla, **Ver** abre el comprobante que originó cada movimiento (por ejemplo, la cobranza donde te retuvieron).
 
@@ -122,7 +122,7 @@ Arriba se resume el importe por impuesto. En la grilla, **Ver** abre el comproba
 
 Los avisos **Revisar** señalan datos que conviene completar antes de presentar, por ejemplo una cuenta de IIBB sin provincia o una retención sin número de certificado.
 
-**Configurar** abre los códigos que usan los archivos: régimen de ARCA, jurisdicción por defecto y presentación mensual o quincenal.
+[[bi:gear]] **Configurar** abre los códigos que usan los archivos: régimen de ARCA, jurisdicción por defecto y presentación mensual o quincenal.
 
 ## Libros de IVA
 
@@ -140,7 +140,7 @@ Las tarjetas muestran la cantidad de comprobantes, el neto gravado, el IVA y el 
 
 Cuando el libro está presentado, usá **Cerrar ventas hasta** (o compras) para que no se carguen más comprobantes con esas fechas. El aviso indica hasta qué fecha está cerrado.
 
-**PDF** y **Excel** exportan el libro generado. **TXT ARCA** arma el archivo para presentar el libro en ARCA.
+**PDF** y [[bi:file-earmark-excel]] **Excel** exportan el libro generado. **TXT ARCA** arma el archivo para presentar el libro en ARCA.
 
 ## Paquete para el estudio: libros de IVA
 
@@ -159,7 +159,7 @@ Estos controles son locales: no confirman la existencia de un CUIT en el padrón
 
 El paquete muestra el estado de compras contra **Mis Comprobantes Recibidos** y ventas contra **Mis Comprobantes Emitidos**, por mes y CUIT. Si existe un archivo descargado o subido a Control ARCA, vuelve a compararlo con la base actual. La fecha del archivo queda visible: confirmar contra ese archivo no garantiza que ARCA no haya incorporado nuevos comprobantes después.
 
-Cuando no está el archivo, propone **Validar en Control ARCA**, conservando el mes y el tipo. Allí podés subir un Excel/CSV o usar **Descargar y comparar**. Los controles manuales quedan en el historial y sus archivos mensuales identificados por CUIT se conservan para volver a comparar. **Volver al paquete** permite revisar nuevamente antes de generar. Un control histórico sin su archivo se muestra como pendiente de actualización, no como validación vigente.
+Cuando no está el archivo, propone **Validar en Control ARCA**, conservando el mes y el tipo. Allí podés subir un Excel/CSV o usar **Descargar y comparar**. Los controles manuales quedan en el historial y sus archivos mensuales identificados por CUIT se conservan para volver a comparar. [[bi:arrow-left]] **Volver al paquete** permite revisar nuevamente antes de generar. Un control histórico sin su archivo se muestra como pendiente de actualización, no como validación vigente.
 
 **Duplicados y diferencias** muestra primero posibles repeticiones y descuadres, con comprobante, cuenta, CUIT e importes. **Revisar asiento** abre la búsqueda del comprobante para revisar también las otras cuentas. Las correcciones usan las opciones existentes y los permisos del usuario; los comprobantes que no admitan edición contable deben corregirse en su módulo de origen. Para ver documentos inválidos y demás observaciones elegí **Todas las observaciones** o **Datos fiscales**.
 
@@ -184,28 +184,28 @@ En **Gestión contable → Posición de IVA** se compara el IVA débito (ventas)
 En **Gestión contable → Control ARCA** se controla lo cargado en el sistema contra **Mis Comprobantes** de ARCA (emitidos o recibidos).
 
 1. Elegí si controlás ventas (emitidos) o compras (recibidos), el mes y la **Unidad de negocio**.
-2. Subí el Excel o CSV descargado de ARCA, o usá la descarga automática si está configurada (**Configurar descarga**: CUIT de ingreso, clave fiscal y CUIT representado; la clave queda guardada protegida).
+2. Subí el Excel o CSV descargado de ARCA, o usá la descarga automática si está configurada ([[bi:gear]] **Configurar descarga**: CUIT de ingreso, clave fiscal y CUIT representado; la clave queda guardada protegida).
 3. El sistema marca qué comprobantes coinciden, cuáles faltan en el sistema y cuáles tienen diferencias. Si todo coincide, lo informa.
 4. En compras, los comprobantes que faltan se pueden importar; para proveedores nuevos se usa la **Condición de compra** elegida.
 
-**Historial** muestra los controles anteriores. **Excel** descarga el resultado. **Volver al paquete** regresa al Paquete para el estudio si llegaste desde ahí.
+[[bi:clock-history]] **Historial** muestra los controles anteriores. [[bi:file-earmark-excel]] **Excel** descarga el resultado. [[bi:arrow-left]] **Volver al paquete** regresa al Paquete para el estudio si llegaste desde ahí.
 
 ## Fechas de cierre
 
 En **Utilidades → Fechas de cierre** se define hasta qué fecha está cerrado cada tipo de movimiento: no se pueden cargar ni modificar movimientos con fecha anterior al cierre (por ejemplo, después de presentar el libro de IVA).
 
-Cambiá las fechas y pulsá **Grabar**; **Deshacer cambios** vuelve a lo grabado. Para volver a habilitar un período ya cerrado usá **Reabrir períodos cerrados**, elegí **Desde** / **Hasta** y confirmá con **Reabrir y grabar**: queda registrado en la auditoría.
+Cambiá las fechas y tocá [[bi:floppy]] **Grabar** (arriba a la izquierda); [[bi:arrow-counterclockwise]] **Deshacer cambios** vuelve a lo grabado. Para volver a habilitar un período ya cerrado usá **Reabrir períodos cerrados**, elegí **Desde** / **Hasta** y confirmá con **Reabrir y grabar**: queda registrado en la auditoría.
 
 ## Estudio contable
 
 En **Utilidades → Estudio contable** le das acceso a tu contador para que consulte la empresa desde el portal del estudio.
 
-1. Pulsá **Invitar estudio**.
+1. Pulsá [[bi:person-plus]] **Invitar estudio**.
 2. Cargá el **Email del contador** y el **Perfil**: **Completo (recomendado)** o **Solo consulta**. Opcionalmente, el **Usuario en la empresa** con el que va a figurar.
-3. Pulsá **Crear invitación**: el contador recibe un enlace para entrar.
+3. Tocá [[bi:send]] **Crear invitación**: el contador recibe un enlace para entrar.
 
 **Nuevo enlace** genera una invitación nueva si la anterior venció. **Quitar acceso** le saca el permiso al estudio. Solo quien administra los usuarios de la empresa puede dar o quitar el acceso.
 
 ## Configuración contable
 
-En **Gestión contable → Configuración** se definen el plan de cuentas (dígitos, niveles y codificación), los índices de ajuste, los centros de costo y las fechas del ejercicio. Pulsá **Guardar** para aplicar o **Cancelar** para volver a leer lo grabado.
+En **Gestión contable → Configuración** se definen el plan de cuentas (dígitos, niveles y codificación), los índices de ajuste, los centros de costo y las fechas del ejercicio. Pulsá [[bi:floppy]] **Guardar** para aplicar o [[bi:x-lg]] **Cancelar** para volver a leer lo grabado.

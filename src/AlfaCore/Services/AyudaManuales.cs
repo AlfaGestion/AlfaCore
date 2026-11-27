@@ -63,6 +63,7 @@ public static class AyudaManuales
         ("/ventas/punto-venta","mostrador","Elegir el punto de venta"),
         ("conciliacion-bancaria","conciliacion",null),
         ("conciliacion-tarjetas","tarjetas",null),
+        ("/ventas/cobranzas","cobranzas","Cobrar desde Ventas → Cobranzas"),
         ("cobranzas","cobranzas",null),
         ("consultas","consultas",null),
         ("/caja-bancos/cierre","caja","Cierre de caja"),
@@ -152,7 +153,9 @@ public static class AyudaManuales
         ("/crm","crm","Crear y trabajar una oportunidad"),
         ("/calendario/reuniones","calendario","Reservas desde el link público (reuniones y capacitaciones)"),
         ("/calendario","calendario","Ver el calendario y crear un evento"),
-        ("/tickets","tickets","Crear un ticket"),
+        ("/tickets/seguimiento","tickets","Seguimiento de tickets"),
+        ("/tickets/configuracion","tickets","Configuración de tickets"),
+        ("/tickets","tickets","La mesa de ayuda"),
         ("/informes/novedades","informes","Escribir un comunicado (Informes → Comunicados)"),
         ("/novedades","informes","Dónde se ven"),
         ("/informes","informes","Artículos e informes"),
@@ -172,6 +175,15 @@ public static class AyudaManuales
         ("/actualizaciones","utilidades","Actualizaciones"),
         ("/configuracion$","utilidades","Dónde está cada configuración") });
 
+    /// <summary>
+    /// Pantalla principal de los manuales que abarcan varias pantallas: es el camino que da la ayuda con IA cuando
+    /// el artículo no tiene pantalla propia en <see cref="Pantallas"/>. Sin esto, "¿cómo pospongo un ticket?"
+    /// mandaba a Partes de horas, la primera pantalla del manual de Tickets en la lista (2026-11-27).
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string,string> PantallaPrincipal=new Dictionary<string,string>{
+        ["tickets"]="/tickets",["crm"]="/crm",["conversaciones"]="/conversaciones",["compras"]="/compras",
+        ["contabilidad"]="/contabilidad",["logistica"]="/carga-viajes",["calendario"]="/calendario",["informes"]="/informes",
+        ["caja"]="/caja-bancos",["ventas-modulo"]="/ventas-dashboard",["stock"]="/stock",["catalogos"]="/catalogo"};
     public static string TemaParaRuta(string ruta)=>Ubicar(ruta).Tema;
     /// <summary>Id del artículo de la pantalla (para abrir la ayuda directo ahí), o null.</summary>
     public static string? SeccionParaRuta(string ruta)=>Ubicar(ruta).Articulo is { } titulo ? IdArticulo(titulo) : null;
@@ -188,7 +200,16 @@ public static class AyudaManuales
         return ("general",null);
     }
     internal static string IdArticulo(string titulo)=>Regex.Replace(Normalizar(titulo),@"[^a-z0-9]+","-").Trim('-');
-    public static string Html(string contenido)=>Markdown.ToHtml(contenido,Pipeline);
+    /// <summary>
+    /// Markdown a HTML. "[[bi:ticket-perforated]]" se dibuja como el ícono real del botón (Bootstrap Icons), así el
+    /// manual y las respuestas de la IA muestran qué hay que tocar (2026-11-27). Sólo nombres de ícono válidos:
+    /// el HTML del Markdown sigue deshabilitado.
+    /// </summary>
+    public static string Html(string contenido)=>MarcaIcono.Replace(Markdown.ToHtml(contenido,Pipeline),
+        m=>$"<i class=\"bi bi-{m.Groups[1].Value} ayuda-icono\" aria-hidden=\"true\"></i>");
+    internal static readonly Regex MarcaIcono=new(@"\[\[bi:([a-z0-9-]{1,60})\]\]",RegexOptions.Compiled);
+    /// <summary>El texto sin las marcas de ícono (para buscar y para contar el largo).</summary>
+    internal static string SinIconos(string texto)=>MarcaIcono.Replace(texto,"");
     public static IReadOnlyList<AyudaArticulo> Buscar(AyudaManual manual,string consulta)
     {
         var terminos=TerminosBusqueda(consulta);
@@ -235,7 +256,7 @@ public static class AyudaManuales
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AyudaArticulo,Tuple<string,string>> Normalizados=new();
     private static (string Titulo,string Texto) TextoNormalizado(AyudaArticulo articulo)
     {
-        var t=Normalizados.GetValue(articulo,a=>Tuple.Create(Normalizar(a.Titulo),Normalizar(a.Titulo+" "+a.Contenido)));
+        var t=Normalizados.GetValue(articulo,a=>Tuple.Create(Normalizar(a.Titulo),Normalizar(a.Titulo+" "+SinIconos(a.Contenido))));
         return (t.Item1,t.Item2);
     }
     private static AyudaManual Cargar(AyudaTema tema)
