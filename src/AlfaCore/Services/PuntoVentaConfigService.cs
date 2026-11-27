@@ -112,6 +112,19 @@ public sealed class PuntoVentaConfigService(
             : texto;
     }
 
+    private static string NormalizarModalidadReciboAnticipo(string? valor)
+        => valor?.Trim().ToUpperInvariant() switch
+        {
+            PuntoVentaReciboAnticipoModalidadKeys.Preguntar => PuntoVentaReciboAnticipoModalidadKeys.Preguntar,
+            PuntoVentaReciboAnticipoModalidadKeys.Automatico => PuntoVentaReciboAnticipoModalidadKeys.Automatico,
+            _ => PuntoVentaReciboAnticipoModalidadKeys.NoImprimir
+        };
+
+    private static string NormalizarFormatoReciboAnticipo(string? valor)
+        => string.Equals(valor?.Trim(), PuntoVentaReciboAnticipoFormatoKeys.A4, StringComparison.OrdinalIgnoreCase)
+            ? PuntoVentaReciboAnticipoFormatoKeys.A4
+            : PuntoVentaReciboAnticipoFormatoKeys.Ticket80;
+
     public Task<string> GetComprobanteHabitualAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetComprobanteHabitual", async token =>
         {
@@ -196,7 +209,10 @@ public sealed class PuntoVentaConfigService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var cantidad = Math.Clamp(limite, 1, 1000);
-            var rows = (await cn.QueryAsync<PuntoVentaTopArticuloDto>(new CommandDefinition("""
+            var vistaVentasDisponible = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                SELECT CASE WHEN OBJECT_ID(N'dbo.VT_DETALLEIVAPROFORMA', N'V') IS NULL THEN 0 ELSE 1 END;
+                """, cancellationToken: token));
+            var sql = vistaVentasDisponible == 1 ? """
                 SELECT TOP (@Limite)
                        CONVERT(varchar(50), d.Articulo) AS IdArticulo,
                        LTRIM(RTRIM(ISNULL(d.DESCRIPCION, ''))) AS Descripcion,
@@ -209,7 +225,28 @@ public sealed class PuntoVentaConfigService(
                 ORDER BY SUM(ISNULL(d.Consumo, 0)) DESC,
                          SUM(ISNULL(d.ValorVenta, 0)) DESC,
                          d.DESCRIPCION;
-                """, new { Limite = cantidad }, cancellationToken: token))).ToList();
+                """ : """
+                SELECT TOP (@Limite)
+                       LTRIM(RTRIM(i.IDARTICULO)) AS IdArticulo,
+                       LTRIM(RTRIM(ISNULL(i.DESCRIPCION, a.DESCRIPCION))) AS Descripcion,
+                       CONVERT(decimal(18, 4), SUM(ISNULL(i.CANTIDAD, 0))) AS CantidadVendida,
+                       CONVERT(decimal(18, 2), SUM(ISNULL(i.TOTAL, 0))) AS TotalVendido
+                FROM dbo.V_MV_CPTEINSUMOS i
+                INNER JOIN dbo.V_MV_CPTE c
+                    ON c.TC = i.TC AND c.IDCOMPROBANTE = i.IDCOMPROBANTE
+                INNER JOIN dbo.V_MA_ARTICULOS a
+                    ON LTRIM(RTRIM(a.IDARTICULO)) = LTRIM(RTRIM(i.IDARTICULO))
+                WHERE ISNULL(c.ANULADA, 0) = 0
+                  AND i.TC IN (N'TK', N'TKFC', N'FC', N'ND', N'NC', N'FP', N'NCFP')
+                  AND c.FECHA >= DATEADD(month, -12, CONVERT(date, GETDATE()))
+                  AND c.FECHA < DATEADD(day, 1, CONVERT(date, GETDATE()))
+                GROUP BY i.IDARTICULO, i.DESCRIPCION, a.DESCRIPCION
+                ORDER BY SUM(ISNULL(i.CANTIDAD, 0)) DESC,
+                         SUM(ISNULL(i.TOTAL, 0)) DESC,
+                         i.DESCRIPCION;
+                """;
+            var rows = (await cn.QueryAsync<PuntoVentaTopArticuloDto>(new CommandDefinition(
+                sql, new { Limite = cantidad }, cancellationToken: token))).ToList();
 
             return (IReadOnlyList<PuntoVentaTopArticuloDto>)rows
                 .Select((row, index) => new PuntoVentaTopArticuloDto
@@ -222,6 +259,19 @@ public sealed class PuntoVentaConfigService(
                 })
                 .ToList();
         }, "No se pudo detectar los artículos más vendidos.", ct);
+
+    public Task<int> GetTopArticulosConfiguradosCountAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetTopArticulosConfiguradosCount", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var configuracion = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
+                SELECT TOP (1) ISNULL(VALOR, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'GOUR_TOPVTAS';
+                """, cancellationToken: token));
+            return ParseTopArticuloIds(configuracion).Count;
+        }, "No se pudo contar la lista Top de artículos.", ct);
 
     public Task SaveTopArticulosAsync(IReadOnlyList<string> idsArticulo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTopArticulos", async token =>
@@ -307,6 +357,15 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(GOUR_CANTIDAD4, 1) AS CantidadRapida4,
                     ISNULL(GOUR_CANTIDAD5, 6) AS CantidadRapida5,
                     ISNULL(GOUR_CANTIDAD6, 12) AS CantidadRapida6,
+                    ISNULL(RECIBO_ANTICIPO_MODALIDAD, 'NO') AS ModalidadReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_FORMATO, 'TICKET80') AS FormatoReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_EMPRESA, 1) AS ReciboAnticipoMuestraEmpresa,
+                    ISNULL(RECIBO_ANTICIPO_PEDIDO, 1) AS ReciboAnticipoMuestraPedido,
+                    ISNULL(RECIBO_ANTICIPO_CLIENTE, 1) AS ReciboAnticipoMuestraCliente,
+                    ISNULL(RECIBO_ANTICIPO_IMPORTES, 1) AS ReciboAnticipoMuestraImportes,
+                    ISNULL(RECIBO_ANTICIPO_MEDIOS, 1) AS ReciboAnticipoMuestraMediosPago,
+                    ISNULL(RECIBO_ANTICIPO_ENTREGA, 1) AS ReciboAnticipoMuestraEntrega,
+                    ISNULL(RECIBO_ANTICIPO_USUARIO, 1) AS ReciboAnticipoMuestraUsuario,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -353,6 +412,15 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(GOUR_CANTIDAD4, 1) AS CantidadRapida4,
                     ISNULL(GOUR_CANTIDAD5, 6) AS CantidadRapida5,
                     ISNULL(GOUR_CANTIDAD6, 12) AS CantidadRapida6,
+                    ISNULL(RECIBO_ANTICIPO_MODALIDAD, 'NO') AS ModalidadReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_FORMATO, 'TICKET80') AS FormatoReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_EMPRESA, 1) AS ReciboAnticipoMuestraEmpresa,
+                    ISNULL(RECIBO_ANTICIPO_PEDIDO, 1) AS ReciboAnticipoMuestraPedido,
+                    ISNULL(RECIBO_ANTICIPO_CLIENTE, 1) AS ReciboAnticipoMuestraCliente,
+                    ISNULL(RECIBO_ANTICIPO_IMPORTES, 1) AS ReciboAnticipoMuestraImportes,
+                    ISNULL(RECIBO_ANTICIPO_MEDIOS, 1) AS ReciboAnticipoMuestraMediosPago,
+                    ISNULL(RECIBO_ANTICIPO_ENTREGA, 1) AS ReciboAnticipoMuestraEntrega,
+                    ISNULL(RECIBO_ANTICIPO_USUARIO, 1) AS ReciboAnticipoMuestraUsuario,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -417,6 +485,8 @@ public sealed class PuntoVentaConfigService(
             request.CantidadRapida4 = NormalizarImporteRapido(request.CantidadRapida4, 1m);
             request.CantidadRapida5 = NormalizarImporteRapido(request.CantidadRapida5, 6m);
             request.CantidadRapida6 = NormalizarImporteRapido(request.CantidadRapida6, 12m);
+            request.ModalidadReciboAnticipo = NormalizarModalidadReciboAnticipo(request.ModalidadReciboAnticipo);
+            request.FormatoReciboAnticipo = NormalizarFormatoReciboAnticipo(request.FormatoReciboAnticipo);
 
             var validation = await validator.ValidatePuntoVentaForSaveAsync(request, token);
             if (!validation.IsValid)
@@ -433,9 +503,9 @@ public sealed class PuntoVentaConfigService(
             {
                 const string insertSql = """
                     INSERT INTO dbo.POS_PUNTOVENTA
-                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, CARGARAPIDAGRAFICA, MODO_INGRESO_RAPIDO, GOUR_IMPORTE1, GOUR_IMPORTE2, GOUR_IMPORTE3, GOUR_IMPORTE4, GOUR_IMPORTE5, GOUR_IMPORTE6, GOUR_CANTIDAD1, GOUR_CANTIDAD2, GOUR_CANTIDAD3, GOUR_CANTIDAD4, GOUR_CANTIDAD5, GOUR_CANTIDAD6, ACTIVO, USUARIO, FECHAHORA_ALTA)
+                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, CARGARAPIDAGRAFICA, MODO_INGRESO_RAPIDO, GOUR_IMPORTE1, GOUR_IMPORTE2, GOUR_IMPORTE3, GOUR_IMPORTE4, GOUR_IMPORTE5, GOUR_IMPORTE6, GOUR_CANTIDAD1, GOUR_CANTIDAD2, GOUR_CANTIDAD3, GOUR_CANTIDAD4, GOUR_CANTIDAD5, GOUR_CANTIDAD6, RECIBO_ANTICIPO_MODALIDAD, RECIBO_ANTICIPO_FORMATO, RECIBO_ANTICIPO_EMPRESA, RECIBO_ANTICIPO_PEDIDO, RECIBO_ANTICIPO_CLIENTE, RECIBO_ANTICIPO_IMPORTES, RECIBO_ANTICIPO_MEDIOS, RECIBO_ANTICIPO_ENTREGA, RECIBO_ANTICIPO_USUARIO, ACTIVO, USUARIO, FECHAHORA_ALTA)
                     VALUES
-                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @CargaRapidaGrafica, @ModoIngresoRapido, @ImporteRapido1, @ImporteRapido2, @ImporteRapido3, @ImporteRapido4, @ImporteRapido5, @ImporteRapido6, @CantidadRapida1, @CantidadRapida2, @CantidadRapida3, @CantidadRapida4, @CantidadRapida5, @CantidadRapida6, @Activo, @Usuario, GETDATE());
+                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @CargaRapidaGrafica, @ModoIngresoRapido, @ImporteRapido1, @ImporteRapido2, @ImporteRapido3, @ImporteRapido4, @ImporteRapido5, @ImporteRapido6, @CantidadRapida1, @CantidadRapida2, @CantidadRapida3, @CantidadRapida4, @CantidadRapida5, @CantidadRapida6, @ModalidadReciboAnticipo, @FormatoReciboAnticipo, @ReciboAnticipoMuestraEmpresa, @ReciboAnticipoMuestraPedido, @ReciboAnticipoMuestraCliente, @ReciboAnticipoMuestraImportes, @ReciboAnticipoMuestraMediosPago, @ReciboAnticipoMuestraEntrega, @ReciboAnticipoMuestraUsuario, @Activo, @Usuario, GETDATE());
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """;
                 var nuevoId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
@@ -462,10 +532,21 @@ public sealed class PuntoVentaConfigService(
                     request.CantidadRapida4,
                     request.CantidadRapida5,
                     request.CantidadRapida6,
+                    request.ModalidadReciboAnticipo,
+                    request.FormatoReciboAnticipo,
+                    request.ReciboAnticipoMuestraEmpresa,
+                    request.ReciboAnticipoMuestraPedido,
+                    request.ReciboAnticipoMuestraCliente,
+                    request.ReciboAnticipoMuestraImportes,
+                    request.ReciboAnticipoMuestraMediosPago,
+                    request.ReciboAnticipoMuestraEntrega,
+                    request.ReciboAnticipoMuestraUsuario,
                     request.Activo,
                     Usuario = usuario
                 }, tx, cancellationToken: token));
                 await GuardarRubrosAsync(cn, tx, nuevoId, request.Rubros, token);
+                if (request.Modo == PuntoVentaModoKeys.Salon)
+                    await CrearSalonPredeterminadoAsync(cn, tx, nuevoId, token);
                 await tx.CommitAsync(token);
                 return nuevoId;
             }
@@ -494,6 +575,15 @@ public sealed class PuntoVentaConfigService(
                     GOUR_CANTIDAD4 = @CantidadRapida4,
                     GOUR_CANTIDAD5 = @CantidadRapida5,
                     GOUR_CANTIDAD6 = @CantidadRapida6,
+                    RECIBO_ANTICIPO_MODALIDAD = @ModalidadReciboAnticipo,
+                    RECIBO_ANTICIPO_FORMATO = @FormatoReciboAnticipo,
+                    RECIBO_ANTICIPO_EMPRESA = @ReciboAnticipoMuestraEmpresa,
+                    RECIBO_ANTICIPO_PEDIDO = @ReciboAnticipoMuestraPedido,
+                    RECIBO_ANTICIPO_CLIENTE = @ReciboAnticipoMuestraCliente,
+                    RECIBO_ANTICIPO_IMPORTES = @ReciboAnticipoMuestraImportes,
+                    RECIBO_ANTICIPO_MEDIOS = @ReciboAnticipoMuestraMediosPago,
+                    RECIBO_ANTICIPO_ENTREGA = @ReciboAnticipoMuestraEntrega,
+                    RECIBO_ANTICIPO_USUARIO = @ReciboAnticipoMuestraUsuario,
                     ACTIVO = @Activo,
                     USUARIO = @Usuario,
                     FECHAHORA_MODIFICACION = GETDATE()
@@ -524,6 +614,15 @@ public sealed class PuntoVentaConfigService(
                 request.CantidadRapida4,
                 request.CantidadRapida5,
                 request.CantidadRapida6,
+                request.ModalidadReciboAnticipo,
+                request.FormatoReciboAnticipo,
+                request.ReciboAnticipoMuestraEmpresa,
+                request.ReciboAnticipoMuestraPedido,
+                request.ReciboAnticipoMuestraCliente,
+                request.ReciboAnticipoMuestraImportes,
+                request.ReciboAnticipoMuestraMediosPago,
+                request.ReciboAnticipoMuestraEntrega,
+                request.ReciboAnticipoMuestraUsuario,
                 request.Activo,
                 Usuario = usuario
             }, tx, cancellationToken: token));
@@ -532,9 +631,325 @@ public sealed class PuntoVentaConfigService(
                 throw new InvalidOperationException("No se encontró el punto de venta para actualizar.");
 
             await GuardarRubrosAsync(cn, tx, request.Id!.Value, request.Rubros, token);
+            // Un punto de venta que pasa a Salón y no tiene sectores también recibe el salón inicial.
+            if (request.Modo == PuntoVentaModoKeys.Salon)
+                await CrearSalonPredeterminadoAsync(cn, tx, request.Id!.Value, token);
             await tx.CommitAsync(token);
             return request.Id!.Value;
         }, "No se pudo guardar el punto de venta.", ct);
+
+    /// <summary>Movimientos que impiden borrar un punto de venta (tabla, filtro por @Id, nombre para el mensaje).</summary>
+    internal static readonly (string Tabla, string Filtro, string Nombre)[] MovimientosPuntoVenta =
+    [
+        ("POS_PEDIDO", "IDPUNTOVENTA = @Id", "pedido(s)"),
+        ("POS_COMANDA", "IDPUNTOVENTA = @Id", "comanda(s)"),
+        ("POS_TURNO", "IDPUNTOVENTA = @Id", "turno(s) de caja"),
+        ("POS_MESA_LLAMADO", "IDPUNTOVENTA = @Id", "llamado(s) de mesa"),
+        ("COMANDA_RESERVAS", "IdMesa IN (SELECT m.ID FROM dbo.POS_MESA m JOIN dbo.POS_SECTOR s ON s.ID = m.IDSECTOR WHERE s.IDPUNTOVENTA = @Id)", "reserva(s) de mesa")
+    ];
+
+    /// <summary>Configuración propia del punto de venta que se borra con él, en orden (las mesas antes que sus sectores).</summary>
+    internal static readonly (string Tabla, string Filtro)[] ConfiguracionPuntoVenta =
+    [
+        ("POS_ARTICULO_AGOTADO", "IDPUNTOVENTA = @Id"),
+        ("POS_CARTA_FAMILIA", "IDPUNTOVENTA = @Id"),
+        ("POS_PUNTOVENTA_RUBRO", "IDPUNTOVENTA = @Id"),
+        ("POS_MESA", "IDSECTOR IN (SELECT ID FROM dbo.POS_SECTOR WHERE IDPUNTOVENTA = @Id)"),
+        ("POS_SECTOR", "IDPUNTOVENTA = @Id")
+    ];
+
+    internal static string? MotivoNoBorrar(IEnumerable<(string Nombre, int Cantidad)> movimientos)
+    {
+        var con = movimientos.Where(m => m.Cantidad > 0).Select(m => $"{m.Cantidad} {m.Nombre}").ToList();
+        return con.Count == 0 ? null
+            : $"El punto de venta tiene movimientos ({string.Join(", ", con)}): no se puede borrar. Si no se usa más, desmarcá «Activo».";
+    }
+
+    public Task DeletePuntoVentaAsync(int id, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "DeletePuntoVenta", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, token);
+
+            var pv = await cn.QuerySingleOrDefaultAsync<(string Codigo, string Nombre)?>(new CommandDefinition(
+                "SELECT LTRIM(RTRIM(CODIGO)), LTRIM(RTRIM(ISNULL(NOMBRE,''))) FROM dbo.POS_PUNTOVENTA WITH (UPDLOCK, HOLDLOCK) WHERE ID = @Id;",
+                new { Id = id }, tx, cancellationToken: token))
+                ?? throw new InvalidOperationException("El punto de venta ya no existe.");
+
+            // Las tablas pueden no existir en bases que todavía no corrieron todos los scripts del POS.
+            static async Task<bool> ExisteAsync(SqlConnection cn, SqlTransaction tx, string tabla, CancellationToken token)
+                => await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(@Tabla, N'U') IS NULL THEN 0 ELSE 1 END;",
+                    new { Tabla = "dbo." + tabla }, tx, cancellationToken: token)) == 1;
+
+            var movimientos = new List<(string Nombre, int Cantidad)>();
+            foreach (var (tabla, filtro, nombre) in MovimientosPuntoVenta)
+            {
+                if (!await ExisteAsync(cn, tx, tabla, token) || (tabla == "COMANDA_RESERVAS" && !await ExisteAsync(cn, tx, "POS_MESA", token)))
+                    continue;
+                movimientos.Add((nombre, await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                    $"SELECT COUNT(*) FROM dbo.{tabla} WHERE {filtro};", new { Id = id }, tx, commandTimeout: 120, cancellationToken: token))));
+            }
+            if (MotivoNoBorrar(movimientos) is { } motivo)
+                throw new InvalidOperationException(motivo);
+
+            foreach (var (tabla, filtro) in ConfiguracionPuntoVenta)
+                if (await ExisteAsync(cn, tx, tabla, token))
+                    await cn.ExecuteAsync(new CommandDefinition($"DELETE FROM dbo.{tabla} WHERE {filtro};", new { Id = id }, tx, cancellationToken: token));
+            await cn.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.POS_PUNTOVENTA WHERE ID = @Id;", new { Id = id }, tx, cancellationToken: token));
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(ModuleName, "DeletePuntoVenta", "POS_PUNTOVENTA", id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                $"Borró el punto de venta {pv.Codigo} {pv.Nombre} (sin movimientos).", new { id, pv.Codigo, pv.Nombre }, CancellationToken.None);
+            return true;
+        }, "No se pudo borrar el punto de venta.", ct);
+
+    // ------------------------------------------------------------ salón: armado automático y cantidad de mesas
+
+    /// <summary>Código de la mesa que representa la barra del salón (no cuenta como mesa en «Cantidad de mesas»).</summary>
+    internal const string CodigoBarra = "BAR";
+    internal const string CodigoSectorSalon = "SAL";
+    private const double PlanoAncho = 1000, PlanoAlto = 600, PlanoMargen = 25, PlanoInicioMesasConBarra = 130;
+
+    internal readonly record struct PosicionPlano(double X, double Y, double W, double H);
+
+    /// <summary>La barra va arriba, centrada, a lo ancho del plano virtual de 1000 x 600.</summary>
+    internal static PosicionPlano PosicionBarra() => new(200, PlanoMargen, 600, 70);
+
+    /// <summary>
+    /// Reparte <paramref name="cantidad"/> mesas en grilla pareja sobre el plano (debajo de la barra si la hay):
+    /// filas y columnas según la proporción del área libre, la última fila centrada.
+    /// </summary>
+    internal static IReadOnlyList<PosicionPlano> DistribuirMesas(int cantidad, bool conBarra)
+    {
+        if (cantidad <= 0)
+            return [];
+        var top = conBarra ? PlanoInicioMesasConBarra : PlanoMargen;
+        var areaW = PlanoAncho - 2 * PlanoMargen;
+        var areaH = PlanoAlto - PlanoMargen - top;
+        var filas = Math.Clamp((int)Math.Round(Math.Sqrt(cantidad * areaH / areaW)), 1, cantidad);
+        var columnas = (int)Math.Ceiling(cantidad / (double)filas);
+        filas = (int)Math.Ceiling(cantidad / (double)columnas);
+        var celdaW = areaW / columnas;
+        var celdaH = areaH / filas;
+        var lado = Math.Floor(Math.Min(110, Math.Min(celdaW, celdaH) * 0.75));
+
+        var posiciones = new List<PosicionPlano>(cantidad);
+        for (var i = 0; i < cantidad; i++)
+        {
+            var fila = i / columnas;
+            var columna = i % columnas;
+            var enLaFila = fila == filas - 1 ? cantidad - fila * columnas : columnas;
+            var corrimiento = (columnas - enLaFila) * celdaW / 2;
+            posiciones.Add(new PosicionPlano(
+                Math.Round(PlanoMargen + corrimiento + columna * celdaW + (celdaW - lado) / 2),
+                Math.Round(top + fila * celdaH + (celdaH - lado) / 2),
+                lado, lado));
+        }
+        return posiciones;
+    }
+
+    /// <summary>Número de la mesa a partir del código (M12 → 12); las que no tienen número van al final.</summary>
+    internal static int NumeroMesa(string? codigo)
+        => int.TryParse(new string((codigo ?? string.Empty).Where(char.IsDigit).ToArray()), out var n) ? n : int.MaxValue;
+
+    private sealed class MesaEstado
+    {
+        public int Id { get; init; }
+        public string Codigo { get; init; } = string.Empty;
+        public bool Activo { get; init; }
+        public bool Abierta { get; init; }
+        public bool TieneMovimientos { get; init; }
+        public bool EsBarra => string.Equals(Codigo, CodigoBarra, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Mesas con su estado: si tienen la mesa abierta ahora (pedido ABIERTA/CUENTA) y si tienen historia
+    /// (pedidos, llamados o reservas). Las tablas o columnas que la base todavía no tiene no cuentan.
+    /// </summary>
+    private static async Task<List<MesaEstado>> LeerMesasEstadoAsync(SqlConnection cn, SqlTransaction tx, string filtro, object parametros, CancellationToken token)
+    {
+        var existe = await cn.QuerySingleAsync<(int Pedido, int Llamado, int Reserva)>(new CommandDefinition("""
+            SELECT CASE WHEN COL_LENGTH(N'dbo.POS_PEDIDO', N'IDMESA') IS NULL THEN 0 ELSE 1 END,
+                   CASE WHEN OBJECT_ID(N'dbo.POS_MESA_LLAMADO', N'U') IS NULL THEN 0 ELSE 1 END,
+                   CASE WHEN COL_LENGTH(N'dbo.COMANDA_RESERVAS', N'IdMesa') IS NULL THEN 0 ELSE 1 END;
+            """, transaction: tx, cancellationToken: token));
+        var abierta = existe.Pedido == 1
+            ? "EXISTS (SELECT 1 FROM dbo.POS_PEDIDO p WHERE p.IDMESA = m.ID AND p.ESTADO IN ('ABIERTA', 'CUENTA'))" : "1 = 0";
+        var movimientos = new List<string> { "1 = 0" };
+        if (existe.Pedido == 1) movimientos.Add("EXISTS (SELECT 1 FROM dbo.POS_PEDIDO p WHERE p.IDMESA = m.ID)");
+        if (existe.Llamado == 1) movimientos.Add("EXISTS (SELECT 1 FROM dbo.POS_MESA_LLAMADO l WHERE l.IDMESA = m.ID)");
+        if (existe.Reserva == 1) movimientos.Add("EXISTS (SELECT 1 FROM dbo.COMANDA_RESERVAS r WHERE r.IdMesa = m.ID)");
+
+        var sql = $"""
+            SELECT m.ID AS Id, LTRIM(RTRIM(m.CODIGO)) AS Codigo, m.ACTIVO AS Activo,
+                   CAST(CASE WHEN {abierta} THEN 1 ELSE 0 END AS bit) AS Abierta,
+                   CAST(CASE WHEN {string.Join(" OR ", movimientos)} THEN 1 ELSE 0 END AS bit) AS TieneMovimientos
+            FROM dbo.POS_MESA m WITH (UPDLOCK, HOLDLOCK)
+            WHERE {filtro};
+            """;
+        return (await cn.QueryAsync<MesaEstado>(new CommandDefinition(sql, parametros, tx, commandTimeout: 120, cancellationToken: token))).ToList();
+    }
+
+    private static async Task<int> InsertarMesaAsync(SqlConnection cn, SqlTransaction tx, int idSector, string codigo, string nombre, int capacidad, PosicionPlano pos, CancellationToken token)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+            INSERT INTO dbo.POS_MESA (CODIGO, IDSECTOR, NOMBRE, CAPACIDAD, POSX, POSY, WIDTH, HEIGHT, FORMATO, ACTIVO, FECHAHORA_ALTA)
+            VALUES (@Codigo, @IdSector, @Nombre, @Capacidad, @X, @Y, @W, @H, @Formato, 1, GETDATE());
+            SELECT CAST(SCOPE_IDENTITY() AS int);
+            """, new { Codigo = codigo, IdSector = idSector, Nombre = nombre, Capacidad = capacidad, pos.X, pos.Y, pos.W, pos.H, Formato = PuntoVentaMesaFormatoKeys.Cuadrada },
+            tx, cancellationToken: token));
+
+    private static Task MoverMesaAsync(SqlConnection cn, SqlTransaction tx, int id, PosicionPlano pos, CancellationToken token)
+        => cn.ExecuteAsync(new CommandDefinition(
+            "UPDATE dbo.POS_MESA SET POSX = @X, POSY = @Y, WIDTH = @W, HEIGHT = @H, FECHAHORA_MODIFICACION = GETDATE() WHERE ID = @Id;",
+            new { Id = id, pos.X, pos.Y, pos.W, pos.H }, tx, cancellationToken: token));
+
+    private static async Task<string> LeerConfigAsync(SqlConnection cn, SqlTransaction tx, string clave, string porDefecto, CancellationToken token)
+    {
+        var valor = await cn.QueryFirstOrDefaultAsync<string>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.TA_CONFIGURACION', N'U') IS NOT NULL
+                SELECT TOP (1) LTRIM(RTRIM(ISNULL(VALOR, ''))) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+            """, new { Clave = clave }, tx, cancellationToken: token));
+        return string.IsNullOrWhiteSpace(valor) ? porDefecto : valor.Trim();
+    }
+
+    private static async Task<int> LeerConfigEnteroAsync(SqlConnection cn, SqlTransaction tx, string clave, int porDefecto, int min, int max, CancellationToken token)
+        => int.TryParse(await LeerConfigAsync(cn, tx, clave, string.Empty, token), out var n) && n >= min && n <= max ? n : porDefecto;
+
+    /// <summary>
+    /// Si el punto de venta de salón todavía no tiene sectores, arma el salón inicial: sector «Salón», barra y
+    /// mesas repartidas en el plano (cantidades y capacidades en TA_CONFIGURACION, grupo POS).
+    /// </summary>
+    private static async Task<int> CrearSalonPredeterminadoAsync(SqlConnection cn, SqlTransaction tx, int idPuntoVenta, CancellationToken token)
+    {
+        var tieneSectores = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM dbo.POS_SECTOR WITH (UPDLOCK, HOLDLOCK) WHERE IDPUNTOVENTA = @Id;", new { Id = idPuntoVenta }, tx, cancellationToken: token));
+        if (tieneSectores > 0)
+            return 0;
+
+        var nombreSector = await LeerConfigAsync(cn, tx, "POS-SALON-SECTOR-NOMBRE", "Salón", token);
+        var mesas = await LeerConfigEnteroAsync(cn, tx, "POS-SALON-MESAS-INICIALES", 5, 0, 200, token);
+        var capacidad = await LeerConfigEnteroAsync(cn, tx, "POS-SALON-CAPACIDAD-MESA", 4, 1, 99, token);
+        var conBarra = !string.Equals(await LeerConfigAsync(cn, tx, "POS-SALON-CREAR-BARRA", "S", token), "N", StringComparison.OrdinalIgnoreCase);
+        var capacidadBarra = await LeerConfigEnteroAsync(cn, tx, "POS-SALON-CAPACIDAD-BARRA", 6, 1, 99, token);
+
+        var idSector = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+            INSERT INTO dbo.POS_SECTOR (CODIGO, IDPUNTOVENTA, NOMBRE, ORDEN, ACTIVO, FECHAHORA_ALTA)
+            VALUES (@Codigo, @IdPuntoVenta, @Nombre, 0, 1, GETDATE());
+            SELECT CAST(SCOPE_IDENTITY() AS int);
+            """, new { Codigo = CodigoSectorSalon, IdPuntoVenta = idPuntoVenta, Nombre = nombreSector.Length > 50 ? nombreSector[..50] : nombreSector }, tx, cancellationToken: token));
+
+        if (conBarra)
+            await InsertarMesaAsync(cn, tx, idSector, CodigoBarra, "Barra", capacidadBarra, PosicionBarra(), token);
+        var posiciones = DistribuirMesas(mesas, conBarra);
+        for (var i = 0; i < posiciones.Count; i++)
+            await InsertarMesaAsync(cn, tx, idSector, $"M{i + 1}", $"Mesa {i + 1}", capacidad, posiciones[i], token);
+        return mesas;
+    }
+
+    public Task<PuntoVentaAjusteMesasResultado> AjustarCantidadMesasAsync(int idSector, int cantidad, int? capacidad, bool redistribuir, string usuario, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "AjustarCantidadMesas", async token =>
+        {
+            if (cantidad is < 0 or > 200)
+                throw new InvalidOperationException("La cantidad de mesas tiene que estar entre 0 y 200.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, token);
+
+            var sector = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+                "SELECT LTRIM(RTRIM(NOMBRE)) FROM dbo.POS_SECTOR WITH (UPDLOCK, HOLDLOCK) WHERE ID = @Id;", new { Id = idSector }, tx, cancellationToken: token))
+                ?? throw new InvalidOperationException("El sector ya no existe.");
+            capacidad = capacidad is >= 1 and <= 99 ? capacidad : await LeerConfigEnteroAsync(cn, tx, "POS-SALON-CAPACIDAD-MESA", 4, 1, 99, token);
+
+            var todas = await LeerMesasEstadoAsync(cn, tx, "m.IDSECTOR = @IdSector", new { IdSector = idSector }, token);
+            var activas = todas.Where(m => m.Activo && !m.EsBarra).OrderBy(m => NumeroMesa(m.Codigo)).ThenBy(m => m.Id).ToList();
+            var resultado = new PuntoVentaAjusteMesasResultado();
+            var idsActivas = activas.Select(m => m.Id).ToList();
+
+            if (cantidad > activas.Count)
+            {
+                // Primero se reactivan las mesas dadas de baja (conservan su historia); después se crean nuevas.
+                foreach (var mesa in todas.Where(m => !m.Activo && !m.EsBarra).OrderBy(m => NumeroMesa(m.Codigo)).ThenBy(m => m.Id).Take(cantidad - activas.Count))
+                {
+                    await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.POS_MESA SET ACTIVO = 1, FECHAHORA_MODIFICACION = GETDATE() WHERE ID = @Id;",
+                        new { mesa.Id }, tx, cancellationToken: token));
+                    idsActivas.Add(mesa.Id);
+                    resultado.Reactivadas++;
+                }
+
+                var codigos = todas.Select(m => m.Codigo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var numero = 1;
+                var provisoria = new PosicionPlano(PlanoMargen, PlanoMargen, 110, 110);
+                while (idsActivas.Count < cantidad)
+                {
+                    while (codigos.Contains($"M{numero}")) numero++;
+                    codigos.Add($"M{numero}");
+                    idsActivas.Add(await InsertarMesaAsync(cn, tx, idSector, $"M{numero}", $"Mesa {numero}", capacidad.Value, provisoria, token));
+                    resultado.Agregadas++;
+                }
+                // Si no se redistribuye, las nuevas quedan sin posición y el plano las acomoda en grilla.
+                if (!redistribuir && resultado.Agregadas > 0)
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        "UPDATE dbo.POS_MESA SET POSX = NULL, POSY = NULL, WIDTH = NULL, HEIGHT = NULL WHERE ID IN @Ids;",
+                        new { Ids = idsActivas.Skip(idsActivas.Count - resultado.Agregadas).ToList() }, tx, cancellationToken: token));
+            }
+            else if (cantidad < activas.Count)
+            {
+                // Se sacan las de número más alto. Una mesa ocupada no se toca; con historia se da de baja; sin historia se borra.
+                var sobran = activas.Count - cantidad;
+                var aQuitar = activas.AsEnumerable().Reverse().Where(m => !m.Abierta).Take(sobran).ToList();
+                if (aQuitar.Count < sobran)
+                    throw new InvalidOperationException(
+                        $"No se pueden quitar {sobran} mesa(s) de {sector}: hay mesas ocupadas. Cerralas o liberalas y volvé a intentar.");
+                foreach (var mesa in aQuitar)
+                {
+                    var sql = mesa.TieneMovimientos
+                        ? "UPDATE dbo.POS_MESA SET ACTIVO = 0, FECHAHORA_MODIFICACION = GETDATE() WHERE ID = @Id;"
+                        : "DELETE FROM dbo.POS_MESA WHERE ID = @Id;";
+                    await cn.ExecuteAsync(new CommandDefinition(sql, new { mesa.Id }, tx, cancellationToken: token));
+                    if (mesa.TieneMovimientos) resultado.Desactivadas++; else resultado.Borradas++;
+                    idsActivas.Remove(mesa.Id);
+                }
+            }
+
+            if (redistribuir)
+            {
+                var barra = todas.FirstOrDefault(m => m.EsBarra && m.Activo);
+                if (barra is not null)
+                    await MoverMesaAsync(cn, tx, barra.Id, PosicionBarra(), token);
+                var posiciones = DistribuirMesas(idsActivas.Count, barra is not null);
+                for (var i = 0; i < idsActivas.Count; i++)
+                    await MoverMesaAsync(cn, tx, idsActivas[i], posiciones[i], token);
+            }
+
+            await tx.CommitAsync(token);
+            await appEvents.LogAuditAsync(ModuleName, "AjustarCantidadMesas", "POS_SECTOR", idSector.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                $"Cantidad de mesas de {sector}: {cantidad} ({resultado.Agregadas} nuevas, {resultado.Reactivadas} reactivadas, {resultado.Borradas} borradas, {resultado.Desactivadas} dadas de baja).",
+                new { idSector, cantidad, capacidad, redistribuir, usuario, resultado }, CancellationToken.None);
+            return resultado;
+        }, "No se pudo cambiar la cantidad de mesas.", ct);
+
+    public Task DeleteMesaAsync(int id, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "DeleteMesa", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, token);
+
+            var mesa = (await LeerMesasEstadoAsync(cn, tx, "m.ID = @Id", new { Id = id }, token)).FirstOrDefault()
+                ?? throw new InvalidOperationException("La mesa ya no existe.");
+            if (mesa.TieneMovimientos)
+                throw new InvalidOperationException(mesa.Abierta
+                    ? $"La mesa {mesa.Codigo} está ocupada: no se puede borrar."
+                    : $"La mesa {mesa.Codigo} tiene pedidos, llamados o reservas: no se puede borrar. Si no se usa más, desmarcá «Activa».");
+
+            await cn.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.POS_MESA WHERE ID = @Id;", new { Id = id }, tx, cancellationToken: token));
+            await tx.CommitAsync(token);
+            await appEvents.LogAuditAsync(ModuleName, "DeleteMesa", "POS_MESA", id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                $"Borró la mesa {mesa.Codigo} (sin movimientos).", new { id, mesa.Codigo }, CancellationToken.None);
+            return true;
+        }, "No se pudo borrar la mesa.", ct);
 
     private static decimal NormalizarImporteRapido(decimal value, decimal defaultValue)
         => value > 0m && value <= 999999999999m ? decimal.Round(value, 4, MidpointRounding.AwayFromZero) : defaultValue;

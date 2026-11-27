@@ -315,6 +315,7 @@
             else if (_vista == "buscar")
             {
                 _focusBusquedaPendiente = true;
+                await CargarClientesInicialesAsync();
             }
         }
 
@@ -539,9 +540,12 @@
         _busquedaCts = new CancellationTokenSource();
         var token = _busquedaCts.Token;
 
-        // Busca desde la primera letra, mientras se escribe (2026-10-22).
+        // Al borrar el texto vuelve a mostrar la primera página, igual que al abrir.
         if (_busqueda.Trim().Length < 1)
+        {
+            await CargarClientesInicialesAsync();
             return;
+        }
 
         try
         {
@@ -551,6 +555,39 @@
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // Se cancela la búsqueda anterior cuando el usuario sigue escribiendo.
+        }
+    }
+
+    private async Task CargarClientesInicialesAsync()
+    {
+        _busquedaCts?.Cancel();
+        _busquedaCts?.Dispose();
+        _busquedaCts = new CancellationTokenSource();
+        var token = _busquedaCts.Token;
+
+        try
+        {
+            _busquedaError = string.Empty;
+            _buscando = true;
+            var result = await ClientesSvc.SearchAsync(
+                CuentaComercialTipo.Cliente,
+                new CuentaComercialFilters { Texto = string.Empty, Activo = true, PageSize = 30, PageNumber = 1 },
+                token);
+            _resultados = result.Items;
+            _activo = 0;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _resultados = [];
+            _busquedaError = ex.Message;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+                _buscando = false;
         }
     }
 

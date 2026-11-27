@@ -194,6 +194,21 @@
                             <span>Puede ver y realizar proformas</span>
                         </label>
 
+                        <div class="auth-comprobantes-rapidos auth-assignments">
+                            <h4>Comprobantes habilitados</h4>
+                            <small>Definí qué comprobantes puede seleccionar en el Punto de Venta.</small>
+                            @foreach (var comprobante in ComprobantesPuntoVenta)
+                            {
+                                <label class="auth-toggle">
+                                    <input type="checkbox"
+                                           checked="@TieneComprobanteAutorizado(comprobante.Clave)"
+                                           @onchange="args => OnComprobanteChanged(comprobante.Clave, args)"
+                                           disabled="@(!_treeLoaded || _loadingTree)" />
+                                    <span>@comprobante.Nombre</span>
+                                </label>
+                            }
+                        </div>
+
                         <div class="field field--full">
                             <label>Unidad de negocio</label>
                             <select class="@GetCodeSelectClass(_selectedUNegocio)"
@@ -286,6 +301,14 @@
     private int _visibleTreeCount;
     private int _authorizedCount;
     private AppUiMessage? _feedback;
+
+    private static readonly IReadOnlyList<(string Clave, string Nombre)> ComprobantesPuntoVenta =
+    [
+        (PuntoVentaComprobantePermissionKeys.Factura, "EFC · Factura electrónica"),
+        (PuntoVentaComprobantePermissionKeys.Proforma, "FP · Factura proforma"),
+        (PuntoVentaComprobantePermissionKeys.NotaPedido, "NP · Nota de pedido"),
+        (PuntoVentaComprobantePermissionKeys.Remito, "RM · Remito interno")
+    ];
 
     private bool _canSave => _treeLoaded && !_loadingTree && !string.IsNullOrWhiteSpace(_selectedUser) && _dirty && !string.IsNullOrWhiteSpace(_selectedUNegocio);
     private bool _canCopy => _treeLoaded && !_loadingTree && !string.IsNullOrWhiteSpace(_selectedUser) && !string.IsNullOrWhiteSpace(_copyFromUser) && !string.Equals(_selectedUser, _copyFromUser, StringComparison.OrdinalIgnoreCase);
@@ -635,6 +658,17 @@
             : string.Equals(Convert.ToString(args.Value), "true", StringComparison.OrdinalIgnoreCase);
         MarkDirty();
         return Task.CompletedTask;
+    }
+
+    private bool TieneComprobanteAutorizado(string clave)
+        => MenuAutorizacionArbol.Find(_tree, clave)?.Autorizado == true;
+
+    private Task OnComprobanteChanged(string clave, ChangeEventArgs args)
+    {
+        var marcado = args.Value is bool b
+            ? b
+            : string.Equals(Convert.ToString(args.Value), "true", StringComparison.OrdinalIgnoreCase);
+        return ToggleAuthorizationAsync(new MenuAutorizacionToggleRequest { Clave = clave, Checked = marcado });
     }
 
     private Task OnCajaChanged(ChangeEventArgs args)

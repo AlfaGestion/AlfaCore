@@ -8,6 +8,9 @@ IF COL_LENGTH(N'dbo.POS_PUNTOVENTA', N'MODO_INGRESO_RAPIDO') IS NULL
 
 GO
 
+-- Lote aparte: en el mismo lote que el ALTER, SQL Server compila el UPDATE antes de que exista la columna.
+-- El RETURN de arriba corta solo el primer lote: sin la tabla (base sin POS) no se actualiza nada.
+IF COL_LENGTH(N'dbo.POS_PUNTOVENTA', N'MODO_INGRESO_RAPIDO') IS NOT NULL
 UPDATE dbo.POS_PUNTOVENTA
 SET MODO_INGRESO_RAPIDO = CASE WHEN ISNULL(CARGARAPIDAGRAFICA, 0) = 1 THEN N'COMPLETO' ELSE N'DESHABILITADO' END
 WHERE MODO_INGRESO_RAPIDO IS NULL OR LTRIM(RTRIM(MODO_INGRESO_RAPIDO)) = N'';

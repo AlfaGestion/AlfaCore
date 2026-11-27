@@ -1,0 +1,331 @@
+@page "/archivos/comprobantes"
+@page "/{idweb}/{idbase:int}/archivos/comprobantes"
+@using AlfaCore.Services
+@inject IComprobantesTablaService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Tabla de comprobantes | Alfa Gestión</PageTitle>
+
+@* Tabla de comprobantes y talonarios (D010310 del legacy, «Tabla de Comprobantes», V_TA_CPTE). *@
+<div class="gd-page gd tc-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <AlfaTabs Items="@TabsSistema" ActiveKey="@_sistema" ActiveKeyChanged="v => _sistema = v ?? Todos" AriaLabel="Sistema" />
+
+    @if (_lista.Count == 0 && _cargado)
+    {
+        <AlfaEmptyState Title="Sin comprobantes" Message="Todavía no hay comprobantes cargados." />
+    }
+    else if (_lista.Count > 0)
+    {
+        <section class="tc-tabla__marco"><div class="tc-tabla__scroll">
+            <table class="tc-tabla">
+                <thead><tr><th>Código</th><th class="n">Talonario</th><th>Descripción</th><th>Sistema</th><th>Unidad</th><th class="n">Pto. venta</th><th>Letras</th><th>Próximo número</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var c in Filtrados)
+                {
+                    <tr class="tc-fila" @onclick="() => AbrirAsync(c)">
+                        <td class="mono">@c.Codigo</td>
+                        <td class="n">@c.Talonario</td>
+                        <td>@c.Descripcion</td>
+                        <td>@c.Sistema</td>
+                        <td>@Unidad(c.Unidad)</td>
+                        <td class="n mono">@c.PuntoVenta.ToString("0000")</td>
+                        <td class="mono">@if (c.Letras.Length > 0) { <b>@c.Letras[..1]</b>@c.Letras[1..] } else { <span class="tc-nada">—</span> }</td>
+                        <td class="mono tc-proximos">@Proximos(c)</td>
+                        <td>@if (c.Externo) { <AlfaTag Tone="AlfaTagTone.Neutral">Externo</AlfaTag> }</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div></section>
+    }
+</div>
+
+<AlfaDialog Open="@(_edit is not null)" Title="@Titulo" Size="AlfaDialogSize.Xl" Loading="@_busy" ErrorMessage="@_error"
+            CloseOnBackdrop="false" OnClose="Cerrar">
+    <ChildContent>
+    @if (_edit is { } ed && _cat is not null)
+    {
+        var e = ed.Datos;
+        <div class="tc-form">
+            <div class="tc-grid">
+                @if (_pidiendoCodigo)
+                {
+                    <AlfaInput Label="Código" Value="@_codigoNuevo" ValueChanged="v => _codigoNuevo = (v ?? string.Empty).ToUpperInvariant()" MaxLength="4"
+                               HelpText="Si el comprobante ya existe se agrega un talonario nuevo." />
+                    <div class="tc-seguir"><AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="_busy || _codigoNuevo.Trim().Length == 0" OnClick="_ => PrepararAltaAsync(_codigoNuevo)">Continuar</AlfaButton></div>
+                }
+                else
+                {
+                    <AlfaInput Label="Código" Value="@e.Codigo" Disabled="true" />
+                    <AlfaInput Label="Talonario (nro de control)" Type="number" Value="@e.Talonario.ToString()" Disabled="@(!ed.EsNuevo || e.Externo)"
+                               ValueChanged="v => e.Talonario = int.TryParse(v, out var t) ? t : 0" />
+                    <AlfaInput Label="Descripción" Value="@e.Descripcion" ValueChanged="v => e.Descripcion = v ?? string.Empty" MaxLength="50" Class="tc-ancho" />
+                    <AlfaSelect Label="Sistema" Value="@e.Sistema" ValueChanged="CambiarSistema" Disabled="@(!ed.SistemaEditable)"
+                                Options="@(SistemasOpciones)" />
+                    <AlfaSelect Label="Unidad de negocio" Value="@e.Unidad" ValueChanged="v => e.Unidad = v ?? string.Empty"
+                                Options="@(new[] { new AlfaSelectOption("", "Sin unidad") }.Concat(_cat.Unidades.Select(u => new AlfaSelectOption(u.Codigo, $"{u.Codigo} · {u.Descripcion}"))).ToList())" />
+                    <AlfaInput Label="Punto de venta" Type="number" Value="@(e.PuntoVenta == 0 ? string.Empty : e.PuntoVenta.ToString())" Disabled="@e.Externo"
+                               ValueChanged="v => e.PuntoVenta = int.TryParse(v, out var p) ? p : 0" />
+                    <AlfaSelect Label="Stock" Value="@e.EntradaSalida" ValueChanged="CambiarStock" Disabled="@(!ed.EntradaSalidaEditable)"
+                                Options="@(new List<AlfaSelectOption> { new("", "Ninguno"), new("E", "Entrada"), new("S", "Salida") })" />
+                    <AlfaSelect Label="Cuenta" Value="@e.DebeHaber" ValueChanged="v => e.DebeHaber = v ?? string.Empty" Disabled="@(!ed.DebeHaberEditable)"
+                                Options="@(new List<AlfaSelectOption> { new("", "Ninguno"), new("D", "Debe"), new("H", "Haber") })" />
+                    <AlfaSelect Label="Depósito asociado" Value="@e.Deposito" ValueChanged="v => e.Deposito = v ?? string.Empty" Disabled="@(e.EntradaSalida.Length == 0)"
+                                Options="@(new[] { new AlfaSelectOption("", "Sin depósito") }.Concat(_cat.Depositos.Select(d => new AlfaSelectOption(d.Codigo, $"{d.Codigo} · {d.Descripcion}"))).ToList())" />
+                }
+            </div>
+
+            @if (!_pidiendoCodigo)
+            {
+                @if (ed.MotivoAtributos.Length > 0) { <small class="tc-nota">@ed.MotivoAtributos</small> }
+
+                <div class="tc-checks">
+                    <AlfaCheckbox Value="@e.Externo" ValueChanged="CambiarExterno" Disabled="@(ed.OtrosTalonarios > 0)">Comprobante externo (no valida numeración)</AlfaCheckbox>
+                    <AlfaCheckbox Value="@e.ModificaNumeracion" ValueChanged="v => e.ModificaNumeracion = v == true">Permite modificar la numeración</AlfaCheckbox>
+                    <AlfaCheckbox Value="@e.PideVencimiento" ValueChanged="v => e.PideVencimiento = v == true">Pide fecha de vencimiento</AlfaCheckbox>
+                </div>
+
+                <fieldset class="tc-letras" disabled="@e.Externo">
+                    <legend>Letras habilitadas</legend>
+                    @foreach (var l in ComprobantesLetras)
+                    {
+                        var letra = l;
+                        <AlfaCheckbox Value="@e.Letras.Contains(letra)" Disabled="@e.Externo" ValueChanged="v => CambiarLetra(letra, v == true)">@letra</AlfaCheckbox>
+                    }
+                    @if (e.Letras.Length > 1)
+                    {
+                        <AlfaSelect Label="Letra por defecto" Value="@e.Letras[..1]" ValueChanged="LetraPorDefecto" Disabled="@e.Externo" Class="tc-defecto"
+                                    Options="@(e.Letras.Select(c => new AlfaSelectOption(c.ToString(), c.ToString())).ToList())" />
+                    }
+                </fieldset>
+
+                <table class="tc-numeros">
+                    <thead><tr><th></th><th>Desde</th><th>Hasta</th><th>Próximo</th><th>Vence</th><th>Observaciones</th><th>Cpte AFIP</th></tr></thead>
+                    <tbody>
+                    @foreach (var n in e.Numeracion)
+                    {
+                        var num = n;
+                        var activa = !e.Externo && e.Letras.Contains(num.Letra);
+                        <tr class="@(activa ? null : "tc-inactiva")">
+                            <th>"@num.Letra"</th>
+                            <td><input class="tc-in n" type="number" min="0" disabled="@(!activa)" value="@num.Desde" @onchange="x => num.Desde = Entero(x)" /></td>
+                            <td><input class="tc-in n" type="number" min="0" disabled="@(!activa)" value="@num.Hasta" @onchange="x => num.Hasta = Entero(x)" /></td>
+                            <td><input class="tc-in n" type="number" min="0" disabled="@(!activa)" value="@num.Proximo" @onchange="x => num.Proximo = Entero(x)" /></td>
+                            <td><input class="tc-in" type="date" disabled="@(!activa)" value="@(num.Vence?.ToString("yyyy-MM-dd"))" @onchange="x => num.Vence = DateTime.TryParse(x.Value?.ToString(), out var d) ? d : null" /></td>
+                            <td><input class="tc-in" maxlength="100" disabled="@(!activa)" value="@num.Observaciones" @onchange="x => num.Observaciones = x.Value?.ToString() ?? string.Empty" /></td>
+                            <td><input class="tc-in n" maxlength="@ed.AnchoCpteAfip" inputmode="numeric" disabled="@(!activa)" value="@num.CpteAfip" @onchange="x => num.CpteAfip = x.Value?.ToString() ?? string.Empty" /></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                <small class="tc-nota">«Próximo» es el número que va a usar el próximo comprobante. Con el mismo código y punto de venta, el rango de una letra no puede superponerse con el de otro talonario.
+                    El punto de venta se usa para todas las letras.</small>
+            }
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        @if (_edit is { EsNuevo: false } x && !_pidiendoCodigo)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="_busy" OnClick="_ => _confirmarBorrar = true">Borrar</AlfaButton>
+            @if (!x.Datos.Externo)
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-lg" Disabled="_busy" OnClick="_ => PrepararAltaAsync(x.Datos.Codigo)">Nuevo talonario de @x.Datos.Codigo</AlfaButton>
+            }
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => Cerrar()">Cancelar</AlfaButton>
+        @if (!_pidiendoCodigo)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => GuardarAsync()">Grabar</AlfaButton>
+        }
+    </Footer>
+</AlfaDialog>
+
+<AlfaConfirmDialog Open="_confirmarBorrar" Title="Borrar talonario"
+                   Message="@($"¿Borrar el comprobante {_edit?.Datos.Codigo} talonario {_edit?.Datos.Talonario}?")"
+                   SecondaryMessage="No se puede borrar si es el único talonario de un comprobante con movimientos, ni si ya se emitieron comprobantes con su punto de venta."
+                   ConfirmLabel="Borrar" Loading="_busy" OnConfirm="EliminarAsync" OnCancel="() => _confirmarBorrar = false" />
+
+@code {
+    private const string Todos = "todos";
+    private static readonly string[] ComprobantesLetras = ComprobantesTablaService.LetrasOrden;
+    private static readonly List<AlfaSelectOption> SistemasOpciones = ComprobantesTablaService.Sistemas.Select(s => new AlfaSelectOption(s, s)).ToList();
+
+    private ComprobantesTablaCatalogo? _cat;
+    private IReadOnlyList<ComprobanteTalonario> _lista = [];
+    private ComprobanteEdicion? _edit;
+    private AppUiMessage? _feedback;
+    private string? _error;
+    private string _texto = string.Empty, _sistema = Todos, _codigoNuevo = string.Empty;
+    private bool _busy, _cargado, _pidiendoCodigo, _confirmarBorrar;
+    private PageHeaderConfig? _header;
+
+    private string Titulo => _edit is null ? string.Empty
+        : _pidiendoCodigo ? "Nuevo comprobante"
+        : _edit.EsNuevo ? $"Nuevo talonario · {_edit.Datos.Codigo}"
+        : $"{_edit.Datos.Codigo} · talonario {_edit.Datos.Talonario}";
+
+    private IReadOnlyList<AlfaTabItem> TabsSistema => new[] { Todos }.Concat(SistemasOpciones.Select(s => s.Value))
+        .Select(k => new AlfaTabItem(k, k == Todos ? $"Todos ({_lista.Count})" : $"{k} ({_lista.Count(c => c.Sistema == k)})")).ToList();
+
+    private IEnumerable<ComprobanteTalonario> Filtrados => _lista
+        .Where(c => _sistema == Todos || c.Sistema == _sistema)
+        .Where(c => _texto.Trim().Length == 0 || $"{c.Codigo} {c.Descripcion} {c.Unidad} {c.PuntoVenta} {c.PuntoVenta:0000} {c.Sistema}".Contains(_texto.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        var c = await UiOps.RunAsync(() => Service.CatalogoAsync(), "Tabla de comprobantes");
+        if (c.Success) _cat = c.Value; else _feedback = c.Feedback;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        var r = await UiOps.RunAsync(() => Service.ListarAsync(), "Tabla de comprobantes");
+        if (r.Success) _lista = r.Value!; else _feedback = r.Feedback;
+        _cargado = true;
+        UpdateHeader(); StateHasChanged();
+    }
+
+    private string Unidad(string codigo) => codigo.Length == 0 ? "—" : _cat?.Unidades.FirstOrDefault(u => u.Codigo == codigo) is { } u ? $"{codigo} · {u.Descripcion}" : codigo;
+
+    private static string Proximos(ComprobanteTalonario c)
+        => c.Externo || c.Letras.Length == 0 ? "—"
+            : string.Join("  ", c.Letras.Select(l => c.Numeracion.FirstOrDefault(n => n.Letra == l.ToString())).Where(n => n is not null).Select(n => $"{n!.Letra} {n.Proximo}"));
+
+    private static int Entero(ChangeEventArgs x) => int.TryParse(x.Value?.ToString(), out var v) && v >= 0 ? v : 0;
+
+    private async Task AbrirAsync(ComprobanteTalonario c)
+    {
+        if (_busy) return;
+        _busy = true; _error = null; _pidiendoCodigo = false;
+        try { _edit = await Service.ObtenerAsync(c.Codigo, c.Talonario); }
+        catch (Exception ex) { _feedback = AppUiMessage.Error("No se pudo abrir el talonario", Mensaje(ex, "No se pudo abrir el talonario.")); }
+        finally { _busy = false; }
+    }
+
+    private Task Nuevo()
+    {
+        _error = null; _codigoNuevo = string.Empty; _pidiendoCodigo = true;
+        _edit = new ComprobanteEdicion { EsNuevo = true };
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task PrepararAltaAsync(string codigo)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try { _edit = await Service.PrepararAltaAsync(codigo); _pidiendoCodigo = false; }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo preparar el alta."); }
+        finally { _busy = false; }
+    }
+
+    private void Cerrar() { _edit = null; _pidiendoCodigo = false; _error = null; }
+
+    private void CambiarSistema(string? v)
+    {
+        if (_edit is null) return;
+        _edit.Datos.Sistema = v ?? string.Empty;
+        // Mismas restricciones que VerTipoSistema del legacy: el sistema define qué atributos admite.
+        var (stock, cuenta) = ComprobantesTablaService.AtributosDelSistema(v ?? string.Empty);
+        _edit.EntradaSalidaEditable = stock && !_edit.TieneMovimientos;
+        _edit.DebeHaberEditable = cuenta && !_edit.TieneMovimientos;
+        if (!stock) { _edit.Datos.EntradaSalida = string.Empty; _edit.Datos.Deposito = string.Empty; }
+        if (!cuenta) _edit.Datos.DebeHaber = string.Empty;
+    }
+
+    private void CambiarStock(string? v)
+    {
+        if (_edit is null) return;
+        _edit.Datos.EntradaSalida = v ?? string.Empty;
+        if (_edit.Datos.EntradaSalida.Length == 0) _edit.Datos.Deposito = string.Empty;
+    }
+
+    private void CambiarExterno(bool? v)
+    {
+        if (_edit is null) return;
+        var e = _edit.Datos;
+        e.Externo = v == true;
+        if (e.Externo)
+        {
+            // Como el legacy al marcarlo: todas las letras, sin punto de venta propio ni numeración.
+            e.Letras = ComprobantesTablaService.LetrasExterno;
+            e.PuntoVenta = 1;
+            foreach (var n in e.Numeracion) { n.Desde = 0; n.Hasta = 0; n.Proximo = 0; }
+        }
+    }
+
+    private void CambiarLetra(string letra, bool habilitada)
+    {
+        if (_edit is null) return;
+        var e = _edit.Datos;
+        if (habilitada && !e.Letras.Contains(letra)) e.Letras += letra;
+        if (!habilitada) e.Letras = e.Letras.Replace(letra, string.Empty);
+    }
+
+    private void LetraPorDefecto(string? v)
+    {
+        if (_edit is null || string.IsNullOrEmpty(v)) return;
+        var e = _edit.Datos;
+        e.Letras = v + e.Letras.Replace(v, string.Empty);
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var g = await Service.GuardarAsync(_edit.Datos, _edit.EsNuevo);
+            var nuevo = _edit.EsNuevo;
+            _edit = null;
+            _feedback = AppUiMessage.Success(nuevo ? "Talonario agregado" : "Talonario grabado", $"{g.Codigo} talonario {g.Talonario}, punto de venta {g.PuntoVenta:0000}.");
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo grabar el talonario."); }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            await Service.EliminarAsync(_edit.Datos.Codigo, _edit.Datos.Talonario);
+            var d = _edit.Datos;
+            _confirmarBorrar = false; _edit = null;
+            _feedback = AppUiMessage.Success("Talonario borrado", $"Se borró {d.Codigo} talonario {d.Talonario}.");
+            await CargarAsync();
+        }
+        catch (Exception ex) { _confirmarBorrar = false; _error = Mensaje(ex, "No se pudo borrar el talonario."); }
+        finally { _busy = false; }
+    }
+
+    private static string Mensaje(Exception ex, string defecto) => ex is AppUserFacingException or InvalidOperationException ? ex.Message : defecto;
+
+    private Task CambiarTexto(string t) { _texto = t; StateHasChanged(); return Task.CompletedTask; }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "archivos", Title = "Tabla de comprobantes",
+        Breadcrumb = ["Archivos", "Comprobantes"],
+        TopNavigationItems = ModuleTopNavPresets.BuildArchivos(RouteContext, Nav, "comprobantes"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Search = new PageHeaderSearchConfig { Text = _texto, Placeholder = "Buscar por código, descripción o punto de venta", OnTextChanged = CambiarTexto },
+        Actions = [new() { Key = "nuevo", Label = "Nuevo comprobante", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Disabled = _busy || _cat is null, OnClick = Nuevo }]
+    });
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

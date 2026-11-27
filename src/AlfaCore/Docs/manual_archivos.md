@@ -140,6 +140,19 @@ En **Archivos → Tablas → Chequeras** se cargan las chequeras de cheques prop
 
 Pulsá **Nueva chequera** y completá **Banco**, **Serie**, **Nro de control**, **Número desde**, **Número hasta**, la **Cuenta del banco** (cheques comunes) y la **Cuenta de cheques diferidos**. Pulsá **Grabar**. **Borrar** elimina una chequera.
 
+## Tabla de comprobantes
+
+En **Archivos → Tablas → Tabla de comprobantes** se configuran los comprobantes (factura, nota de crédito, remito...) y sus talonarios. Cada comprobante puede tener varios talonarios, por ejemplo uno por punto de venta.
+
+Para agregar un talonario a un comprobante que ya existe, abrilo y pulsá **Nuevo talonario**: se proponen el número de talonario siguiente y los datos del comprobante. Para un comprobante nuevo pulsá **Nuevo comprobante** y escribí el código.
+
+Completá **Descripción**, **Unidad de negocio**, **Punto de venta**, las **Letras habilitadas** (y cuál es la letra por defecto) y, para cada letra, **Desde**, **Hasta** y **Próximo** (el número que va a usar el próximo comprobante). Pulsá **Grabar**.
+
+- Con el mismo comprobante y punto de venta, el rango de una letra no puede superponerse con el de otro talonario.
+- **Stock** (entrada o salida) y **Cuenta** (debe o haber) dependen del sistema. Si el comprobante ya tiene movimientos, no se pueden cambiar. Algunos comprobantes del sistema (factura, nota de crédito, recibo...) tienen esos valores fijos.
+- Un comprobante **externo** no valida la numeración y tiene un solo talonario.
+- **Borrar** no deja eliminar el único talonario de un comprobante con movimientos, ni uno de ventas con comprobantes ya emitidos en su punto de venta.
+
 ## Bancos
 
 Bancos que usan los cheques y las chequeras. Pulsá **Nuevo banco**, cargá **Código** y **Nombre** y **Grabar**.

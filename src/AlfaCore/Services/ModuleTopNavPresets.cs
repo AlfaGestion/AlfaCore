@@ -212,6 +212,7 @@ public static class ModuleTopNavPresets
         [
             ("tablas", "Tablas de referencia", "/archivos/tablas"),
             ("chequeras", "Chequeras", "/archivos/chequeras"),
+            ("comprobantes", "Comprobantes", "/archivos/comprobantes"),
             ("bancos", "Bancos", "/archivos/bancos")
         ]);
 

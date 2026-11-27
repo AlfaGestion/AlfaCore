@@ -14,4 +14,5 @@ public sealed class PaymentResult
     public int Installments { get; set; }
     public double ApprovedAmount { get; set; }
     public string StatusDetail { get; set; } = string.Empty;
+    public string RawResponse { get; set; } = string.Empty;
 }

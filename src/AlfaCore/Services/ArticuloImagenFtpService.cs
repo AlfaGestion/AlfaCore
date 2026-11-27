@@ -37,9 +37,21 @@ public sealed class ArticuloImagenArchivoDto
 
 public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogger<ArticuloImagenFtpService> logger) : IArticuloImagenFtpService
 {
-    private const string FtpHost = "alfanet.ddns.net";
-    private const string FtpUsuario = "ftpalfa";
-    private const string FtpClave = "24681012";
+    // Credenciales fuera del código: variables de entorno ALFANET_FTP_* (ver AlfaNetFtpCredenciales).
+    private static string FtpHost => AlfaNetFtpCredenciales.Host;
+    private static string FtpUsuario => AlfaNetFtpCredenciales.Usuario;
+    private static string FtpClave => AlfaNetFtpCredenciales.Clave;
+    private static int _avisoSinCredenciales;
+
+    /// <summary>Sin credenciales no se intenta el FTP (se sigue sirviendo lo que haya en caché) y se avisa una sola vez.</summary>
+    private bool FtpDisponible()
+    {
+        if (AlfaNetFtpCredenciales.Configuradas)
+            return true;
+        if (Interlocked.Exchange(ref _avisoSinCredenciales, 1) == 0)
+            logger.LogWarning("FTP de imágenes de artículos sin configurar: faltan las variables de entorno {Variables}.", AlfaNetFtpCredenciales.Faltantes);
+        return false;
+    }
     private static readonly string[] ExtensionesSoportadas = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"];
 
     // Los .bmp no llevan compresión: un thumbnail generado mal (proceso externo que lo trunca o
@@ -367,6 +379,8 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
 
     private async Task<bool> TryUploadAsync(string remoteDir, string nombreArchivo, byte[] bytes, CancellationToken ct)
     {
+        if (!FtpDisponible())
+            return false;
         try
         {
             await EnsureRemoteDirectoryAsync(remoteDir, ct);
@@ -430,6 +444,8 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
 
     private async Task TryDeleteAsync(string remoteDir, string nombreArchivo, CancellationToken ct)
     {
+        if (!FtpDisponible())
+            return;
         try
         {
             var uri = new Uri($"ftp://{FtpHost}/Clientes/{remoteDir}/{nombreArchivo}");
@@ -473,6 +489,8 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
 
     private async Task<HashSet<string>?> ListarDirectorioAsync(string remoteDir, CancellationToken ct)
     {
+        if (!FtpDisponible())
+            return null;
         try
         {
             var uri = new Uri($"ftp://{FtpHost}/Clientes/{remoteDir}/");
@@ -510,6 +528,8 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
     /// </summary>
     private async Task<(byte[]? Bytes, bool Transitorio)> TryDownloadAsync(string remoteDir, string nombreArchivo, CancellationToken ct)
     {
+        if (!FtpDisponible())
+            return (null, true);
         try
         {
             var uri = new Uri($"ftp://{FtpHost}/Clientes/{remoteDir}/{nombreArchivo}");

@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../AlfaWeb-main"
+		},
+		{
+			"path": "../wsAlfa-main"
+		},
+		{
+			"path": "../IA_ProcesarDocumentos"
+		},
+		{
+			"path": "../AlfaMercadoPagoPoint"
+		},
+		{
+			"path": "Z:/NETSISTEMAS/SISTEMAS/NwSistemas/NMC_CONT_DEV"
+		},
+		{
+			"path": "../Alfa_Conciliaciones_Bancarias_IA"
+		},
+		{
+			"path": "../scraping"
+		}
+	],
+	"settings": {}
+}

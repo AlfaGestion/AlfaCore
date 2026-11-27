@@ -1,3 +1,5 @@
+using AlfaCore.Models;
+
 namespace AlfaCore.Services;
 
 /// <summary>Dónde se guarda un permiso de acción.</summary>
@@ -48,6 +50,12 @@ public static class PermisosWebCatalogo
     /// <summary>Seguridad &gt; Accesos a Conversaciones (quién ve todos los números y quién atiende cada número).</summary>
     public const string AccesosConversacionesMenu = "D015-WEB-ACCESOS-CONV";
 
+    public const string PuntoVentaComprobanteFactura = PuntoVentaComprobantePermissionKeys.Factura;
+    public const string PuntoVentaComprobanteProforma = PuntoVentaComprobantePermissionKeys.Proforma;
+    public const string PuntoVentaComprobanteNotaPedido = PuntoVentaComprobantePermissionKeys.NotaPedido;
+    public const string PuntoVentaComprobanteRemito = PuntoVentaComprobantePermissionKeys.Remito;
+    public const string PuntoVentaComprobantes = "D6054-COMPROBANTES";
+
     public static IReadOnlyList<PermisoWebAccion> Acciones { get; } =
     [
         new(ConversacionesPlantillas, Conversaciones, "Plantillas de WhatsApp",
@@ -61,7 +69,15 @@ public static class PermisosWebCatalogo
             Explicito: true, PermisoWebAlmacen.Explicitos),
         new(ConversacionesVerTodos, Conversaciones, "Ver todos los números",
             "Ver y responder las conversaciones de todos los números de WhatsApp. Se da solo si se tilda.",
-            Explicito: true, PermisoWebAlmacen.ConversacionesVerTodos)
+            Explicito: true, PermisoWebAlmacen.ConversacionesVerTodos),
+        new(PuntoVentaComprobanteFactura, PuntoVentaComprobantes, "EFC · Factura electrónica",
+            "Habilita Factura electrónica en el Punto de Venta.", false, PermisoWebAlmacen.Tareas),
+        new(PuntoVentaComprobanteProforma, PuntoVentaComprobantes, "FP · Factura proforma",
+            "Habilita Factura proforma en el Punto de Venta.", false, PermisoWebAlmacen.Tareas),
+        new(PuntoVentaComprobanteNotaPedido, PuntoVentaComprobantes, "NP · Nota de pedido",
+            "Habilita Nota de pedido en el Punto de Venta.", false, PermisoWebAlmacen.Tareas),
+        new(PuntoVentaComprobanteRemito, PuntoVentaComprobantes, "RM · Remito interno",
+            "Habilita Remito interno en el Punto de Venta.", false, PermisoWebAlmacen.Tareas)
     ];
 
     private static readonly Dictionary<string, PermisoWebAccion> PorClave =

@@ -34,6 +34,10 @@ Los archivos nuevos de Conversaciones se guardan una sola vez por contenido (SHA
 
 `DEMO-BASE-REINICIABLE` (CAJA) identifica únicamente `ALFANET_DEMO` en `SERVER-ALFAVB6`. Su valor debe ser `ALFANET_DEMO`. La herramienta de restablecimiento exige esta marca además de validar servidor, nombre interno del respaldo y archivos físicos antes de cerrar conexiones o restaurar. No habilita un reinicio en otras bases ni se distribuye por el actualizador general. Ver [operación y respaldo de la demo](../tools/conciliacion_demo/README.md).
 
+## FTP de ALFA NET (imágenes de artículos)
+
+Las imágenes de artículos (maestro, catálogos, carrito, punto de venta) se leen y suben al FTP de ALFA NET. Sus credenciales **no** están en el código ni en `TA_CONFIGURACION`: se toman de las variables de entorno `ALFANET_FTP_HOST`, `ALFANET_FTP_USUARIO` y `ALFANET_FTP_CLAVE`, cargadas por el mismo `.env` del servidor (y del equipo de desarrollo). Las lee `AlfaNetFtpCredenciales`. Sin ellas, las imágenes ya cacheadas se siguen viendo, no se descargan ni suben nuevas, y queda un aviso en el log. Interfaces usa ese mismo FTP como destino por defecto cuando su configuración no tiene host, usuario o clave propios. El script `scripts/subir_imagenes_articulos.bat` usa las mismas variables (o las pregunta).
+
 ## Ayuda global con IA
 
 El chat del icono **?** reutiliza `OPENAI_API_KEY` y `OPENAI_MODEL` del servidor, cargados por el mecanismo `.env` existente, con el mismo fallback general que las otras funciones de IA. No agrega parámetros propios ni guarda credenciales en `TA_CONFIGURACION`. El consumo se identifica como `AYUDA`. Sin clave configurada, las guías siguen disponibles. Ver [arquitectura de ayuda](arquitectura/ayuda-contextual.md).

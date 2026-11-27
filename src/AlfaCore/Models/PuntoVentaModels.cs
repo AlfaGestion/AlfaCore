@@ -18,6 +18,33 @@ public sealed class PuntoVentaContextDto
     public bool UsaCajaDefault { get; init; }
 }
 
+public static class PuntoVentaComprobanteKeys
+{
+    public const string Factura = "FC";
+    public const string Proforma = "FP";
+    public const string NotaPedido = "NP";
+    public const string Remito = "RM";
+
+    public static readonly IReadOnlyList<string> Todos = [Factura, Proforma, NotaPedido, Remito];
+}
+
+public static class PuntoVentaComprobantePermissionKeys
+{
+    public const string Factura = "D6054-COMPROBANTE-FC";
+    public const string Proforma = "D6054-COMPROBANTE-FP";
+    public const string NotaPedido = "D6054-COMPROBANTE-NP";
+    public const string Remito = "D6054-COMPROBANTE-RM";
+
+    public static string Para(string comprobante) => comprobante.Trim().ToUpperInvariant() switch
+    {
+        PuntoVentaComprobanteKeys.Factura => Factura,
+        PuntoVentaComprobanteKeys.Proforma => Proforma,
+        PuntoVentaComprobanteKeys.NotaPedido => NotaPedido,
+        PuntoVentaComprobanteKeys.Remito => Remito,
+        _ => string.Empty
+    };
+}
+
 public sealed class PuntoVentaCatalogFiltersDto
 {
     public string Texto { get; set; } = string.Empty;
@@ -124,6 +151,15 @@ public sealed class PuntoVentaSettingsDto
     /// <summary>Radio máximo de entrega. Vacío = sin límite configurado.</summary>
     public string DistanciaMaximaEntregaKm { get; set; } = string.Empty;
     public bool RelacionaCobranzasConNotasPedido { get; set; }
+    public string ModalidadReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoModalidadKeys.NoImprimir;
+    public string FormatoReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoFormatoKeys.Ticket80;
+    public bool ReciboAnticipoMuestraEmpresa { get; set; } = true;
+    public bool ReciboAnticipoMuestraPedido { get; set; } = true;
+    public bool ReciboAnticipoMuestraCliente { get; set; } = true;
+    public bool ReciboAnticipoMuestraImportes { get; set; } = true;
+    public bool ReciboAnticipoMuestraMediosPago { get; set; } = true;
+    public bool ReciboAnticipoMuestraEntrega { get; set; } = true;
+    public bool ReciboAnticipoMuestraUsuario { get; set; } = true;
     public bool CargaRapidaGrafica { get; set; }
     public string ModoIngresoRapido { get; set; } = "DESHABILITADO";
     public string ImporteRapido1 { get; set; } = "5";
@@ -202,6 +238,7 @@ public sealed class PuntoVentaRubroDto
 {
     public string IdRubro { get; init; } = string.Empty;
     public string Descripcion { get; init; } = string.Empty;
+    public int? Color { get; init; }
 }
 
 public sealed class PuntoVentaPaymentMethodDto
