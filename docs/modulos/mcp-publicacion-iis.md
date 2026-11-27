@@ -67,7 +67,9 @@ Var Mcp__Auth__SigningKeyPath     "C:\ProgramData\AlfaCoreMcp\signing-key.pem"
 Reemplazar `<...>` por los valores reales **a mano en la consola**; no guardar este bloque completado en ningún archivo ni chat.
 
 ## 4. Crear los usuarios (hasta 10)
-Con las mismas variables definidas en la sesión de PowerShell (`$env:ALFACORE_MCP_CONNECTION`, `$env:ALFACORE_MCP_AUTH_CONNECTION`, `$env:Mcp__Auth__Issuer`, `$env:ASPNETCORE_ENVIRONMENT="Production"`):
+Con las mismas variables definidas en la sesión de PowerShell (`$env:ALFACORE_MCP_CONNECTION`, `$env:ALFACORE_MCP_AUTH_CONNECTION`, `$env:Mcp__Auth__Issuer`, `$env:ASPNETCORE_ENVIRONMENT="Production"`
+y **`$env:Mcp__Auth__SigningKeyPath="C:\ProgramData\AlfaCoreMcp\signing-key.pem"`**, la MISMA ruta que el pool: ahí al lado queda la clave que cifra los segundos factores;
+con otra ruta el sitio no puede leerlos y nadie entra. En producción el programa se niega a arrancar si falta):
 ```powershell
 cd C:\inetpub\AlfaCoreMcp
 dotnet AlfaCore.Mcp.dll crear-usuario alberto "Alberto"
