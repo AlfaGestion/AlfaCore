@@ -29,6 +29,48 @@ public sealed class AyudaIaTests
         Assert.Empty(respuesta.Fuentes);Assert.Equal(AyudaIaService.SinDocumentacion,respuesta.Texto);
     }
 
+    // Íconos en la ayuda (2026-11-27): "tocá Crear ticket" no decía cuál era el botón; ahora se ve el dibujo.
+    [Fact]
+    public void MarcaDeIconoSeDibujaComoElIconoDelBoton()
+    {
+        var html=AyudaManuales.Html("Tocá [[bi:life-preserver]] **Crear ticket**.");
+        Assert.Contains("<i class=\"bi bi-life-preserver ayuda-icono\" aria-hidden=\"true\"></i>",html);
+        Assert.DoesNotContain("[[bi:",html);
+        // Algo que no es un nombre de ícono no se convierte (el HTML del Markdown sigue apagado).
+        Assert.Contains("[[bi:&lt;script&gt;]]",AyudaManuales.Html("[[bi:<script>]]"));
+    }
+
+    [Fact]
+    public void IaSoloPuedeMostrarIconosQueEstanEnLosManualesEnviados()
+    {
+        var fuentes=AyudaIaService.Recuperar("crear ticket desde mensajes","conversaciones");
+        var fuente=fuentes.First(f=>f.Contenido.Contains("[[bi:life-preserver]]"));
+        var json=JsonSerializer.Serialize(new {respuesta="Tocá [[bi:life-preserver]] y después [[bi:rocket]].",fuentes=new[]{fuente.Id}});
+        using var doc=JsonDocument.Parse(json);
+        var respuesta=AyudaIaService.ValidarRespuesta(doc.RootElement,fuentes);
+        Assert.Contains("[[bi:life-preserver]]",respuesta.Texto);
+        Assert.DoesNotContain("[[bi:rocket]]",respuesta.Texto);
+    }
+
+    [Fact]
+    public void LosIconosDeLosManualesSonLosQueUsanLasPantallas()
+    {
+        // Un ícono que ninguna pantalla usa es un error de tipeo o un botón que ya no existe: se vería otro dibujo
+        // (o un cuadro vacío) y la ayuda confundiría en vez de ayudar.
+        var dir=new DirectoryInfo(AppContext.BaseDirectory);
+        while(dir is not null && !File.Exists(Path.Combine(dir.FullName,"AlfaCore.sln")))dir=dir.Parent;
+        var src=Path.Combine(dir!.FullName,"src","AlfaCore");
+        var codigo=string.Join("\n",Directory.EnumerateFiles(Path.Combine(src,"Components"),"*.*",SearchOption.AllDirectories)
+            .Where(f=>f.EndsWith(".razor",StringComparison.Ordinal) || f.EndsWith(".cs",StringComparison.Ordinal))
+            .Select(File.ReadAllText));
+        var faltan=Directory.EnumerateFiles(Path.Combine(src,"Docs"),"manual_*.md")
+            .SelectMany(f=>AyudaManuales.MarcaIcono.Matches(File.ReadAllText(f)).Select(m=>(Manual:Path.GetFileName(f),Icono:m.Groups[1].Value)))
+            .Distinct()
+            .Where(x=>!System.Text.RegularExpressions.Regex.IsMatch(codigo,@"(bi-|Icon="")"+System.Text.RegularExpressions.Regex.Escape(x.Icono)+@"(?![a-z0-9-])"))
+            .Select(x=>$"{x.Manual}: {x.Icono}").ToArray();
+        Assert.True(faltan.Length==0,"Íconos que ninguna pantalla usa: "+string.Join(", ",faltan));
+    }
+
     [Fact]
     public async Task ChatEnviaSoloGuiasEHistorialAcotadoValidaFuentesYMideConsumo()
     {

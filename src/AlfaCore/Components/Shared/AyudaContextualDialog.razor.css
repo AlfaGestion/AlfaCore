@@ -73,3 +73,8 @@
     .ayuda-contextual__modos { width:100%; }
     .ayuda-contextual__modo { flex:1; justify-content:center; }
 }
+
+/* Ícono del botón dentro del texto ([[bi:...]] en el manual): parece un botón chiquito, para reconocerlo en pantalla. */
+.ayuda-contextual__contenido ::deep .ayuda-icono { display:inline-flex; align-items:center; justify-content:center; min-width:1.6em; height:1.6em;
+  padding:0 .25em; margin:0 .15em; vertical-align:-.3em; font-size:.92em; line-height:1; color:var(--alfa-text-primary);
+  background:var(--alfa-bg-surface-raised); border:1px solid var(--alfa-border-strong); border-radius:6px; }

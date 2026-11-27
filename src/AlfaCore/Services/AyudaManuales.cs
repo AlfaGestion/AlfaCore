@@ -188,7 +188,16 @@ public static class AyudaManuales
         return ("general",null);
     }
     internal static string IdArticulo(string titulo)=>Regex.Replace(Normalizar(titulo),@"[^a-z0-9]+","-").Trim('-');
-    public static string Html(string contenido)=>Markdown.ToHtml(contenido,Pipeline);
+    /// <summary>
+    /// Markdown a HTML. "[[bi:ticket-perforated]]" se dibuja como el ícono real del botón (Bootstrap Icons), así el
+    /// manual y las respuestas de la IA muestran qué hay que tocar (2026-11-27). Sólo nombres de ícono válidos:
+    /// el HTML del Markdown sigue deshabilitado.
+    /// </summary>
+    public static string Html(string contenido)=>MarcaIcono.Replace(Markdown.ToHtml(contenido,Pipeline),
+        m=>$"<i class=\"bi bi-{m.Groups[1].Value} ayuda-icono\" aria-hidden=\"true\"></i>");
+    internal static readonly Regex MarcaIcono=new(@"\[\[bi:([a-z0-9-]{1,60})\]\]",RegexOptions.Compiled);
+    /// <summary>El texto sin las marcas de ícono (para buscar y para contar el largo).</summary>
+    internal static string SinIconos(string texto)=>MarcaIcono.Replace(texto,"");
     public static IReadOnlyList<AyudaArticulo> Buscar(AyudaManual manual,string consulta)
     {
         var terminos=TerminosBusqueda(consulta);
@@ -235,7 +244,7 @@ public static class AyudaManuales
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AyudaArticulo,Tuple<string,string>> Normalizados=new();
     private static (string Titulo,string Texto) TextoNormalizado(AyudaArticulo articulo)
     {
-        var t=Normalizados.GetValue(articulo,a=>Tuple.Create(Normalizar(a.Titulo),Normalizar(a.Titulo+" "+a.Contenido)));
+        var t=Normalizados.GetValue(articulo,a=>Tuple.Create(Normalizar(a.Titulo),Normalizar(a.Titulo+" "+SinIconos(a.Contenido))));
         return (t.Item1,t.Item2);
     }
     private static AyudaManual Cargar(AyudaTema tema)
