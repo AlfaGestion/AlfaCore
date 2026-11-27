@@ -60,7 +60,8 @@ public sealed class AyudaIaTests
         var dir=new DirectoryInfo(AppContext.BaseDirectory);
         while(dir is not null && !File.Exists(Path.Combine(dir.FullName,"AlfaCore.sln")))dir=dir.Parent;
         var src=Path.Combine(dir!.FullName,"src","AlfaCore");
-        var codigo=string.Join("\n",Directory.EnumerateFiles(Path.Combine(src,"Components"),"*.*",SearchOption.AllDirectories)
+        // Las pantallas y los servicios que arman botones (por ejemplo, las bandejas de Tickets).
+        var codigo=string.Join("\n",new[]{"Components","Services","Models"}.SelectMany(d=>Directory.EnumerateFiles(Path.Combine(src,d),"*.*",SearchOption.AllDirectories))
             .Where(f=>f.EndsWith(".razor",StringComparison.Ordinal) || f.EndsWith(".cs",StringComparison.Ordinal))
             .Select(File.ReadAllText));
         var faltan=Directory.EnumerateFiles(Path.Combine(src,"Docs"),"manual_*.md")
