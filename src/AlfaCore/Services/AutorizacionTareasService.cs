@@ -780,6 +780,60 @@ public sealed class AutorizacionTareasService(
             MenuSistema = menuSistema.Trim().ToUpperInvariant()
         }, cancellationToken: ct))).ToList();
 
+        // Las autorizaciones de comprobantes tienen un bloque propio al comienzo del
+        // árbol. Se reemplazan las filas visuales anteriores para no depender de que
+        // una base vieja las tenga bajo D6054 o con otro orden. Las claves guardadas
+        // siguen siendo las mismas de ALFACORE_TAREAS_WEB.
+        rows.RemoveAll(x =>
+            string.Equals(x.Clave?.Trim(), PermisosWebCatalogo.PuntoVentaComprobantes, StringComparison.OrdinalIgnoreCase)
+            || x.Clave?.StartsWith("D6054-COMPROBANTE-", StringComparison.OrdinalIgnoreCase) == true);
+
+        var clavesExistentes = rows
+            .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
+            .Select(x => x.Clave!.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var padreComprobantes = PermisosWebCatalogo.PuntoVentaComprobantes;
+        if (!clavesExistentes.Contains(padreComprobantes))
+        {
+            rows.Add(new MenuAutorizacionRow
+            {
+                Menu = menuSistema.Trim().ToUpperInvariant(),
+                Titulo = string.Empty,
+                Clave = padreComprobantes,
+                Nombre = "Comprobantes habilitados",
+                Descripcion = "Comprobantes que el usuario puede utilizar en el Punto de Venta.",
+                Proceso = string.Empty,
+                Habilitado = true,
+                OrdenMenu = "00001",
+                RutaWeb = string.Empty,
+                HabilitadoWeb = true
+            });
+            clavesExistentes.Add(padreComprobantes);
+        }
+        var ordenComprobante = 2;
+        foreach (var accion in PermisosWebCatalogo.Acciones.Where(x =>
+            x.Almacen == PermisoWebAlmacen.Tareas
+            && x.Clave.StartsWith("D6054-COMPROBANTE-", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (clavesExistentes.Contains(accion.Clave))
+                continue;
+
+            rows.Add(new MenuAutorizacionRow
+            {
+                Menu = menuSistema.Trim().ToUpperInvariant(),
+                Titulo = accion.PadreClave,
+                Clave = accion.Clave,
+                Nombre = accion.Nombre,
+                Descripcion = accion.Descripcion,
+                Proceso = string.Empty,
+                Habilitado = true,
+                OrdenMenu = $"{ordenComprobante++:00000}",
+                RutaWeb = string.Empty,
+                HabilitadoWeb = true
+            });
+            clavesExistentes.Add(accion.Clave);
+        }
+
         var parentByKey = rows
             .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
             .GroupBy(x => x.Clave!.Trim(), StringComparer.OrdinalIgnoreCase)
@@ -794,7 +848,9 @@ public sealed class AutorizacionTareasService(
             foreach (var row in rows)
             {
                 var key = row.Clave!.Trim();
-                if (!moduloFiltro.PermiteClave(key, parentByKey))
+                var esAutorizacionComprobante = key.Equals(padreComprobantes, StringComparison.OrdinalIgnoreCase)
+                    || key.StartsWith("D6054-COMPROBANTE-", StringComparison.OrdinalIgnoreCase);
+                if (!esAutorizacionComprobante && !moduloFiltro.PermiteClave(key, parentByKey))
                     continue;
 
                 includeKeys.Add(key);

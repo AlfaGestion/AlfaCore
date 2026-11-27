@@ -16,6 +16,7 @@
 @inject AlfaCore.Services.IMercadoPagoPointConfigService MpConfigSvc
 @inject AlfaCore.Services.IArcaPadronService ArcaPadronSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IPermissionService PermissionSvc
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteCtx
 @inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
@@ -239,6 +240,33 @@
         color: #ffffff;
         font-size: 0.78rem;
         font-weight: 800;
+    }
+
+    .pos-topbar__quick-documents {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        min-width: 0;
+    }
+
+    .pos-topbar__quick-document {
+        min-height: 2.15rem;
+        padding: .3rem .55rem;
+        border: 1px solid rgba(255,255,255,.16);
+        border-radius: .55rem;
+        background: rgba(8,31,58,.3);
+        color: #fff;
+        font-size: .72rem;
+        font-weight: 800;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .pos-topbar__quick-document:hover,
+    .pos-topbar__quick-document.is-active {
+        border-color: var(--color-primary);
+        background: var(--color-primary);
+        color: #fff;
     }
 
     .pos-topbar__actions {
@@ -605,10 +633,10 @@
     }
 
     .pos-catalog__toolbar {
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 0.7rem;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+        gap: 0.35rem;
         padding: 0.45rem 0.7rem;
         background: #f3f4f7;
         border-bottom: 1px solid #d6dce6;
@@ -620,6 +648,68 @@
         gap: 0.8rem;
         min-width: 0;
         flex: 0 0 17rem;
+    }
+
+    .pos-catalog__rubros {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: .35rem;
+        width: 100%;
+        max-height: 7.1rem;
+        overflow-y: auto;
+        padding: .1rem 0;
+        scrollbar-gutter: stable;
+    }
+
+    .pos-catalog__rubros--mobile {
+        max-height: 5.4rem;
+        margin: .25rem 0 .45rem;
+    }
+
+    .pos-catalog__rubro {
+        min-width: 0;
+        width: 100%;
+        min-height: 2.1rem;
+        padding: .25rem .65rem;
+        border: 1px solid color-mix(in srgb, var(--rubro-color, var(--color-border)) 75%, #ffffff 25%);
+        border-radius: 6px;
+        background: var(--rubro-color, var(--color-panel-strong));
+        color: var(--rubro-text, var(--color-text));
+        font-size: .7rem;
+        font-weight: 800;
+        cursor: pointer;
+        line-height: 1.1;
+        white-space: normal;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-align: center;
+    }
+
+    .pos-catalog__rubro:hover,
+    .pos-catalog__rubro.is-active {
+        background: var(--rubro-color, var(--color-primary));
+        border-color: var(--rubro-color, var(--color-primary));
+        color: var(--rubro-text, #fff);
+    }
+
+    .pos-catalog__rubro--top {
+        border-color: var(--color-primary);
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    .pos-catalog__rubro--top.is-active {
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    /* TOP es la acción destacada; Todos necesita un estado propio para no
+       confundirse con TOP cuando queda seleccionado. */
+    .pos-catalog__rubro--todos.is-active {
+        background: var(--color-panel-strong);
+        border-color: var(--color-primary);
+        color: var(--color-text);
+        box-shadow: inset 0 0 0 1px var(--color-primary);
     }
 
     .pos-select {
@@ -738,8 +828,8 @@
 
     .pos-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
-        gap: 0.18rem;
+        grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+        gap: 0.14rem;
         align-content: start;
         overflow: auto;
         padding: 0.18rem;
@@ -749,8 +839,8 @@
     .pos-product {
         position: relative;
         display: grid;
-        grid-template-rows: 220px auto auto;
-        gap: 0.5rem;
+        grid-template-rows: 165px minmax(48px, auto);
+        gap: 0.3rem;
         padding: 0;
         border: 1px solid #e1e4ea;
         background: #ffffff;
@@ -810,7 +900,7 @@
     .pos-product__image-wrap {
         display: grid;
         place-items: center;
-        padding: 0.9rem;
+        padding: 0.55rem;
         background: #ffffff;
         overflow: hidden;
     }
@@ -829,7 +919,7 @@
         height: 100%;
         background: linear-gradient(135deg, #f7f8fb 0%, #dde5ef 100%);
         color: #5f6f83;
-        font-size: 2rem;
+        font-size: 1.65rem;
         font-weight: 900;
         letter-spacing: 0.08em;
     }
@@ -837,12 +927,17 @@
     .pos-product__text {
         display: grid;
         gap: 0.25rem;
-        padding: 0 0.8rem;
+        padding: 0 .6rem .45rem;
     }
 
     .pos-product__text strong {
         color: #304255;
-        font-size: 0.92rem;
+        font-size: 0.84rem;
+        line-height: 1.18;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
         line-height: 1.32;
         font-weight: 400;
     }
@@ -1212,13 +1307,13 @@
     }
 
     .pos-product {
-        grid-template-rows: 138px minmax(60px, auto);
-        gap: 0.35rem;
+        grid-template-rows: 104px minmax(42px, auto);
+        gap: 0.2rem;
         border: 1px solid var(--color-border);
         border-radius: 16px;
         background: var(--color-panel);
         overflow: hidden;
-        min-height: 206px;
+        min-height: 154px;
     }
 
     .pos-product:hover {
@@ -1233,19 +1328,19 @@
     }
 
     .pos-product__image-wrap {
-        padding: 0.65rem;
+        padding: 0.4rem;
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(148, 163, 184, 0.08));
     }
 
     .pos-product__fallback {
         background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(148, 163, 184, 0.12));
         color: var(--color-muted);
-        font-size: 1.8rem;
+        font-size: 1.45rem;
     }
 
     .pos-product__text {
-        padding: 0 0.7rem 0.65rem;
-        min-height: 60px;
+        padding: 0 0.55rem 0.4rem;
+        min-height: 42px;
         align-content: start;
         display: grid;
     }
@@ -1258,7 +1353,7 @@
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        min-height: calc(0.84rem * 1.24 * 2);
+        min-height: calc(0.84rem * 1.18 * 2);
     }
 
     .pos-item-modal-backdrop {
@@ -3462,24 +3557,24 @@
 
     .pos-product {
         gap: 0;
-        grid-template-rows: 108px 58px;
-        min-height: 166px;
+        grid-template-rows: 104px 42px;
+        min-height: 154px;
     }
 
     .pos-product__text {
-        min-height: 58px;
+        min-height: 42px;
         align-content: start;
-        padding: 0.4rem 0.72rem 0.45rem;
+        padding: 0.3rem 0.55rem 0.35rem;
     }
 
     .pos-product__text strong {
         display: -webkit-box;
         overflow: hidden;
-        -webkit-line-clamp: 3;
+        -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
-        font-size: 0.8rem;
-        line-height: 1.18;
-        min-height: calc(0.8rem * 1.18 * 2);
+        font-size: 0.76rem;
+        line-height: 1.15;
+        min-height: calc(0.76rem * 1.15 * 2);
     }
 
     .pos-receipt-modal {
@@ -4951,6 +5046,146 @@
         display: none;
     }
 
+    /* Layout definitivo del catálogo: búsqueda, rubros y artículos son filas
+       independientes. Estas reglas quedan al final para prevalecer sobre los
+       overrides históricos y responsive del POS. */
+    .pos-catalog {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .pos-catalog__toolbar {
+        display: flex !important;
+        flex: 0 0 auto;
+        flex-direction: column !important;
+        align-items: stretch;
+        width: 100%;
+        min-width: 0;
+        gap: 0.35rem;
+    }
+
+    .pos-catalog__search {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        width: 100%;
+        min-width: 0;
+        flex: 0 0 auto;
+    }
+
+    .pos-catalog__rubros {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fill, minmax(95px, 1fr));
+        grid-auto-rows: minmax(30px, auto);
+        align-content: start;
+        width: 100%;
+        min-width: 0;
+        max-height: 150px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        gap: 4px;
+        padding: 0.1rem 0;
+    }
+
+    .pos-catalog__rubro {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-width: 0;
+        min-height: 30px;
+        height: auto;
+        max-width: none;
+        padding: 0.25rem 0.35rem;
+        line-height: 1.1;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        text-align: center;
+    }
+
+    .pos-catalog__articles {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .pos-catalog__articles .pos-catalog__meta {
+        flex: 0 0 auto;
+    }
+
+    .pos-catalog__articles .pos-grid {
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+        gap: 5px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 5px;
+    }
+
+    .pos-catalog__articles .pos-product {
+        grid-template-rows: 64px 60px;
+        width: 100%;
+        min-width: 0;
+        min-height: 124px !important;
+        height: 124px;
+        max-height: 124px;
+        gap: 0;
+    }
+
+    .pos-catalog__articles .pos-product__image-wrap {
+        min-height: 0;
+        padding: 0.25rem;
+    }
+
+    .pos-catalog__articles .pos-product__text {
+        min-height: 0;
+        padding: 0.25rem 0.35rem 0.15rem;
+    }
+
+    .pos-catalog__articles .pos-product__text strong {
+        font-size: 0.7rem;
+        line-height: 1.12;
+        min-height: 0;
+    }
+
+    .pos-catalog__articles .pos-product__price {
+        min-height: 1.35rem;
+        padding: 0.12rem 0.3rem;
+        font-size: 0.67rem;
+    }
+
+    .pos-catalog__articles .pos-product__badges {
+        position: absolute;
+        right: 2px;
+        bottom: 2px;
+        gap: 2px;
+        padding: 0;
+    }
+
+    .pos-catalog__articles .pos-product__badges .pos-mini-badge {
+        min-height: 1rem;
+        padding: 0.1rem 0.2rem;
+        font-size: 0.55rem;
+    }
+
+    .pos-catalog__articles .pos-grid-status--more {
+        flex: 0 0 auto;
+        min-height: 1.35rem;
+        padding: 0.15rem 0.4rem;
+        font-size: 0.66rem;
+        line-height: 1.1;
+    }
+
     @@media (max-width: 640px) {
         .pos-shell {
             height: 100dvh;
@@ -6344,19 +6579,14 @@
 
             <div class="pos-topbar__document" aria-label="Comprobante a utilizar">
                 <span class="pos-topbar__document-label">Comprobante:</span>
-                <select class="pos-select"
-                        value="@_tipoComprobanteSeleccionado"
-                        @onchange="OnTipoComprobanteChanged">
-                    <option value="FC">EFC · Factura electrónica</option>
-                    <option value="NC">NC · Nota de crédito</option>
-                    @if (PuedeUsarProforma)
+                <div class="pos-topbar__quick-documents">
+                    @foreach (var acceso in ComprobantesRapidosDisponibles())
                     {
-                        <option value="FP">FP · Factura proforma</option>
-                        <option value="NCFP">NCFP · Nota de crédito proforma</option>
+                        <button type="button" class="pos-topbar__quick-document @(_tipoComprobanteSeleccionado == acceso.Codigo ? "is-active" : string.Empty)"
+                                title="@acceso.Descripcion"
+                                @onclick="() => SeleccionarTipoComprobante(acceso.Codigo)">@acceso.Etiqueta</button>
                     }
-                    <option value="RM">RM · Remito interno</option>
-                    <option value="NP">NP · Nota de pedido</option>
-                </select>
+                </div>
             </div>
 
             <div class="pos-topbar__customer" title="@CustomerSummaryTooltip()" aria-live="polite">
@@ -6386,21 +6616,6 @@
                     @if (_showPosMenu)
                     {
                         <div class="pos-topbar__menu-panel">
-                            <div class="pos-shortcuts-hint" aria-label="Atajos de teclado">
-                                <span class="pos-shortcuts-hint__title">Atajos rápidos</span>
-                                <span><kbd>F5</kbd> Clientes</span>
-                                <span><kbd>F9</kbd> Consultar pedidos</span>
-                                <span><kbd>Ctrl+A</kbd> e-Factura</span>
-                                <span><kbd>Ctrl+N</kbd> e-Nota de crédito</span>
-                                <span><kbd>Ctrl+C</kbd> Factura proforma</span>
-                                <span><kbd>Ctrl+O</kbd> Nota de pedido</span>
-                                <span><kbd>Ctrl+E</kbd> Remito interno</span>
-                                <span><kbd>Ctrl+F</kbd> ARCA</span>
-                                <span><kbd>Ctrl+B</kbd> Vaciar</span>
-                                <span><kbd>Ctrl+G</kbd> Cobrar / grabar</span>
-                                <span><kbd>Ctrl+P</kbd> Reimprimir</span>
-                                <span><kbd>Esc</kbd> Cerrar</span>
-                            </div>
                             <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModalAsync">
                                 <i class="bi bi-journal-text"></i>
                                 Detalle de caja
@@ -6426,11 +6641,11 @@
                             }
                             <button type="button" class="pos-topbar__menu-item" @onclick="OpenClearCartConfirm" disabled="@(!_cartItems.Any())" title="Vaciar carrito (Ctrl+B)">
                                 <i class="bi bi-trash"></i>
-                                Vaciar carrito
+                                Vaciar carrito <kbd>Ctrl+B</kbd>
                             </button>
                             <button type="button" class="pos-topbar__menu-item" @onclick="OpenReprintModalAsync" title="Reimprimir comprobantes (Ctrl+P)">
                                 <i class="bi bi-printer"></i>
-                                Reimprimir comprobantes
+                                Reimprimir comprobantes <kbd>Ctrl+P</kbd>
                             </button>
                             @if (EsMostradorProduccion)
                             {
@@ -6542,14 +6757,17 @@
                             </button>
                         </div>
 
-                        <select class="pos-mobile-rubro" @bind="_filters.IdRubro" aria-label="Filtrar por rubro">
-                            <option value="">Todos los rubros</option>
-                            <option value="@PuntoVentaCatalogoKeys.Top">Top</option>
+                        <div class="pos-catalog__rubros pos-catalog__rubros--mobile" aria-label="Rubros">
+                            @if (_topConfiguradoCount > 0)
+                            {
+                                <button type="button" class="pos-catalog__rubro pos-catalog__rubro--top @(_filters.IdRubro == PuntoVentaCatalogoKeys.Top ? "is-active" : string.Empty)" @onclick="() => SeleccionarRubroAsync(PuntoVentaCatalogoKeys.Top)">TOP @_topConfiguradoCount</button>
+                            }
+                            <button type="button" class="pos-catalog__rubro pos-catalog__rubro--todos @(_filters.IdRubro == string.Empty ? "is-active" : string.Empty)" @onclick="() => SeleccionarRubroAsync(string.Empty)">Todos</button>
                             @foreach (var rubro in _rubros)
                             {
-                                <option value="@rubro.IdRubro">@RubroLabel(rubro)</option>
+                                <button type="button" class="pos-catalog__rubro @(EsRubroSeleccionado(rubro) ? "is-active" : string.Empty)" style="@RubroStyle(rubro)" @onclick="() => SeleccionarRubroAsync(rubro.IdRubro)">@rubro.Descripcion</button>
                             }
-                        </select>
+                        </div>
 
                         @if (_catalogLoading)
                         {
@@ -6824,39 +7042,41 @@
                         </button>
                     </div>
 
-                    <div class="pos-catalog__filters">
-                        <select class="pos-select" @bind="_filters.IdRubro">
-                            <option value="">Todos los rubros</option>
-                            <option value="@PuntoVentaCatalogoKeys.Top">Top</option>
-                            @foreach (var rubro in _rubros)
-                            {
-                                <option value="@rubro.IdRubro">@RubroLabel(rubro)</option>
-                            }
-                        </select>
+                    <div class="pos-catalog__rubros" aria-label="Rubros">
+                        @if (_topConfiguradoCount > 0)
+                        {
+                            <button type="button" class="pos-catalog__rubro pos-catalog__rubro--top @(_filters.IdRubro == PuntoVentaCatalogoKeys.Top ? "is-active" : string.Empty)" @onclick="() => SeleccionarRubroAsync(PuntoVentaCatalogoKeys.Top)">TOP @_topConfiguradoCount</button>
+                        }
+                        <button type="button" class="pos-catalog__rubro pos-catalog__rubro--todos @(_filters.IdRubro == string.Empty ? "is-active" : string.Empty)" @onclick="() => SeleccionarRubroAsync(string.Empty)">Todos</button>
+                        @foreach (var rubro in _rubros)
+                        {
+                            <button type="button" class="pos-catalog__rubro @(EsRubroSeleccionado(rubro) ? "is-active" : string.Empty)" style="@RubroStyle(rubro)" @onclick="() => SeleccionarRubroAsync(rubro.IdRubro)">@rubro.Descripcion</button>
+                        }
                     </div>
 
                 </section>
 
-                <section class="pos-catalog__meta">
-                    <span>@DisplayListName()</span>
-                    <span>Clase @_catalog.ClasePrecioActual</span>
-                    @if (_catalog.UsaPrecioFallback)
-                    {
-                        <span>Precio base del articulo</span>
-                    }
-                </section>
+                <div class="pos-catalog__articles">
+                    <section class="pos-catalog__meta">
+                        <span>@DisplayListName()</span>
+                        <span>Clase @_catalog.ClasePrecioActual</span>
+                        @if (_catalog.UsaPrecioFallback)
+                        {
+                            <span>Precio base del articulo</span>
+                        }
+                    </section>
 
-                @if (_catalogLoading)
-                {
-                    <div class="pos-grid-status">Buscando articulos...</div>
-                }
-                else if (!_catalog.Articulos.Any())
-                {
-                    <div class="pos-grid-status">No hay articulos para mostrar con los filtros actuales.</div>
-                }
-                else
-                {
-                    <section class="pos-grid" @ref="_catalogGridRef" @onscroll="OnCatalogScrolledAsync">
+                    @if (_catalogLoading)
+                    {
+                        <div class="pos-grid-status">Buscando articulos...</div>
+                    }
+                    else if (!_catalog.Articulos.Any())
+                    {
+                        <div class="pos-grid-status">No hay articulos para mostrar con los filtros actuales.</div>
+                    }
+                    else
+                    {
+                        <section class="pos-grid" @ref="_catalogGridRef" @onscroll="OnCatalogScrolledAsync">
                         @foreach (var article in _catalog.Articulos)
                         {
                             <article class="pos-product" @onclick="() => AddToCart(article)">
@@ -6906,17 +7126,18 @@
                                 }
                             </article>
                         }
-                    </section>
+                        </section>
 
-                    @if (_catalogLoadingMore)
-                    {
-                        <div class="pos-grid-status">Cargando más artículos...</div>
+                        @if (_catalogLoadingMore)
+                        {
+                            <div class="pos-grid-status">Cargando más artículos...</div>
+                        }
+                        else if (_catalog.TieneMasResultados)
+                        {
+                            <div class="pos-grid-status pos-grid-status--more">Deslizá hacia abajo para seguir cargando artículos.</div>
+                        }
                     }
-                    else if (_catalog.TieneMasResultados)
-                    {
-                        <div class="pos-grid-status">Deslizá hacia abajo para seguir cargando artículos.</div>
-                    }
-                }
+                </div>
             </div>
         </section>
     }
@@ -8770,8 +8991,11 @@
 
 @code {
     private PuntoVentaContextDto? _context;
+    private readonly HashSet<string> _comprobantesAutorizados = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
     private IReadOnlyList<PuntoVentaRubroDto> _rubros = [];
+    private IReadOnlyList<PuntoVentaTopArticuloDto> _topConfigurado = [];
+    private int _topConfiguradoCount;
     private PuntoVentaCatalogDto _catalog = new();
     private PuntoVentaCatalogFiltersDto _filters = new();
     private IReadOnlyList<PuntoVentaReceiptListItemDto> _recentReceipts = [];
@@ -9205,6 +9429,7 @@
         {
             _loading = true;
             _context = await PuntoVentaSvc.GetContextAsync();
+            await CargarComprobantesAutorizadosAsync();
             _tipoComprobanteSeleccionado = _context.TipoComprobanteDefault.ToUpperInvariant() switch
             {
                 "NC" => "NC",
@@ -9212,6 +9437,8 @@
                 "NCFP" when _context.UsaProforma && _context.VerProformaUsuario => "NCFP",
                 _ => "FC"
             };
+            if (!UsuarioTieneComprobante(_tipoComprobanteSeleccionado))
+                _tipoComprobanteSeleccionado = PrimerComprobanteHabilitado();
             _settings = await PuntoVentaSvc.GetSettingsAsync();
             try
             {
@@ -9325,8 +9552,9 @@
             // después el vendedor puede cambiar a Todos o a cualquier rubro.
             try
             {
-                var topConfigurado = await PosConfigSvc.GetTopArticulosAsync();
-                if (topConfigurado.Count > 0 && string.IsNullOrWhiteSpace(_filters.IdRubro))
+                _topConfigurado = await PosConfigSvc.GetTopArticulosAsync();
+                _topConfiguradoCount = await PosConfigSvc.GetTopArticulosConfiguradosCountAsync();
+                if (_topConfiguradoCount > 0 && string.IsNullOrWhiteSpace(_filters.IdRubro))
                     _filters.IdRubro = PuntoVentaCatalogoKeys.Top;
             }
             catch (Exception ex)
@@ -9970,6 +10198,16 @@
 
     private async Task BuscarArticulosAsync()
         => await LoadCatalogAsync();
+
+    private async Task SeleccionarRubroAsync(string idRubro)
+    {
+        var normalizado = (idRubro ?? string.Empty).Trim();
+        if (string.Equals(_filters.IdRubro, normalizado, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _filters.IdRubro = normalizado;
+        await LoadCatalogAsync();
+    }
 
     private async Task LoadCatalogAsync()
     {
@@ -11683,6 +11921,12 @@
     private void SeleccionarTipoComprobante(string tipo)
     {
         var comprobante = (tipo ?? string.Empty).Trim().ToUpperInvariant();
+        if (!UsuarioTieneComprobante(comprobante))
+        {
+            _tipoComprobanteSeleccionado = PrimerComprobanteHabilitado();
+            return;
+        }
+
         if (comprobante is "FP" or "NCFP")
         {
             if (!PuedeUsarProforma)
@@ -11718,7 +11962,39 @@
         };
 
     private bool PuedeUsarProforma
-        => _context?.UsaProforma == true && _context.VerProformaUsuario;
+        => _context?.UsaProforma == true
+           && _context.VerProformaUsuario
+           && UsuarioTieneComprobante(PuntoVentaComprobanteKeys.Proforma);
+
+    private bool UsuarioTieneComprobante(string codigo)
+        => _comprobantesAutorizados.Contains(codigo.Trim());
+
+    private async Task CargarComprobantesAutorizadosAsync()
+    {
+        var comprobantes = PuntoVentaComprobanteKeys.Todos;
+        var permisos = await Task.WhenAll(comprobantes.Select(async comprobante =>
+        {
+            var clave = PuntoVentaComprobantePermissionKeys.Para(comprobante);
+            return (comprobante, permitido: clave.Length == 0 || await PermissionSvc.HasAccessAsync(clave));
+        }));
+
+        _comprobantesAutorizados.Clear();
+        foreach (var permiso in permisos.Where(x => x.permitido))
+            _comprobantesAutorizados.Add(permiso.comprobante);
+
+        // Si la base todavía no tiene la actualización de tareas, no se bloquea el POS.
+        if (_comprobantesAutorizados.Count == 0)
+            _comprobantesAutorizados.UnionWith(comprobantes);
+    }
+
+    private string PrimerComprobanteHabilitado()
+        => new[]
+        {
+            PuntoVentaComprobanteKeys.Factura,
+            PuntoVentaComprobanteKeys.Proforma,
+            PuntoVentaComprobanteKeys.NotaPedido,
+            PuntoVentaComprobanteKeys.Remito
+        }.FirstOrDefault(UsuarioTieneComprobante) ?? PuntoVentaComprobanteKeys.Factura;
 
     private void SelectPaymentMethod(string codigo)
     {
@@ -13064,6 +13340,42 @@
         => string.IsNullOrWhiteSpace(rubro.Descripcion)
             ? rubro.IdRubro
             : $"{rubro.IdRubro} · {rubro.Descripcion}";
+
+    private bool EsRubroSeleccionado(PuntoVentaRubroDto rubro)
+        => string.Equals(_filters.IdRubro, rubro.IdRubro.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string RubroStyle(PuntoVentaRubroDto rubro)
+    {
+        if (rubro.Color is not > 0)
+            return string.Empty;
+
+        var color = rubro.Color.Value;
+        var red = color & 0xFF;
+        var green = (color >> 8) & 0xFF;
+        var blue = (color >> 16) & 0xFF;
+        var luminancia = (red * 299 + green * 587 + blue * 114) / 1000;
+        var texto = luminancia >= 150 ? "#172033" : "#ffffff";
+        return $"--rubro-color: rgb({red}, {green}, {blue}); --rubro-text: {texto};";
+    }
+
+    private IReadOnlyList<ComprobanteAccesoRapido> ComprobantesRapidosDisponibles()
+    {
+        var disponibles = new List<ComprobanteAccesoRapido>();
+
+        if (UsuarioTieneComprobante(PuntoVentaComprobanteKeys.Factura))
+            disponibles.Add(new("FC", "EFC", "Factura electrónica"));
+
+        if (PuedeUsarProforma)
+            disponibles.Add(new("FP", "FP", "Factura proforma"));
+
+        if (UsuarioTieneComprobante(PuntoVentaComprobanteKeys.NotaPedido))
+            disponibles.Add(new("NP", "NP", "Nota de pedido"));
+        if (UsuarioTieneComprobante(PuntoVentaComprobanteKeys.Remito))
+            disponibles.Add(new("RM", "RM", "Remito interno"));
+        return disponibles;
+    }
+
+    private sealed record ComprobanteAccesoRapido(string Codigo, string Etiqueta, string Descripcion);
 
     private static string ProductInitials(string descripcion)
     {

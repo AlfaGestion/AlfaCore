@@ -59,6 +59,8 @@
                             <button type="button" @onclick="@(() => IrACaja("reimprimir"))"><i class="bi bi-printer"></i> Reimprimir comprobantes</button>
                             <hr />
                             <a href="@RouteCtx.BuildRoute($"/ventas/punto-venta/informe?idPuntoVenta={IdPuntoVentaQuery}")"><i class="bi bi-bar-chart"></i> Informe del punto de venta</a>
+                            <hr />
+                            <button type="button" @onclick="SalirDelSalon"><i class="bi bi-box-arrow-left"></i> Salir</button>
                         </div>
                     }
                 </div>
@@ -589,6 +591,12 @@
     {
         _menuCaja = false;
         Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPuntoVenta={IdPuntoVentaQuery}&caja={accion}&volver=salon"));
+    }
+
+    private void SalirDelSalon()
+    {
+        _menuCaja = false;
+        Nav.NavigateTo(RouteCtx.BuildRoute("/ventas/punto-venta"));
     }
 
     private PeriodicTimer? _timer;

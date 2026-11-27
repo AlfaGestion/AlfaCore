@@ -196,7 +196,10 @@ public sealed class PuntoVentaConfigService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var cantidad = Math.Clamp(limite, 1, 1000);
-            var rows = (await cn.QueryAsync<PuntoVentaTopArticuloDto>(new CommandDefinition("""
+            var vistaVentasDisponible = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                SELECT CASE WHEN OBJECT_ID(N'dbo.VT_DETALLEIVAPROFORMA', N'V') IS NULL THEN 0 ELSE 1 END;
+                """, cancellationToken: token));
+            var sql = vistaVentasDisponible == 1 ? """
                 SELECT TOP (@Limite)
                        CONVERT(varchar(50), d.Articulo) AS IdArticulo,
                        LTRIM(RTRIM(ISNULL(d.DESCRIPCION, ''))) AS Descripcion,
@@ -209,7 +212,28 @@ public sealed class PuntoVentaConfigService(
                 ORDER BY SUM(ISNULL(d.Consumo, 0)) DESC,
                          SUM(ISNULL(d.ValorVenta, 0)) DESC,
                          d.DESCRIPCION;
-                """, new { Limite = cantidad }, cancellationToken: token))).ToList();
+                """ : """
+                SELECT TOP (@Limite)
+                       LTRIM(RTRIM(i.IDARTICULO)) AS IdArticulo,
+                       LTRIM(RTRIM(ISNULL(i.DESCRIPCION, a.DESCRIPCION))) AS Descripcion,
+                       CONVERT(decimal(18, 4), SUM(ISNULL(i.CANTIDAD, 0))) AS CantidadVendida,
+                       CONVERT(decimal(18, 2), SUM(ISNULL(i.TOTAL, 0))) AS TotalVendido
+                FROM dbo.V_MV_CPTEINSUMOS i
+                INNER JOIN dbo.V_MV_CPTE c
+                    ON c.TC = i.TC AND c.IDCOMPROBANTE = i.IDCOMPROBANTE
+                INNER JOIN dbo.V_MA_ARTICULOS a
+                    ON LTRIM(RTRIM(a.IDARTICULO)) = LTRIM(RTRIM(i.IDARTICULO))
+                WHERE ISNULL(c.ANULADA, 0) = 0
+                  AND i.TC IN (N'TK', N'TKFC', N'FC', N'ND', N'NC', N'FP', N'NCFP')
+                  AND c.FECHA >= DATEADD(month, -12, CONVERT(date, GETDATE()))
+                  AND c.FECHA < DATEADD(day, 1, CONVERT(date, GETDATE()))
+                GROUP BY i.IDARTICULO, i.DESCRIPCION, a.DESCRIPCION
+                ORDER BY SUM(ISNULL(i.CANTIDAD, 0)) DESC,
+                         SUM(ISNULL(i.TOTAL, 0)) DESC,
+                         i.DESCRIPCION;
+                """;
+            var rows = (await cn.QueryAsync<PuntoVentaTopArticuloDto>(new CommandDefinition(
+                sql, new { Limite = cantidad }, cancellationToken: token))).ToList();
 
             return (IReadOnlyList<PuntoVentaTopArticuloDto>)rows
                 .Select((row, index) => new PuntoVentaTopArticuloDto
@@ -222,6 +246,19 @@ public sealed class PuntoVentaConfigService(
                 })
                 .ToList();
         }, "No se pudo detectar los artículos más vendidos.", ct);
+
+    public Task<int> GetTopArticulosConfiguradosCountAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetTopArticulosConfiguradosCount", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var configuracion = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
+                SELECT TOP (1) ISNULL(VALOR, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'GOUR_TOPVTAS';
+                """, cancellationToken: token));
+            return ParseTopArticuloIds(configuracion).Count;
+        }, "No se pudo contar la lista Top de artículos.", ct);
 
     public Task SaveTopArticulosAsync(IReadOnlyList<string> idsArticulo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTopArticulos", async token =>

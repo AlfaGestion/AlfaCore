@@ -9,6 +9,7 @@ public interface IPuntoVentaConfigService
     Task<string> GetComprobanteHabitualAsync(CancellationToken ct = default);
     Task SaveComprobanteHabitualAsync(string comprobante, CancellationToken ct = default);
     Task<IReadOnlyList<PuntoVentaTopArticuloDto>> GetTopArticulosAsync(CancellationToken ct = default);
+    Task<int> GetTopArticulosConfiguradosCountAsync(CancellationToken ct = default);
     Task<IReadOnlyList<PuntoVentaTopArticuloDto>> DetectarTopArticulosAsync(int limite = 100, CancellationToken ct = default);
     Task SaveTopArticulosAsync(IReadOnlyList<string> idsArticulo, CancellationToken ct = default);
     Task<PuntoVentaEntidadDto?> GetPuntoVentaByIdAsync(int id, CancellationToken ct = default);

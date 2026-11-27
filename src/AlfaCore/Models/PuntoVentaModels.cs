@@ -18,6 +18,33 @@ public sealed class PuntoVentaContextDto
     public bool UsaCajaDefault { get; init; }
 }
 
+public static class PuntoVentaComprobanteKeys
+{
+    public const string Factura = "FC";
+    public const string Proforma = "FP";
+    public const string NotaPedido = "NP";
+    public const string Remito = "RM";
+
+    public static readonly IReadOnlyList<string> Todos = [Factura, Proforma, NotaPedido, Remito];
+}
+
+public static class PuntoVentaComprobantePermissionKeys
+{
+    public const string Factura = "D6054-COMPROBANTE-FC";
+    public const string Proforma = "D6054-COMPROBANTE-FP";
+    public const string NotaPedido = "D6054-COMPROBANTE-NP";
+    public const string Remito = "D6054-COMPROBANTE-RM";
+
+    public static string Para(string comprobante) => comprobante.Trim().ToUpperInvariant() switch
+    {
+        PuntoVentaComprobanteKeys.Factura => Factura,
+        PuntoVentaComprobanteKeys.Proforma => Proforma,
+        PuntoVentaComprobanteKeys.NotaPedido => NotaPedido,
+        PuntoVentaComprobanteKeys.Remito => Remito,
+        _ => string.Empty
+    };
+}
+
 public sealed class PuntoVentaCatalogFiltersDto
 {
     public string Texto { get; set; } = string.Empty;
@@ -202,6 +229,7 @@ public sealed class PuntoVentaRubroDto
 {
     public string IdRubro { get; init; } = string.Empty;
     public string Descripcion { get; init; } = string.Empty;
+    public int? Color { get; init; }
 }
 
 public sealed class PuntoVentaPaymentMethodDto
