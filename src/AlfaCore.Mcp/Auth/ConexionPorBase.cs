@@ -56,7 +56,10 @@ public sealed class ConexionPorBaseResolver(
                 DataSource = b.Servidor,
                 InitialCatalog = b.BaseDatos,
                 UserID = b.UsuarioSql,
-                Password = string.IsNullOrEmpty(b.ClaveCifrada) ? "" : protector.Revelar(b.ClaveCifrada),
+                // "dpapi:" = la guardo AlfaCore desde /admin (login mcp_ro_<idbase>); si no, el comando habilitar-base del MCP.
+                Password = string.IsNullOrEmpty(b.ClaveCifrada) ? ""
+                    : AlfaCore.Compartido.ClaveBaseMcp.EstaCifradaConDpapi(b.ClaveCifrada) ? AlfaCore.Compartido.ClaveBaseMcp.Descifrar(b.ClaveCifrada)
+                    : protector.Revelar(b.ClaveCifrada),
                 TrustServerCertificate = true,
                 Encrypt = false,
                 ApplicationName = "AlfaCore.Mcp",

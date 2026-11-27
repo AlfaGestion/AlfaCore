@@ -390,6 +390,19 @@ public class ConexionPorBaseTests
         await Assert.ThrowsAsync<ToolUserException>(() => Resolver(acc, Usuario("8", "email", "b@x.com")).GetConnectionStringAsync(default));
     }
 
+    [Fact]
+    public async Task La_clave_que_guarda_AlfaCore_desde_admin_la_lee_el_MCP()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var acc = new MemoryAccesoStore();
+        acc.Sembrar(9, "Habilitada desde /admin", "C", "a@x.com");
+        var clave = AlfaCore.Compartido.ClaveBaseMcp.NuevaClave();
+        await acc.GuardarBaseAsync(9, AlfaCore.Compartido.ClaveBaseMcp.NombreLogin(9), AlfaCore.Compartido.ClaveBaseMcp.Cifrar(clave), default);
+        var cs = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(await Resolver(acc, Usuario("9", "email", "a@x.com")).GetConnectionStringAsync(default));
+        Assert.Equal("mcp_ro_9", cs.UserID);
+        Assert.Equal(clave, cs.Password);
+    }
+
     [Theory]
     [InlineData("  Ana@Cliente.COM ", "ana@cliente.com")]
     [InlineData("ana@cliente.com.ar", "ana@cliente.com.ar")]

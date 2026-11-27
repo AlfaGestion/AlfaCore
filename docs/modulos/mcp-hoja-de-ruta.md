@@ -38,8 +38,8 @@ Cada vista nueva: verificar el tipo real de cada objeto en SQL Server y cuadrar 
 **Hecho (27/11/2026):** multi-base con ingreso por mail. La base va atada a cada autorización y la resuelve
 `ConexionPorBaseResolver` desde `ALFA_CENTRAL`. Tablas `MCP_BASE`/`MCP_ACCESO`/`MCP_CODIGO_EMAIL` (`2026-11-27-042__alfa_central_mcp_multibase.sql`) y comandos
 `habilitar-base`/`invitar`/`quitar-acceso`/`accesos`. Falta:
-- **Pantalla en `/admin` (AlfaCore)**: en Usuarios, botón "MCP" con elección de base e invitación; en Bases, marca "MCP habilitado".
-  La clave de solo lectura de la base la sigue cargando `habilitar-base` en el servidor (la cifra la clave del MCP).
+- ~~Pantalla en `/admin` (AlfaCore)~~: hecha el 27/11/2026 (`CentralMcpService`). Bases → "Consultas IA" crea el login
+  `mcp_ro_<idbase>` y Usuarios → "Consultas IA" asigna bases e invita. Clave compartida con el MCP por DPAPI de la máquina.
 - Ocultar costos y márgenes a ciertos usuarios (permiso por herramienta en `MCP_ACCESO`).
 - Pendiente de AlfaCore (no del MCP): las contraseñas de `ALFA_CENTRAL.users` están en texto plano, se muestran en `/admin`
   y en algunos clientes son el CUIT. Guardarlas con hash, no mostrarlas y forzar el cambio de la inicial.

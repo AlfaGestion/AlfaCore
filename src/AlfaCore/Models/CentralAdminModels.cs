@@ -127,3 +127,30 @@ public sealed class ResetClientePruebaResult
     public string? MotivoRegistroOficialNoEliminado { get; init; }
     public IReadOnlyList<string> BasesFisicasEliminadas { get; init; } = [];
 }
+
+// ---- Consultas con IA (servidor MCP): estado por base y accesos por usuario (ALFA_CENTRAL.MCP_BASE / MCP_ACCESO) ----
+
+public sealed class McpBaseEstadoDto
+{
+    public int IdBase { get; init; }
+    public bool Habilitada { get; init; }
+    public string UsuarioSql { get; init; } = string.Empty;
+    public DateTime? Modificado { get; init; }
+}
+
+public sealed class McpAccesoDto
+{
+    public string Email { get; init; } = string.Empty;
+    public int IdBase { get; init; }
+    public bool Activo { get; init; }
+    public DateTime? InvitadoUtc { get; init; }
+    public DateTime? UltimoIngresoUtc { get; init; }
+}
+
+/// <summary>EsquemaListo = false cuando falta el script central 2026-11-27-042 en ALFA_CENTRAL.</summary>
+public sealed record McpEstadoClienteDto(bool EsquemaListo, IReadOnlyDictionary<int, McpBaseEstadoDto> Bases, IReadOnlyList<McpAccesoDto> Accesos);
+
+/// <summary>VistasConError: vistas del esquema dir que la actualizacion no pudo crear en esa base (null = todas bien).</summary>
+public sealed record McpHabilitacionResultadoDto(string Login, string? VistasConError);
+
+public sealed record McpAccesosGuardadosDto(int Agregadas, int Quitadas, bool InvitacionEnviada);

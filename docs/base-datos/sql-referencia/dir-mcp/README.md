@@ -7,7 +7,7 @@ Desde el 2026-11-27 sigue el mismo circuito que el resto de AlfaCore:
 |---|---|---|
 | Esquema `dir`, sus 10 vistas, `IA_LOG_CONSULTAS` y claves `IA_MCP_*` (antes 001-004, 012, 013, 015) | `src/AlfaCore/App_Data/updates/2026-11-27-040__ia_mcp_esquema_dir.sql` | **Solo**, en cada base, como cualquier actualizacion de AlfaCore. Si una vista no se puede crear (base vieja), se saltea sin frenar la actualizacion y el motivo queda en la clave `IA_MCP_ESQUEMA_ERRORES` |
 | Tablas `MCP_*` de `ALFA_CENTRAL` (antes 010 y 014) | `docs/base-datos/sql-referencia/2026-11-27-041__alfa_central_mcp_oauth.sql` y `-042__alfa_central_mcp_multibase.sql` | A mano, como los demas scripts `alfa_central` |
-| Logins de solo lectura (llevan contrasena y permisos de servidor) | esta carpeta: `005_login_solo_lectura.sql` (por base de datos) y `011_oauth_login_almacen.sql` (`ALFA_CENTRAL`) | A mano, una vez por servidor / base |
+| Logins de solo lectura (llevan contrasena y permisos de servidor). **Para bases de clientes ya no hace falta el 005**: `/admin` → Bases → Consultas IA crea `mcp_ro_<idbase>` solo | esta carpeta: `005_login_solo_lectura.sql` (por base de datos) y `011_oauth_login_almacen.sql` (`ALFA_CENTRAL`) | A mano, una vez por servidor / base |
 | Verificacion | esta carpeta: `099_verificacion.sql` | A mano, antes de invitar a nadie |
 
 **Cambiar o agregar una vista**: un script NUEVO en `App_Data/updates/` (mismo patron: `BEGIN TRY` + `EXEC(N'CREATE VIEW ...')`

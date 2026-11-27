@@ -1129,6 +1129,14 @@ Criterio aplicado:
 - Datos que usa: DTO de reportes comerciales, ClosedXML.
 - Observaciones: nombre histórico preservado por compatibilidad; el panel exporta todos los registros filtrados desde el circuito autorizado, sin navegar a una descarga fuera del contexto activo.
 
+### CentralMcpService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CentralMcpService.cs` (+ `src/AlfaCore.Mcp/Auth/ClaveBaseMcp.cs`, compartido con el MCP)
+- Propósito: desde `/admin` (Clientes), habilitar una base para las consultas con IA (servidor MCP) y decidir qué usuarios consultan qué bases.
+- Datos que usa: `ALFA_CENTRAL.MCP_BASE`, `MCP_ACCESO`, `MCP_REFRESH_TOKEN`, `bases`, `users` (script `2026-11-27-042__alfa_central_mcp_multibase.sql`); en la base del cliente, el esquema `dir` (`2026-11-27-040`).
+- Observaciones: habilitar crea con el usuario SQL registrado para la base un login propio `mcp_ro_<idbase>` (clave aleatoria, permisos del script `005`: solo `SELECT` sobre `dir` e `INSERT` en `IA_LOG_CONSULTAS`), verifica que no lea tablas y guarda la clave cifrada con DPAPI de la máquina (`ClaveBaseMcp`; el MCP corre en el mismo servidor). Habilitar desde el `/admin` de producción. La invitación usa `RegistroPublico:Email*` y la URL `Mcp:UrlPublica`.
+
 ## Actualizaciones de base de datos
 
 ### ActualizacionesService

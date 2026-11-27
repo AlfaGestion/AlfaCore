@@ -7,6 +7,7 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
 @inject AlfaCore.Services.ICentralCompraIaService CompraIaSvc
+@inject AlfaCore.Services.ICentralMcpService McpSvc
 @inject AlfaCore.Services.IConversacionesHabilitacionService ConversacionesHabilitacionSvc
 @inject AlfaCore.Services.IWorkerAssignmentService WorkerAssignmentSvc
 @inject AlfaCore.Services.IPlanesService PlanesSvc
@@ -214,6 +215,7 @@
                                 <tr>
                                     <th>Usuario</th>
                                     <th>Contraseña</th>
+                                    <th>Consultas IA</th>
                                     <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
                                 </tr>
                             </thead>
@@ -223,8 +225,11 @@
                                     <tr>
                                         <td>@item.UserName</td>
                                         <td><code>@item.Password</code></td>
+                                        <td>@McpResumenUsuario(item.UserName)</td>
                                         <td class="adm-actions-col">
                                             <div class="adm-row-actions">
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-stars"
+                                                            Disabled="@(!_mcpEstado.EsquemaListo)" OnClick="_ => AbrirMcpUsuario(item)">Consultas IA</AlfaButton>
                                                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="_ => EditUserAsync(item)">Editar</AlfaButton>
                                                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-trash3" OnClick="_ => DeleteUserAsync(item)">Eliminar</AlfaButton>
                                             </div>
@@ -241,7 +246,7 @@
                 <div class="adm-card__header">
                     <div>
                         <h3>Bases registradas</h3>
-                        <p>Bases del cliente seleccionado. "Lectura con IA" y "Conversaciones" indican qué bases recorren esos workers.</p>
+                        <p>Bases del cliente seleccionado. "Lectura con IA" y "Conversaciones" indican qué bases recorren esos workers. "Consultas IA" habilita la base para consultarla desde Claude o ChatGPT (crea un usuario SQL de solo lectura).</p>
                     </div>
                     <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" Disabled="@(!HasSelectedClient)" OnClick="_ => StartNewBase()">Registrar base</AlfaButton>
                 </div>
@@ -266,6 +271,7 @@
                                     <th>Contraseña</th>
                                     <th>Recepción documental · compras y tarjetas</th>
                                     <th>Conversaciones</th>
+                                    <th>Consultas IA</th>
                                     <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
                                 </tr>
                             </thead>
@@ -287,6 +293,15 @@
                                             <AlfaCheckbox Value="@_basesConversaciones.Contains(item.IdBase)"
                                                           Disabled="@(_guardandoBaseConversaciones || !_seleccionConversacionesDisponible)"
                                                           ValueChanged="v => CambiarBaseConversacionesAsync(item, v == true)">Incluir</AlfaCheckbox>
+                                        </td>
+                                        <td>
+                                            <AlfaCheckbox Value="@McpBaseHabilitada(item.IdBase)"
+                                                          Disabled="@(_guardandoMcp || !_mcpEstado.EsquemaListo)"
+                                                          ValueChanged="v => CambiarBaseMcpAsync(item, v == true)">Habilitar</AlfaCheckbox>
+                                            @if (McpBaseHabilitada(item.IdBase))
+                                            {
+                                                <small>@McpUsuariosDeBase(item.IdBase) usuario(s)</small>
+                                            }
                                         </td>
                                         <td class="adm-actions-col">
                                             <div class="adm-row-actions">
@@ -644,6 +659,56 @@
     </Footer>
 </AlfaDialog>
 
+<AlfaDialog Open="@(_mcpUsuario is not null)"
+            Title="Consultas con IA"
+            Eyebrow="@_mcpUsuario?.UserName"
+            Description="Qué bases puede consultar desde Claude o ChatGPT. Entra con su mail y un código de 6 dígitos que le llega a ese mail; el acceso es solo de lectura."
+            ErrorMessage="@NullIfEmpty(_error)"
+            OnClose="CerrarMcpUsuario">
+    <ChildContent>
+        @if (_mcpUsuario is not null && AlfaCore.Services.CentralMcpService.NormalizarEmail(_mcpUsuario.UserName) is null)
+        {
+            <AlfaEmptyState Title="Este usuario no es un mail" Message="El ingreso es con un código que se envía por mail: creá el usuario con su mail para darle acceso." />
+        }
+        else
+        {
+            <div class="adm-grid">
+                @foreach (var b in CurrentBases)
+                {
+                    var habilitada = McpBaseHabilitada(b.IdBase);
+                    var acceso = McpAcceso(_mcpUsuario?.UserName, b.IdBase);
+                    <div class="adm-readonly adm-span-all">
+                        <AlfaCheckbox Value="@_mcpSeleccion.Contains(b.IdBase)" Disabled="@(!habilitada || _guardandoMcp)"
+                                      ValueChanged="v => MarcarMcpBase(b.IdBase, v == true)">@b.Nombre</AlfaCheckbox>
+                        <small>
+                            @if (!habilitada)
+                            {
+                                <text>La base no está habilitada: habilitala en Bases registradas (columna Consultas IA).</text>
+                            }
+                            else if (acceso?.UltimoIngresoUtc is { } ui)
+                            {
+                                <text>Último ingreso: @ui.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</text>
+                            }
+                            else if (acceso?.InvitadoUtc is { } inv)
+                            {
+                                <text>Invitado el @inv.ToLocalTime().ToString("dd/MM/yyyy"); todavía no se conectó.</text>
+                            }
+                        </small>
+                    </div>
+                }
+                <div class="adm-span-all">
+                    <AlfaCheckbox Value="@_mcpInvitar" Disabled="@_guardandoMcp" ValueChanged="v => _mcpInvitar = v == true">Enviarle por mail la invitación con los pasos para conectarse</AlfaCheckbox>
+                </div>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_guardandoMcp" OnClick="_ => CerrarMcpUsuario()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="@(_guardandoMcp || _mcpUsuario is null || AlfaCore.Services.CentralMcpService.NormalizarEmail(_mcpUsuario.UserName) is null)"
+                    OnClick="_ => GuardarMcpUsuarioAsync()">@(_guardandoMcp ? "Guardando..." : "Guardar")</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
 <AlfaDialog Open="@_showSyncConfigModal"
             Title="Configuración de sincronización"
             Eyebrow="@_syncConfigBase?.Nombre"
@@ -924,6 +989,116 @@
         finally { _guardandoBaseIa = false; }
     }
 
+    // ---- Consultas con IA (servidor MCP) ------------------------------------------------------------------------------
+    private AlfaCore.Models.McpEstadoClienteDto _mcpEstado = new(false, new Dictionary<int, AlfaCore.Models.McpBaseEstadoDto>(), []);
+    private bool _guardandoMcp;
+    private AlfaCore.Models.AdminUserDto? _mcpUsuario;
+    private HashSet<int> _mcpSeleccion = [];
+    private bool _mcpInvitar = true;
+
+    private async Task CargarMcpAsync(string idCliente)
+    {
+        try { _mcpEstado = await McpSvc.GetEstadoClienteAsync(idCliente); }
+        catch (AlfaCore.Services.AppUserFacingException ex)
+        {
+            _mcpEstado = new(false, new Dictionary<int, AlfaCore.Models.McpBaseEstadoDto>(), []);
+            _error = ex.UserMessage;
+        }
+    }
+
+    private bool McpBaseHabilitada(int idBase) => _mcpEstado.Bases.TryGetValue(idBase, out var b) && b.Habilitada;
+
+    private int McpUsuariosDeBase(int idBase) => _mcpEstado.Accesos.Count(a => a.IdBase == idBase && a.Activo);
+
+    private AlfaCore.Models.McpAccesoDto? McpAcceso(string? usuario, int idBase) =>
+        AlfaCore.Services.CentralMcpService.NormalizarEmail(usuario) is { } email
+            ? _mcpEstado.Accesos.FirstOrDefault(a => a.IdBase == idBase && string.Equals(a.Email, email, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+    private string McpResumenUsuario(string usuario)
+    {
+        if (!_mcpEstado.EsquemaListo) return "—";
+        var n = CurrentBases.Count(b => McpAcceso(usuario, b.IdBase) is { Activo: true } && McpBaseHabilitada(b.IdBase));
+        return n == 0 ? "—" : n == 1 ? "1 base" : $"{n} bases";
+    }
+
+    private async Task CambiarBaseMcpAsync(AlfaCore.Models.AdminBaseDto item, bool habilitar)
+    {
+        if (_guardandoMcp) return;
+        if (!await ConfirmAsync(
+                habilitar ? "Habilitar consultas con IA" : "Deshabilitar consultas con IA",
+                habilitar
+                    ? $"¿Habilitar la base {item.Nombre} para consultarla desde Claude o ChatGPT?"
+                    : $"¿Deshabilitar la base {item.Nombre}? Quienes la estén consultando pierden el acceso en menos de un minuto.",
+                habilitar ? "Habilitar" : "Deshabilitar",
+                habilitar ? $"Se crea (o renueva) en su SQL Server un usuario de solo lectura propio de esta base, con el usuario {item.DbUser} registrado. Solo puede leer las vistas de consulta, nunca las tablas." : null))
+            return;
+        _guardandoMcp = true;
+        _error = string.Empty;
+        _message = string.Empty;
+        try
+        {
+            if (habilitar)
+            {
+                var r = await McpSvc.HabilitarBaseAsync(item.IdBase);
+                _message = r.VistasConError is null
+                    ? $"Base {item.Nombre} habilitada (usuario de solo lectura {r.Login}). Ahora dale acceso a los usuarios con el botón Consultas IA."
+                    : $"Base {item.Nombre} habilitada, pero en esta base no se pudieron crear algunas vistas (esas consultas van a fallar): {r.VistasConError}";
+            }
+            else
+            {
+                await McpSvc.DeshabilitarBaseAsync(item.IdBase);
+                _message = $"Base {item.Nombre} deshabilitada para consultas con IA.";
+            }
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+        finally
+        {
+            _guardandoMcp = false;
+            if (_selectedClientId is not null) await CargarMcpAsync(_selectedClientId);
+        }
+    }
+
+    private void AbrirMcpUsuario(AlfaCore.Models.AdminUserDto item)
+    {
+        _error = string.Empty;
+        _mcpUsuario = item;
+        _mcpSeleccion = CurrentBases.Where(b => McpAcceso(item.UserName, b.IdBase) is { Activo: true }).Select(b => b.IdBase).ToHashSet();
+        _mcpInvitar = !_mcpEstado.Accesos.Any(a => McpAcceso(item.UserName, a.IdBase) is { InvitadoUtc: not null });
+    }
+
+    private void MarcarMcpBase(int idBase, bool marcada)
+    {
+        if (marcada) _mcpSeleccion.Add(idBase); else _mcpSeleccion.Remove(idBase);
+    }
+
+    private void CerrarMcpUsuario()
+    {
+        if (_guardandoMcp) return;
+        _mcpUsuario = null;
+    }
+
+    private async Task GuardarMcpUsuarioAsync()
+    {
+        if (_mcpUsuario is null || _selectedClientId is null || _guardandoMcp) return;
+        _guardandoMcp = true;
+        _error = string.Empty;
+        _message = string.Empty;
+        try
+        {
+            var r = await McpSvc.GuardarAccesosAsync(_mcpUsuario.UserName, _selectedClientId, _mcpSeleccion.ToList(), _mcpInvitar);
+            _message = $"Consultas IA de {_mcpUsuario.UserName}: {r.Agregadas} base(s) agregada(s), {r.Quitadas} quitada(s)" +
+                       (r.InvitacionEnviada ? ". Invitación enviada por mail." : ".");
+            _mcpUsuario = null;
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+        finally
+        {
+            _guardandoMcp = false;
+            await CargarMcpAsync(_selectedClientId);
+        }
+    }
+
     private HashSet<int> _basesConversaciones = [];
     private bool _guardandoBaseConversaciones, _seleccionConversacionesDisponible;
 
@@ -1200,6 +1375,7 @@
         CancelUserEditor();
         CancelBaseEditor();
         await LoadClienteModulosAsync(client.IdCliente);
+        await CargarMcpAsync(client.IdCliente);
     }
 
     private void GoModulos()

@@ -137,7 +137,17 @@ personal de ALFA NET.
 4. `configurar_email_mcp.ps1` (como administrador): pide el SMTP (Enter = los mismos datos de AlfaCore), la clave oculta,
    manda una prueba y recién ahí lo guarda en el pool. Sin SMTP la pantalla sigue pidiendo usuario y clave.
 
-**Por cada base de cliente** (llega por la WireGuard, como AlfaCore):
+**Desde AlfaCore (`/admin` → Clientes → elegir el cliente), recomendado:**
+1. **Bases registradas → columna "Consultas IA" → Habilitar.** AlfaCore entra a la base con el usuario SQL registrado, crea un
+   login propio de solo lectura `mcp_ro_<idbase>` con clave aleatoria (nadie la ve; queda cifrada en `MCP_BASE` con DPAPI de este
+   servidor), verifica que solo lea el esquema `dir` y avisa si alguna vista no se pudo crear. Si la base no tiene el esquema,
+   pide entrar antes a esa base con AlfaCore (aplica la actualización `040`). Si el usuario registrado no puede crear logins,
+   queda el camino manual de abajo. **Hacerlo desde el `/admin` de producción** (la clave solo se descifra en ese servidor).
+2. **Usuarios → botón "Consultas IA"** (el usuario tiene que ser un mail): marcar las bases y "Enviarle la invitación". Guarda
+   `MCP_ACCESO` y manda el mail con `RegistroPublico:Email*`. Destildar una base corta sus sesiones.
+3. Deshabilitar la base en la misma columna corta a todos en menos de un minuto.
+
+**A mano (si el usuario SQL de la base no puede crear logins), por cada base de cliente** (llega por la WireGuard, como AlfaCore):
 1. Su base ya tiene el esquema `dir` si AlfaCore le aplicó la actualización `2026-11-27-040` (pasa sola al entrar a esa base).
    A mano: `dir-mcp/005_login_solo_lectura.sql` (su propia clave de `mcp_dir_ro`) y el `099`; comparar un mes contra su libro de IVA
    antes de invitar a nadie.
