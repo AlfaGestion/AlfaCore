@@ -3965,6 +3965,9 @@ public sealed partial class CargaViajesService(
         var config = BuildConfiguracion(await LoadConfiguracionAsync(cn, ct));
         var totals = CalculateTotals(request, config);
         var totalAdicionalesFijos = CalculateTotalAdicionalesFijos(request);
+        var tarifaColumns = await TableExistsAsync(cn, "TA_TARIFA", ct)
+            ? await LoadColumnsAsync(cn, "TA_TARIFA", ct)
+            : null;
         logger.LogInformation(
             "SaveViaje before insert Tc={Tc} IdComprobante={IdComprobante} IdCliente={IdCliente} IdDestino={IdDestino} IdTipoVehiculo={IdTipoVehiculo} IdChofer={IdChofer} IdLista={IdLista} TotalImporte={TotalImporte} TotalFlete={TotalFlete} TotalPeaje={TotalPeaje} TotalViajes={TotalViajes}",
             tc,
@@ -4161,6 +4164,8 @@ public sealed partial class CargaViajesService(
         await using var tx = await cn.BeginTransactionAsync(ct);
         try
         {
+            await EnsureTarifaFleteroGeneralAsync(cn, (SqlTransaction)tx, tarifaColumns, request, ct);
+
             var affectedId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
             {
                 request.Id,
@@ -4237,6 +4242,113 @@ public sealed partial class CargaViajesService(
 
             throw;
         }
+    }
+
+    private async Task EnsureTarifaFleteroGeneralAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        HashSet<string>? columns,
+        CargaViajeSaveRequest viaje,
+        CancellationToken ct)
+    {
+        if (columns is null || columns.Count == 0
+            || string.IsNullOrWhiteSpace(viaje.Chofer)
+            || string.IsNullOrWhiteSpace(viaje.Destino)
+            || string.IsNullOrWhiteSpace(viaje.TipoVehiculo))
+            return;
+
+        var clienteColumn = FirstExistingColumn(columns, "IDCLIENTE", "CLIENTE");
+        var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
+        var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
+        var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+        var idListaColumn = FirstExistingColumn(columns, "IDLISTA", "ID_LISTA");
+
+        var exists = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+            SELECT COUNT(1)
+            FROM dbo.TA_TARIFA WITH (UPDLOCK, HOLDLOCK)
+            WHERE ISNULL(TarifaFletero, 0) = 1
+              AND ISNULL(Activo, 1) = 1
+              AND UPPER(LTRIM(RTRIM(ISNULL({destinoColumn}, '')))) = @Destino
+              AND UPPER(LTRIM(RTRIM(ISNULL({tipoVehiculoColumn}, '')))) = @TipoVehiculo
+              AND (
+                    UPPER(LTRIM(RTRIM(ISNULL({choferColumn}, '')))) = @Chofer
+                 OR LTRIM(RTRIM(ISNULL({choferColumn}, ''))) = ''
+              );
+            """, new
+        {
+            Chofer = TrimUpper(viaje.Chofer),
+            Destino = TrimUpper(viaje.Destino),
+            TipoVehiculo = TrimUpper(viaje.TipoVehiculo)
+        }, transaction: tx, cancellationToken: ct));
+
+        if (exists > 0)
+            return;
+
+        var idLista = string.Empty;
+        foreach (var candidate in new[] { "FGEN" }.Concat(BuildTarifaListaAlternatives("FGEN")))
+        {
+            var candidateExists = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+                SELECT COUNT(1)
+                FROM dbo.TA_TARIFA
+                WHERE UPPER(LTRIM(RTRIM(ISNULL({idListaColumn}, '')))) = @IdLista;
+                """, new { IdLista = candidate }, transaction: tx, cancellationToken: ct));
+            if (candidateExists == 0)
+            {
+                idLista = candidate;
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(idLista))
+            throw new InvalidOperationException("No se pudo generar un código para la tarifa general de fletero.");
+
+        var destino = (viaje.Destino ?? string.Empty).Trim();
+        var tipoVehiculo = (viaje.TipoVehiculo ?? string.Empty).Trim();
+        var nombre = TrimToLength(
+            $"Fletero general - {ExtractDescripcionFromDisplay(viaje.DestinoDisplay)} - {ExtractDescripcionFromDisplay(viaje.TipoVehiculoDisplay)}",
+            50);
+        if (string.IsNullOrWhiteSpace(nombre) || nombre == "Fletero general -  - ")
+            nombre = TrimToLength($"Fletero general - {destino} - {tipoVehiculo}", 50);
+
+        var insertColumns = new List<string>();
+        var insertValues = new List<string>();
+        AddColumnPair(insertColumns, insertValues, idListaColumn, "@IdLista");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("nombre") ? "Nombre" : null, "@Nombre");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("importe") ? "Importe" : null, "@Importe");
+        AddColumnPair(insertColumns, insertValues, clienteColumn, "@Cliente");
+        AddColumnPair(insertColumns, insertValues, choferColumn, "@Chofer");
+        AddColumnPair(insertColumns, insertValues, destinoColumn, "@Destino");
+        AddColumnPair(insertColumns, insertValues, tipoVehiculoColumn, "@TipoVehiculo");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("tarifafletero") ? "TarifaFletero" : null, "@TarifaFletero");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("activo") ? "Activo" : null, "@Activo");
+
+        foreach (var porcentajeColumn in new[] { "porcentaje_adic", "porcentaje_adic1", "porcentaje_adic2", "porcentaje_adic3", "porcentaje_adic4" })
+            AddColumnPair(insertColumns, insertValues, columns.Contains(porcentajeColumn) ? porcentajeColumn : null, "@Cero");
+
+        var sql = $"""
+            INSERT INTO dbo.TA_TARIFA ({string.Join(", ", insertColumns)})
+            VALUES ({string.Join(", ", insertValues)});
+            """;
+        await cn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            IdLista = idLista,
+            Nombre = nombre,
+            Importe = Math.Max(0m, viaje.ImporteFletero),
+            Cliente = (string?)null,
+            Chofer = (string?)null,
+            Destino = destino,
+            TipoVehiculo = tipoVehiculo,
+            TarifaFletero = true,
+            Activo = true,
+            Cero = 0m
+        }, transaction: tx, cancellationToken: ct));
+
+        logger.LogInformation(
+            "SaveViaje creó tarifa fletero general IdLista={IdLista} Destino={Destino} TipoVehiculo={TipoVehiculo} Importe={Importe}",
+            idLista,
+            destino,
+            tipoVehiculo,
+            viaje.ImporteFletero);
     }
 
     private async Task<(string ListaCodigo, string ListaTexto)> GetListaRMTRFAsync(SqlConnection cn, string clienteCodigo, CancellationToken ct)
@@ -4939,7 +5051,7 @@ public sealed partial class CargaViajesService(
     {
         var value = (codigo ?? string.Empty).Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
+            return esFletero ? string.Empty : "GEN";
 
         if (esFletero)
         {

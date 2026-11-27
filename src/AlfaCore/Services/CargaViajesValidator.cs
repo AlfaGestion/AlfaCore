@@ -98,10 +98,8 @@ public sealed class CargaViajesValidator(
             if (string.IsNullOrWhiteSpace(request.Chofer))
                 result.Add("chofer", "Debe seleccionar un chofer.");
         }
-        else if (string.IsNullOrWhiteSpace(request.Cliente))
-        {
-            result.Add("cliente", "Debe seleccionar un cliente.");
-        }
+        // Una tarifa de cliente sin código representa una tarifa general.
+        // Se mantiene obligatorio el chofer para las tarifas de fletero.
 
         if (string.IsNullOrWhiteSpace(request.Destino))
             result.Add("destino", "Debe seleccionar un destino.");
@@ -114,7 +112,7 @@ public sealed class CargaViajesValidator(
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
 
-        if (!tarifaFletero)
+        if (!tarifaFletero && !string.IsNullOrWhiteSpace(request.Cliente))
         {
             if (!await ExistsAsync(cn, "Vt_Clientes", "CODIGO", request.Cliente, ct))
                 result.Add("cliente", "El cliente seleccionado no existe.");

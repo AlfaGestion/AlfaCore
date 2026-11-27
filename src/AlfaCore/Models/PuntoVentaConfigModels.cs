@@ -69,12 +69,12 @@ public sealed class PuntoVentaEntidadDto
     public int? ClasePrecio { get; set; }
     public bool CargaRapidaGrafica { get; set; }
     public string ModoIngresoRapido { get; set; } = PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
-    public decimal ImporteRapido1 { get; set; } = 5m;
-    public decimal ImporteRapido2 { get; set; } = 10m;
-    public decimal ImporteRapido3 { get; set; } = 25m;
-    public decimal ImporteRapido4 { get; set; } = 50m;
-    public decimal ImporteRapido5 { get; set; } = 100m;
-    public decimal ImporteRapido6 { get; set; } = 200m;
+    public decimal ImporteRapido1 { get; set; } = 1000m;
+    public decimal ImporteRapido2 { get; set; } = 2000m;
+    public decimal ImporteRapido3 { get; set; } = 5000m;
+    public decimal ImporteRapido4 { get; set; } = 10000m;
+    public decimal ImporteRapido5 { get; set; } = 20000m;
+    public decimal ImporteRapido6 { get; set; } = 50000m;
     public decimal CantidadRapida1 { get; set; } = 0.1m;
     public decimal CantidadRapida2 { get; set; } = 0.25m;
     public decimal CantidadRapida3 { get; set; } = 0.5m;
@@ -111,12 +111,12 @@ public sealed class PuntoVentaEntidadSaveRequest
     public int? ClasePrecio { get; set; }
     public bool CargaRapidaGrafica { get; set; }
     public string ModoIngresoRapido { get; set; } = PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
-    public decimal ImporteRapido1 { get; set; } = 5m;
-    public decimal ImporteRapido2 { get; set; } = 10m;
-    public decimal ImporteRapido3 { get; set; } = 25m;
-    public decimal ImporteRapido4 { get; set; } = 50m;
-    public decimal ImporteRapido5 { get; set; } = 100m;
-    public decimal ImporteRapido6 { get; set; } = 200m;
+    public decimal ImporteRapido1 { get; set; } = 1000m;
+    public decimal ImporteRapido2 { get; set; } = 2000m;
+    public decimal ImporteRapido3 { get; set; } = 5000m;
+    public decimal ImporteRapido4 { get; set; } = 10000m;
+    public decimal ImporteRapido5 { get; set; } = 20000m;
+    public decimal ImporteRapido6 { get; set; } = 50000m;
     public decimal CantidadRapida1 { get; set; } = 0.1m;
     public decimal CantidadRapida2 { get; set; } = 0.25m;
     public decimal CantidadRapida3 { get; set; } = 0.5m;

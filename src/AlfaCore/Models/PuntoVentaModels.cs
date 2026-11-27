@@ -162,12 +162,12 @@ public sealed class PuntoVentaSettingsDto
     public bool ReciboAnticipoMuestraUsuario { get; set; } = true;
     public bool CargaRapidaGrafica { get; set; }
     public string ModoIngresoRapido { get; set; } = "DESHABILITADO";
-    public string ImporteRapido1 { get; set; } = "5";
-    public string ImporteRapido2 { get; set; } = "10";
-    public string ImporteRapido3 { get; set; } = "25";
-    public string ImporteRapido4 { get; set; } = "50";
-    public string ImporteRapido5 { get; set; } = "100";
-    public string ImporteRapido6 { get; set; } = "200";
+    public string ImporteRapido1 { get; set; } = "1000";
+    public string ImporteRapido2 { get; set; } = "2000";
+    public string ImporteRapido3 { get; set; } = "5000";
+    public string ImporteRapido4 { get; set; } = "10000";
+    public string ImporteRapido5 { get; set; } = "20000";
+    public string ImporteRapido6 { get; set; } = "50000";
     public string CantidadRapida1 { get; set; } = "0.1";
     public string CantidadRapida2 { get; set; } = "0.25";
     public string CantidadRapida3 { get; set; } = "0.5";

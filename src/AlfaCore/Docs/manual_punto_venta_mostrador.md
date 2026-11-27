@@ -278,6 +278,6 @@ Con el panel habilitado se puede preparar una operación en dos modos:
 - **Importe**: carga un importe y, al seleccionar un artículo, calcula la cantidad con el precio vigente. No modifica el precio unitario.
 - **Cantidad**: carga una cantidad entera o decimal y la aplica al seleccionar el artículo, respetando si el artículo admite fracciones.
 
-Los importes rápidos reutilizan `GOUR_IMPORTE1` a `GOUR_IMPORTE6`, con valores predeterminados 5, 10, 25, 50, 100 y 200. Se pueden editar desde la misma configuración del POS. Los botones rápidos acumulan valores; el teclado permite coma o punto decimal, borrar el último carácter, limpiar y confirmar.
+Los importes rápidos reutilizan `GOUR_IMPORTE1` a `GOUR_IMPORTE6`, con valores predeterminados 1.000, 2.000, 5.000, 10.000, 20.000 y 50.000. Se pueden editar desde la misma configuración del POS. Los botones rápidos acumulan valores; el teclado permite coma o punto decimal, borrar el último carácter, limpiar y confirmar.
 
 El panel prepara la próxima incorporación y usa el mismo `AddToCart` del POS. Por eso conserva la acumulación de líneas, precios, ofertas y validaciones existentes, sin interceptar globalmente el teclado ni iniciar cobros o facturación.

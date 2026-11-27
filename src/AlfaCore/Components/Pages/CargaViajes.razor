@@ -664,7 +664,7 @@
                                 }
                                 else
                                 {
-                                    <label>Cliente</label>
+                                    <label>Cliente <span class="editor-field__optional">(opcional para tarifa general)</span></label>
                                     <LookupAutocomplete @ref="_tarifaClienteLookup"
                                                         Label=""
                                                         Placeholder="Buscar cliente..."
@@ -2176,6 +2176,11 @@
                                                 }
 
                                                 <div class="smart-search carga-viajes-viaje-tarifas__search">
+                                                    <label class="carga-viajes-viaje-tarifas__general-toggle @(_viajeTarifasMostrarGenerales ? "carga-viajes-viaje-tarifas__general-toggle--active" : string.Empty)" title="Mostrar también las tarifas generales">
+                                                        <input type="checkbox" @bind="_viajeTarifasMostrarGenerales" />
+                                                        <span class="carga-viajes-viaje-tarifas__general-toggle-indicator" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                                        <span>Ver tarifas generales</span>
+                                                    </label>
                                                     <div class="smart-search__bar">
                                                         <i class="bi bi-search"></i>
                                                         <input type="search"
@@ -2185,16 +2190,6 @@
                                                         <button type="button" class="smart-search__toggle" @onclick="() => _viajeTarifasSearch = string.Empty" aria-label="Limpiar búsqueda">
                                                             <i class="bi bi-x-lg"></i>
                                                         </button>
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__zero-filters">
-                                                        <label class="carga-viajes-viaje-tarifas__zero-toggle" title="Ocultar tarifas con importe cliente en cero">
-                                                            <input type="checkbox" @bind="_viajeTarifasIgnorarClienteCero" />
-                                                            <span>Ignorar cliente $0</span>
-                                                        </label>
-                                                        <label class="carga-viajes-viaje-tarifas__zero-toggle" title="Ocultar tarifas con importe fletero en cero">
-                                                            <input type="checkbox" @bind="_viajeTarifasIgnorarFleteroCero" />
-                                                            <span>Ignorar fletero $0</span>
-                                                        </label>
                                                     </div>
                                                 </div>
 
@@ -2738,8 +2733,7 @@
     private bool _showViajeTarifasClientePanel;
     private bool _viajeTarifasLoading;
     private string _viajeTarifasSearch = string.Empty;
-    private bool _viajeTarifasIgnorarClienteCero = true;
-    private bool _viajeTarifasIgnorarFleteroCero = true;
+    private bool _viajeTarifasMostrarGenerales;
     private string _viajeTarifasSelectionHint = string.Empty;
     private AppUiMessage? _viajeTarifasFeedback;
     private readonly List<CargaViajeTarifaClienteResumenDto> _viajeTarifasClienteRows = [];
@@ -7778,8 +7772,7 @@
         _viajeTarifasFeedback = null;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasSearch = string.Empty;
-        _viajeTarifasIgnorarClienteCero = true;
-        _viajeTarifasIgnorarFleteroCero = true;
+        _viajeTarifasMostrarGenerales = false;
         _viajeTarifasLoading = true;
         await InvokeAsync(StateHasChanged);
 
@@ -7849,9 +7842,10 @@
             return [];
 
         var search = SearchTextHelper.Normalize(_viajeTarifasSearch);
-        var tarifasFiltradas = _viajeTarifasClienteRows.Where(tarifa =>
-            (!_viajeTarifasIgnorarClienteCero || tarifa.ImporteCliente > 0m)
-            && (!_viajeTarifasIgnorarFleteroCero || tarifa.ImporteFletero > 0m));
+        var tieneTarifasDelCliente = _viajeTarifasClienteRows.Any(tarifa => !tarifa.EsTarifaGeneral);
+        var mostrarGenerales = _viajeTarifasMostrarGenerales || !tieneTarifasDelCliente;
+        var tarifasFiltradas = _viajeTarifasClienteRows
+            .Where(tarifa => mostrarGenerales || !tarifa.EsTarifaGeneral);
 
         if (search.Length == 0)
             return tarifasFiltradas.ToList();
@@ -10366,7 +10360,24 @@
         var normalized = (codigoBase ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(normalized))
         {
-            _tarifaForm.IdLista = string.Empty;
+            // Sin cliente se guarda como tarifa general; el servicio genera un
+            // IdLista único con prefijo GEN.
+            if (!_tarifaForm.TarifaFletero)
+            {
+                try
+                {
+                    _tarifaForm.IdLista = await CargaViajesSvc.GetUniqueTarifaListaCodigoAsync(string.Empty, false);
+                }
+                catch (Exception ex)
+                {
+                    _tarifaForm.IdLista = string.Empty;
+                    _tarifaEditorFeedback = UiOps.BuildMessage(ex, "No se pudo determinar el Id lista de la tarifa.");
+                }
+            }
+            else
+            {
+                _tarifaForm.IdLista = string.Empty;
+            }
             return;
         }
 
@@ -11533,8 +11544,7 @@
         _viajeTarifasLoading = false;
         _viajeTarifasClienteRows.Clear();
         _viajeTarifasSearch = string.Empty;
-        _viajeTarifasIgnorarClienteCero = true;
-        _viajeTarifasIgnorarFleteroCero = true;
+        _viajeTarifasMostrarGenerales = false;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasFeedback = null;
         _viajeTarifasPanelPositionPending = false;
