@@ -249,6 +249,25 @@
     align-items: end;
 }
 
+.mon__aviso-estado {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--alfa-space-8, 8px);
+    margin: 0 0 var(--alfa-space-8, 8px);
+    padding: var(--alfa-space-8, 8px) 12px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    border: 1px solid currentColor;
+}
+
+.mon__aviso-estado.is-ok {
+    color: var(--alfa-success, #4cc38a);
+}
+
+.mon__aviso-estado.is-warning {
+    color: var(--alfa-warning, #e3b25a);
+}
+
 .mon__avisos-acciones {
     display: flex;
     flex-wrap: wrap;

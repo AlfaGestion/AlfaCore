@@ -30,6 +30,23 @@ public sealed class MonitorClientesService(
 
     public bool Disponible => !string.IsNullOrWhiteSpace(ConnectionString);
 
+    public bool EsBaseDelChat(string? connectionString)
+    {
+        if (!Disponible || string.IsNullOrWhiteSpace(connectionString))
+            return false;
+        try
+        {
+            var chat = new SqlConnectionStringBuilder(ConnectionString);
+            var otra = new SqlConnectionStringBuilder(connectionString);
+            return string.Equals(chat.DataSource.Trim(), otra.DataSource.Trim(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(chat.InitialCatalog.Trim(), otra.InitialCatalog.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     public async Task<MonitorReporteResultado> RegistrarReporteAsync(MonitorReporteRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);

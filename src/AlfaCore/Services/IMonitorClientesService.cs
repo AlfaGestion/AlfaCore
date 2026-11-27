@@ -13,6 +13,11 @@ public interface IMonitorClientesService
     /// <summary>False si la instalación no tiene la conexión <c>AlfaGestion</c> (base central de ALFA NET).</summary>
     bool Disponible { get; }
 
+    /// <summary>True si <paramref name="connectionString"/> apunta a la misma base (servidor + catálogo) que la
+    /// conexión <c>AlfaGestion</c>, donde vive el hilo interno de los avisos. Sirve para saber si un enlace a
+    /// Conversaciones desde la sesión actual abre ese hilo o uno con el mismo número de otra base.</summary>
+    bool EsBaseDelChat(string? connectionString);
+
     /// <summary>Graba el reporte de un sistema. Lanza <see cref="KeyNotFoundException"/> si la licencia no
     /// existe en ALFA_CENTRAL e <see cref="InvalidOperationException"/> si faltan datos.</summary>
     Task<MonitorReporteResultado> RegistrarReporteAsync(MonitorReporteRequest request, CancellationToken ct = default);

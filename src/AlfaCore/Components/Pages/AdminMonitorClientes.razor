@@ -8,6 +8,7 @@
 @inject IMonitorClientesService MonitorSvc
 @inject IPageHeaderService PageHeader
 @inject IRouteContextService RouteContext
+@inject IConexionClienteService ConexionCliente
 @inject NavigationManager Nav
 
 <PageTitle>Monitor de Clientes | AlfaNet</PageTitle>
@@ -203,8 +204,18 @@
                     {
                         <span class="mon__hint">
                             @(_aviso.UltimoEnvio is { } ue ? $"Último aviso {ue.ToString("dd/MM HH:mm", Es)}" : "Todavía no se mandó ningún aviso")
-                            @(_aviso.IdHilo is { } hilo ? $" · hilo #{hilo}" : string.Empty)
-                            @(_aviso.Forzar ? " · aviso pedido, sale en el próximo minuto" : string.Empty)
+                            @if (_aviso.IdHilo is { } hilo)
+                            {
+                                <span> · </span>
+                                @if (UrlHilo(hilo) is { } urlHilo)
+                                {
+                                    <a href="@urlHilo" title="Abrir el hilo en Conversaciones">hilo #@hilo</a>
+                                }
+                                else
+                                {
+                                    <span title="El hilo está en Conversaciones de la base central (ALFANET2007); entrá a esa base para verlo.">hilo #@hilo (base central)</span>
+                                }
+                            }
                         </span>
                     }
                 </div>
@@ -245,9 +256,16 @@
                     {
                         <p class="mon__hint is-warning">@_avisoError</p>
                     }
+                    @if (_avisoEstado is not null)
+                    {
+                        <p class="mon__aviso-estado @(_avisoEstadoAlerta ? "is-warning" : "is-ok")" role="status">
+                            <i class="bi @(_esperandoAviso ? "bi-hourglass-split" : _avisoEstadoAlerta ? "bi-exclamation-triangle" : "bi-check-circle")" aria-hidden="true"></i>
+                            @_avisoEstado
+                        </p>
+                    }
                     <div class="mon__avisos-acciones">
                         <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi-check2" Loading="@_guardando" Disabled="@_guardando" OnClick="GuardarAvisoAsync">Guardar</AlfaButton>
-                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi-send" Disabled="@_guardando" OnClick="AvisarAhoraAsync">Enviar aviso ahora</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi-send" Disabled="@_guardando" Loading="@_esperandoAviso" OnClick="AvisarAhoraAsync">@(_esperandoAviso ? "Enviando aviso…" : "Enviar aviso ahora")</AlfaButton>
                     </div>
                 }
             </section>
@@ -463,6 +481,15 @@
     private bool _guardando;
     private MonitorAvisoConfigDto? _aviso;
     private string? _avisoError;
+    // "Enviar aviso ahora": el proceso de fondo lo manda en el próximo minuto; mientras tanto se refresca
+    // más seguido y se muestra el estado hasta que sale (o se avisa si no sale).
+    private static readonly TimeSpan RefrescoEsperandoAviso = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan EsperaMaximaAviso = TimeSpan.FromMinutes(4);
+    private bool _esperandoAviso;
+    private DateTime _avisoPedidoEn;
+    private DateTime? _envioAnterior;
+    private string? _avisoEstado;
+    private bool _avisoEstadoAlerta;
     private MonitorFilaDto? _notaFila;
     private string _notaTexto = string.Empty;
 
@@ -613,6 +640,7 @@
                 _aviso.Forzar = aviso.Forzar;
             }
             _avisoError = null;
+            SeguirAvisoPedido();
         }
         catch (Exception ex)
         {
@@ -838,6 +866,13 @@
             await MonitorSvc.SolicitarAvisoAhoraAsync(UsuarioActual);
             _aviso.Forzar = true;
             _avisoError = null;
+            _envioAnterior = _aviso.UltimoEnvio;
+            _avisoPedidoEn = DateTime.Now;
+            _esperandoAviso = true;
+            _avisoEstadoAlerta = false;
+            _avisoEstado = "Aviso pedido. Sale en menos de un minuto al hilo «Monitor de Clientes» de Conversaciones"
+                + (_aviso.UsuariosPushLista.Count > 0 ? $" y, si hay alertas, como push a {string.Join(", ", _aviso.UsuariosPushLista)}." : ".");
+            _timer?.Change(RefrescoEsperandoAviso, RefrescoEsperandoAviso);
         }
         catch (Exception ex)
         {
@@ -847,6 +882,57 @@
         {
             _guardando = false;
         }
+    }
+
+    /// <summary>Después de "Enviar aviso ahora": detecta cuándo salió (cambió el último envío y se bajó el pedido)
+    /// o si pasó demasiado tiempo sin salir, y vuelve al refresco normal.</summary>
+    private void SeguirAvisoPedido()
+    {
+        if (!_esperandoAviso || _aviso is null)
+            return;
+
+        if (!_aviso.Forzar)
+        {
+            var salio = _aviso.UltimoEnvio is { } ue && ue != _envioAnterior;
+            _avisoEstadoAlerta = !salio;
+            _avisoEstado = salio
+                ? $"Aviso enviado a las {_aviso.UltimoEnvio!.Value.ToString("HH:mm", Es)}"
+                    + (_aviso.IdHilo is { } hilo ? $" al hilo #{hilo} de Conversaciones" : string.Empty)
+                    + (_aviso.UsuariosPushLista.Count > 0 ? $"; push a {string.Join(", ", _aviso.UsuariosPushLista)} si había alertas pendientes." : ".")
+                : "El pedido se procesó pero no se publicó ningún mensaje. Revisá el registro del servidor.";
+            TerminarEsperaAviso();
+        }
+        else if (DateTime.Now - _avisoPedidoEn > EsperaMaximaAviso)
+        {
+            _avisoEstadoAlerta = true;
+            _avisoEstado = "El aviso sigue pendiente. El proceso de avisos no lo tomó: puede estar recién reiniciado (espera 3 minutos al arrancar), "
+                + "deshabilitado o corriendo en otro servidor de workers. Queda pedido y sale cuando el proceso corra.";
+            TerminarEsperaAviso();
+        }
+    }
+
+    private void TerminarEsperaAviso()
+    {
+        _esperandoAviso = false;
+        _timer?.Change(Refresco, Refresco);
+    }
+
+    /// <summary>Enlace al hilo solo si la sesión está en la misma base que el chat; si no, abriría otra conversación con ese número.</summary>
+    private string? UrlHilo(long idHilo)
+    {
+        string? cs;
+        try
+        {
+            cs = ConexionCliente.GetConnectionString();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        return MonitorSvc.EsBaseDelChat(cs)
+            ? Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+                RouteContext.BuildRoute("/conversaciones"), "id", idHilo.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            : null;
     }
 
     private static bool Contiene(string? valor, string termino)

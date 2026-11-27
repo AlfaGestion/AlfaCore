@@ -38,6 +38,7 @@ public sealed class MonitorClientesSinReporteUiTests
         }));
         services.AddSingleton<IPageHeaderService, PageHeaderService>();
         services.AddSingleton(Proxy<IRouteContextService>((_, _) => null));
+        services.AddSingleton(Proxy<IConexionClienteService>((_, _) => null));
         services.AddSingleton<NavigationManager, CargaComprobantesUiTests.TestNavigation>();
         services.AddSingleton(Proxy<IJSRuntime>((_, _) => null));
         var captura = new Captura(); services.AddSingleton<IComponentActivator>(captura);
