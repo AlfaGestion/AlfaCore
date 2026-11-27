@@ -337,7 +337,7 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void Bot_GuardrailOrder_EscaladoThenAssignedThenWindowThenMaxRepliesThenAlreadyRepliedThenHuman()
     {
-        var method = ServiceSource.IndexOf("private async Task EjecutarRespuestaBotAsync", StringComparison.Ordinal);
+        var method = ServiceSource.IndexOf("private async Task<bool> EjecutarRespuestaBotAsync", StringComparison.Ordinal);
         var escalado = ServiceSource.IndexOf("if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))", method, StringComparison.Ordinal);
         var asignado = ServiceSource.IndexOf("if (config.BotSoloSinAsignar)", method, StringComparison.Ordinal);
         var ventana = ServiceSource.IndexOf("if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token)", method, StringComparison.Ordinal);

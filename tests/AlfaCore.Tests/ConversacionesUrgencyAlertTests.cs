@@ -14,7 +14,7 @@ public sealed class ConversacionesUrgencyAlertTests
     [Fact]
     public void UrgencyHook_RunsOnlyAfterExistingUrgencyDecision()
     {
-        var method = ExtractMethodBody(ServiceSource, "private async Task EjecutarRespuestaBotAsync");
+        var method = ExtractMethodBody(ServiceSource, "private async Task<bool> EjecutarRespuestaBotAsync");
         var urgency = method.IndexOf("var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);", StringComparison.Ordinal);
         var priority = method.IndexOf("await SubirPrioridadAsync(idConversacion, \"URGENTE\", token)", urgency, StringComparison.Ordinal);
         var notify = method.IndexOf("await TryNotifyUrgencyTechniciansAsync(idConversacion, texto, config, token)", priority, StringComparison.Ordinal);
@@ -32,7 +32,7 @@ public sealed class ConversacionesUrgencyAlertTests
         // AsistenteUrgenciaPalabras), el handoff cortaba la función antes de avisar a los técnicos.
         // Ahora la detección + alerta de urgencia se evalúa primero, y el escalado sigue cortando
         // exactamente igual que antes (no se tocó su semántica).
-        var method = ExtractMethodBody(ServiceSource, "private async Task EjecutarRespuestaBotAsync");
+        var method = ExtractMethodBody(ServiceSource, "private async Task<bool> EjecutarRespuestaBotAsync");
         var urgentBlock = method.IndexOf("var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);", StringComparison.Ordinal);
         var escaladoReturn = method.IndexOf("if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))", StringComparison.Ordinal);
 
@@ -48,7 +48,7 @@ public sealed class ConversacionesUrgencyAlertTests
     {
         // La alerta de urgencia es responsabilidad distinta de si el Bot responde/hace handoff --
         // debe evaluarse antes de CUALQUIER corte de negocio, no solo el de escalado.
-        var method = ExtractMethodBody(ServiceSource, "private async Task EjecutarRespuestaBotAsync");
+        var method = ExtractMethodBody(ServiceSource, "private async Task<bool> EjecutarRespuestaBotAsync");
         var urgentBlock = method.IndexOf("var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);", StringComparison.Ordinal);
         var sinAsignarCut = method.IndexOf("if (config.BotSoloSinAsignar)", StringComparison.Ordinal);
         var maxRespuestasCut = method.IndexOf("if (botCount >= Math.Max(1, config.BotMaxRespuestas))", StringComparison.Ordinal);
