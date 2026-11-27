@@ -63,6 +63,7 @@ public static class AyudaManuales
         ("/ventas/punto-venta","mostrador","Elegir el punto de venta"),
         ("conciliacion-bancaria","conciliacion",null),
         ("conciliacion-tarjetas","tarjetas",null),
+        ("/ventas/cobranzas","cobranzas","Cobrar desde Ventas → Cobranzas"),
         ("cobranzas","cobranzas",null),
         ("consultas","consultas",null),
         ("/caja-bancos/cierre","caja","Cierre de caja"),
