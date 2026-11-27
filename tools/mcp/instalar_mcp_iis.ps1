@@ -78,7 +78,7 @@ $variables = [ordered]@{
 }
 $filtro = "system.applicationHost/applicationPools/add[@name='$Sitio']/environmentVariables"
 foreach ($k in $variables.Keys) {
-    Remove-WebConfigurationProperty -PSPath "MACHINE/WEBROOT/APPHOST" -Filter $filtro -Name "." -AtElement @{name = $k } -ErrorAction SilentlyContinue
+    Remove-WebConfigurationProperty -PSPath "MACHINE/WEBROOT/APPHOST" -Filter $filtro -Name "." -AtElement @{name = $k } -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
     Add-WebConfigurationProperty -PSPath "MACHINE/WEBROOT/APPHOST" -Filter $filtro -Name "." -Value @{name = $k; value = $variables[$k] }
 }
 Write-Host "  variables del pool: $($variables.Keys -join ', ')"
