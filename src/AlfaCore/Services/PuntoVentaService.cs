@@ -828,6 +828,92 @@ public sealed class PuntoVentaService(
             };
         }, "No se pudo registrar la venta y su cobranza en el punto de venta.", ct);
 
+    public async Task ActualizarNotaPedidoAsync(PuntoVentaSaleRequestDto request, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync<int>(ModuleName, "ActualizarNotaPedido", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdNotaPedidoEdicion is not > 0)
+                throw new InvalidOperationException("No se indicó la nota de pedido que se desea modificar.");
+
+            var items = request.Items
+                .Where(x => !string.IsNullOrWhiteSpace(x.IdArticulo) && x.Cantidad != 0)
+                .ToList();
+            if (items.Count == 0)
+                throw new InvalidOperationException("La nota de pedido debe conservar al menos un artículo.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+
+            var cabecera = await cn.QuerySingleOrDefaultAsync<(int Id, string Comprobante, bool Anulada, bool Finalizada, bool Bloqueada)>(new CommandDefinition("""
+                SELECT TOP (1) ID, LTRIM(RTRIM(IDCOMPROBANTE)) AS Comprobante,
+                    CONVERT(bit, ISNULL(ANULADA, 0)) AS Anulada,
+                    CONVERT(bit, ISNULL(FINALIZADA, 0)) AS Finalizada,
+                    CONVERT(bit, ISNULL(BLOQUEADA, 0)) AS Bloqueada
+                FROM dbo.V_MV_CPTE
+                WHERE ID = @Id AND LTRIM(RTRIM(TC)) = 'NP';
+                """, new { Id = request.IdNotaPedidoEdicion }, tx, cancellationToken: token));
+            if (string.IsNullOrWhiteSpace(cabecera.Comprobante))
+                throw new InvalidOperationException("No se encontró la nota de pedido seleccionada.");
+            if (cabecera.Anulada || cabecera.Finalizada || cabecera.Bloqueada)
+                throw new InvalidOperationException("La nota de pedido está anulada, finalizada o bloqueada y no puede modificarse.");
+
+            var preparada = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                SELECT COUNT(1) FROM dbo.MV_PREPARACION_DETALLES
+                WHERE LTRIM(RTRIM(TC)) = 'NP' AND LTRIM(RTRIM(IDCOMPROBANTE)) = @Comprobante;
+                """, new { cabecera.Comprobante }, tx, cancellationToken: token));
+            if (preparada > 0)
+                throw new InvalidOperationException("La nota de pedido ya está en preparación y no puede modificarse.");
+
+            var procesada = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                SELECT COUNT(1) FROM dbo.MV_APLICACION
+                WHERE LTRIM(RTRIM(TCO_ORIGEN)) = 'NP'
+                  AND LTRIM(RTRIM(IDCOMPROBANTE_ORIGEN)) = @Comprobante;
+                """, new { cabecera.Comprobante }, tx, cancellationToken: token));
+            if (procesada > 0)
+                throw new InvalidOperationException("La nota de pedido ya fue procesada en otro comprobante y no puede modificarse.");
+
+            var total = decimal.Round(items.Sum(x => x.Subtotal), 2, MidpointRounding.AwayFromZero);
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.V_MV_CPTE
+                   SET NOMBRE = NULLIF(@Nombre, ''), TELEFONO = NULLIF(@Telefono, ''),
+                       DOCUMENTONUMERO = NULLIF(@Documento, ''),
+                       DOMICILIO = CASE WHEN @EsDomicilio = 1 THEN NULLIF(@Domicilio, '') ELSE DOMICILIO END,
+                       LOCALIDAD = CASE WHEN @EsDomicilio = 1 THEN NULLIF(@Localidad, '') ELSE LOCALIDAD END,
+                       FECHAENTREGA = @FechaEntrega, OBSERVACIONES = NULLIF(@Observaciones, ''),
+                       IMPORTE = @Importe, IMPORTE_S_IVA = @Importe
+                 WHERE ID = @Id AND LTRIM(RTRIM(TC)) = 'NP';
+                """, new
+            {
+                Id = cabecera.Id,
+                Nombre = request.NombreContacto.Trim(),
+                Telefono = request.TelefonoContacto.Trim(),
+                Documento = request.DocumentoContacto.Trim(),
+                EsDomicilio = request.EsEntregaADomicilio,
+                Domicilio = request.DomicilioEntrega.Trim(),
+                Localidad = request.LocalidadEntrega.Trim(),
+                FechaEntrega = request.FechaEntrega,
+                Observaciones = request.Observaciones.Trim(),
+                Importe = total
+            }, tx, cancellationToken: token));
+
+            // Equivalente al modo legacy ModificacionPedidos: se reemplazan los
+            // renglones del mismo comprobante y se conserva su identidad.
+            await cn.ExecuteAsync(new CommandDefinition("""
+                DELETE FROM dbo.V_MV_CPTEINSUMOS
+                WHERE LTRIM(RTRIM(TC)) = 'NP' AND LTRIM(RTRIM(IDCOMPROBANTE)) = @Comprobante
+                  AND ISNULL(IDCOMPLEMENTO, 0) = 0;
+                """, new { cabecera.Comprobante }, tx, cancellationToken: token));
+
+            foreach (var item in items)
+                await AddReceiptItemAsync(cn, cabecera.Id, item, token, tx);
+
+            await tx.CommitAsync(token);
+            return 0;
+        }, "No se pudo modificar la nota de pedido.", ct);
+    }
+
     public Task<ArcaCaeIntentoDto> RetryCaeAsync(int idComprobante, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "RetryCae", async token =>
         {
@@ -2230,7 +2316,7 @@ public sealed class PuntoVentaService(
             $"La base activa no tiene los procedimientos del POS requeridos: {string.Join(", ", missing)}. Aplicá los updates SQL del punto de venta antes de cobrar.");
     }
 
-    private async Task AddReceiptItemAsync(SqlConnection cn, int idComprobante, PuntoVentaCartItemDto item, CancellationToken ct)
+    private async Task AddReceiptItemAsync(SqlConnection cn, int idComprobante, PuntoVentaCartItemDto item, CancellationToken ct, SqlTransaction? tx = null)
     {
         // sp_web_CpteInsumos no valida que el artículo exista: con un código inexistente el INSERT
         // falla por DESCRIPCION NULL y su CATCH hace ROLLBACK dos veces, tapando la causa real con
@@ -2239,6 +2325,7 @@ public sealed class PuntoVentaService(
             "SELECT TOP 1 1 FROM dbo.V_MA_ARTICULOS WHERE LTRIM(IDARTICULO) = LTRIM(dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@Codigo)), 25))",
             cn) { CommandTimeout = SaleCommandTimeoutSeconds })
         {
+            existe.Transaction = tx;
             existe.Parameters.AddWithValue("@Codigo", item.IdArticulo ?? string.Empty);
             if (await existe.ExecuteScalarAsync(ct) is null)
                 throw new InvalidOperationException(
@@ -2248,7 +2335,8 @@ public sealed class PuntoVentaService(
         await using var cmd = new SqlCommand("dbo.sp_web_CpteInsumos", cn)
         {
             CommandType = System.Data.CommandType.StoredProcedure,
-            CommandTimeout = SaleCommandTimeoutSeconds
+            CommandTimeout = SaleCommandTimeoutSeconds,
+            Transaction = tx
         };
 
         cmd.Parameters.AddWithValue("@pIdCpte", idComprobante);
@@ -2272,12 +2360,29 @@ public sealed class PuntoVentaService(
 
         if (!string.IsNullOrWhiteSpace(item.Observaciones))
         {
-            await cn.ExecuteAsync(new CommandDefinition(
-                "UPDATE dbo.V_MV_CPTEINSUMOS SET OBSERVACIONES = @Observaciones WHERE ID = @IdLinea;",
-                new { IdLinea = ConvertToInt(idParam.Value), Observaciones = item.Observaciones.Trim() },
-                commandTimeout: SaleCommandTimeoutSeconds,
-                cancellationToken: ct));
+            var tieneObservaciones = await ExisteColumnaAsync(cn, "V_MV_CPTEINSUMOS", "OBSERVACIONES", ct, tx);
+            if (tieneObservaciones)
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.V_MV_CPTEINSUMOS SET OBSERVACIONES = @Observaciones WHERE ID = @IdLinea;",
+                    new { IdLinea = ConvertToInt(idParam.Value), Observaciones = item.Observaciones.Trim() },
+                    tx,
+                    commandTimeout: SaleCommandTimeoutSeconds,
+                    cancellationToken: ct));
         }
+    }
+
+    private static async Task<bool> ExisteColumnaAsync(
+        SqlConnection cn,
+        string objeto,
+        string columna,
+        CancellationToken ct,
+        SqlTransaction? tx = null)
+    {
+        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT CASE WHEN COL_LENGTH(@Objeto, @Columna) IS NULL THEN 0 ELSE 1 END;",
+            new { Objeto = $"dbo.{objeto}", Columna = columna },
+            tx,
+            cancellationToken: ct)) == 1;
     }
 
     private async Task AddReceiptSurchargeObservationAsync(

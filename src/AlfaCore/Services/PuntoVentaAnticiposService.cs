@@ -168,6 +168,22 @@ public sealed class PuntoVentaAnticiposService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
+    private static async Task<bool> ExisteColumnaAsync(
+        SqlConnection cn,
+        string objeto,
+        string columna,
+        CancellationToken ct)
+    {
+        const string sql = """
+            SELECT CASE WHEN COL_LENGTH(@Objeto, @Columna) IS NULL THEN 0 ELSE 1 END;
+            """;
+
+        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            sql,
+            new { Objeto = $"dbo.{objeto}", Columna = columna },
+            cancellationToken: ct)) == 1;
+    }
+
     public Task<PuntoVentaNpAnticiposDto?> GetNotaPedidoAsync(string idComprobante, string? cuenta = null, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetNotaPedido", async token =>
         {
@@ -179,7 +195,32 @@ public sealed class PuntoVentaAnticiposService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            const string cabeceraSql = """
+            // Algunas instalaciones legacy no exponen todavía estos campos en las
+            // tablas de movimientos. La consulta del detalle no debe fallar por una
+            // columna opcional: los anticipos se leen de V_MV_CPTE y no dependen de
+            // la información de preparación ni de la nota de una línea.
+            var tieneFechaPreparacion = await ExisteColumnaAsync(cn, "V_MV_CPTE", "FechaPreparacion", token);
+            var tieneCantidadPreparada = await ExisteColumnaAsync(cn, "V_MV_CPTEINSUMOS", "CANTIDADPREPARADA", token);
+            var tieneCantidadEntregada = await ExisteColumnaAsync(cn, "V_MV_CPTEINSUMOS", "EntregadoMostrador", token);
+            var tienePresentacion = await ExisteColumnaAsync(cn, "V_MV_CPTEINSUMOS", "PRESENTACION", token);
+            var tieneObservacionesLinea = await ExisteColumnaAsync(cn, "V_MV_CPTEINSUMOS", "OBSERVACIONES", token);
+            var fechaPreparacionSql = tieneFechaPreparacion
+                ? "c.FECHAPREPARACION"
+                : "CONVERT(datetime, NULL)";
+            var observacionesLineaSql = tieneObservacionesLinea
+                ? "LTRIM(RTRIM(ISNULL(i.OBSERVACIONES, '')))"
+                : "CONVERT(nvarchar(4000), N'')";
+            var cantidadPreparadaSql = tieneCantidadPreparada
+                ? "CONVERT(decimal(18,4), ISNULL(i.CANTIDADPREPARADA, 0))"
+                : "CONVERT(decimal(18,4), 0)";
+            var cantidadEntregadaSql = tieneCantidadEntregada
+                ? "CONVERT(decimal(18,4), ISNULL(i.EntregadoMostrador, 0))"
+                : "CONVERT(decimal(18,4), 0)";
+            var presentacionSql = tienePresentacion
+                ? "LTRIM(RTRIM(ISNULL(i.PRESENTACION, '')))"
+                : "CONVERT(nvarchar(50), N'')";
+
+            var cabeceraSql = $"""
                 SELECT TOP (1)
                     c.ID,
                     CONVERT(int, ISNULL(c.IDCOMPLEMENTO, 0)) AS IdComplemento,
@@ -193,7 +234,7 @@ public sealed class PuntoVentaAnticiposService(
                                  CONVERT(nvarchar(max), ISNULL(c.COMENTARIOS, N'')))))) AS Observaciones,
                     c.FECHA AS Fecha,
                     c.FECHAENTREGA AS FechaEntrega,
-                    c.FECHAPREPARACION AS FechaPreparacion,
+                    {fechaPreparacionSql} AS FechaPreparacion,
                     CONVERT(decimal(18,2), ISNULL(c.IMPORTE, 0)) AS ImporteComercial,
                     CONVERT(bit, ISNULL(c.ANULADA, 0)) AS Anulada,
                     CONVERT(bit, ISNULL(c.BLOQUEADA, 0)) AS Bloqueada,
@@ -213,7 +254,7 @@ public sealed class PuntoVentaAnticiposService(
             if (cabecera is null)
                 return null;
 
-            var items = (await cn.QueryAsync<PuntoVentaNpItemDto>(new CommandDefinition("""
+            var items = (await cn.QueryAsync<PuntoVentaNpItemDto>(new CommandDefinition($"""
                 SELECT
                     i.ID AS LineaId,
                     LTRIM(RTRIM(ISNULL(i.IDARTICULO, ''))) AS IdArticulo,
@@ -221,10 +262,10 @@ public sealed class PuntoVentaAnticiposService(
                     CONVERT(decimal(18,4), ISNULL(i.CANTIDAD, 0)) AS Cantidad,
                     CONVERT(decimal(18,2), ISNULL(i.IMPORTE_UD, i.COSTO)) AS Precio,
                     CONVERT(decimal(18,2), ISNULL(i.TOTAL, i.IMPORTE)) AS Importe,
-                    CONVERT(decimal(18,4), ISNULL(i.CANTIDADPREPARADA, 0)) AS CantidadPreparada,
-                    CONVERT(decimal(18,4), ISNULL(i.EntregadoMostrador, 0)) AS CantidadEntregada,
-                    LTRIM(RTRIM(ISNULL(i.PRESENTACION, ''))) AS Presentacion,
-                    LTRIM(RTRIM(ISNULL(i.OBSERVACIONES, ''))) AS Observaciones
+                    {cantidadPreparadaSql} AS CantidadPreparada,
+                    {cantidadEntregadaSql} AS CantidadEntregada,
+                    {presentacionSql} AS Presentacion,
+                    {observacionesLineaSql} AS Observaciones
                 FROM dbo.V_MV_CPTEINSUMOS i
                 WHERE LTRIM(RTRIM(i.TC)) = 'NP'
                   AND LTRIM(RTRIM(i.IDCOMPROBANTE)) = @Comprobante
@@ -423,6 +464,11 @@ public sealed class PuntoVentaAnticiposService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            var tieneObservacionesLinea = await ExisteColumnaAsync(cn, "V_MV_CPTEINSUMOS", "OBSERVACIONES", token);
+            var observacionesLineaSql = tieneObservacionesLinea
+                ? "LTRIM(RTRIM(ISNULL(i.OBSERVACIONES, N'')))"
+                : "CONVERT(nvarchar(4000), N'')";
+
             const string cabeceraSql = """
                 SELECT TOP (1)
                     c.ID,
@@ -448,7 +494,7 @@ public sealed class PuntoVentaAnticiposService(
             if (cabecera is null)
                 return null;
 
-            var items = (await cn.QueryAsync<PuntoVentaNpItemDto>(new CommandDefinition("""
+            var items = (await cn.QueryAsync<PuntoVentaNpItemDto>(new CommandDefinition($"""
                 SELECT
                     i.ID AS LineaId,
                     LTRIM(RTRIM(ISNULL(i.IDARTICULO, ''))) AS IdArticulo,
@@ -459,7 +505,7 @@ public sealed class PuntoVentaAnticiposService(
                     CONVERT(decimal(18,2), ISNULL(i.TOTAL, i.IMPORTE)) AS Importe,
                     CONVERT(decimal(18,4), 0) AS CantidadEntregada,
                     CONVERT(nvarchar(100), N'') AS Presentacion,
-                    LTRIM(RTRIM(ISNULL(i.OBSERVACIONES, N''))) AS Observaciones
+                    {observacionesLineaSql} AS Observaciones
                 FROM dbo.V_MV_CPTEINSUMOS i
                 WHERE LTRIM(RTRIM(i.TC)) = 'NP'
                   AND LTRIM(RTRIM(i.IDCOMPROBANTE)) = @Comprobante
