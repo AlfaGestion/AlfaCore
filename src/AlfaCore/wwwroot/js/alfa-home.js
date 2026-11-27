@@ -31,6 +31,16 @@
         panel.style.top = top + 'px';
         panel.style.left = left + 'px';
         panel.style.transform = 'translateX(-50%)';
+
+        // Si un contenedor del shell tiene transform/filter/contain, "fixed" se mide contra ese
+        // contenedor y no contra la ventana: se compensa con la diferencia real medida.
+        var real = panel.getBoundingClientRect();
+        var dx = (left - ancho / 2) - real.left;
+        var dy = top - real.top;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            panel.style.left = (left + dx) + 'px';
+            panel.style.top = (top + dy) + 'px';
+        }
         panel.style.visibility = 'visible';
     }
 
