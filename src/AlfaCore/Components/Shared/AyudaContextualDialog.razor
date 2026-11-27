@@ -8,7 +8,7 @@
                 <div class="ayuda-contextual__barra">
                     <AlfaSelect Label="Manual" Value="@manual.Tema.Clave" ValueChanged="CambiarTema" Options="@Temas" Class="ayuda-contextual__manual" />
                     <div class="ayuda-contextual__modos" role="tablist" aria-label="Modo de la ayuda">
-                        <button type="button" role="tab" aria-selected="@(!_chat ? "true" : "false")" class="ayuda-contextual__modo @(!_chat ? "is-activo" : string.Empty)" @onclick="()=>_chat=false">
+                        <button type="button" role="tab" aria-selected="@(!_chat ? "true" : "false")" class="ayuda-contextual__modo @(!_chat ? "is-activo" : string.Empty)" @onclick="VolverAGuias">
                             <i class="bi bi-journal-text" aria-hidden="true"></i> Guías
                         </button>
                         <button type="button" role="tab" aria-selected="@(_chat ? "true" : "false")" class="ayuda-contextual__modo @(_chat ? "is-activo" : string.Empty)" @onclick="AbrirChat">
@@ -19,7 +19,7 @@
                 @if (Open && _chatIniciado)
                 {
                     <div class="ayuda-contextual__chat" hidden="@(!_chat)">
-                        <AyudaChatPanel Tema="@manual.Tema.Clave" OnFuente="AbrirFuente" />
+                        <AyudaChatPanel Tema="@manual.Tema.Clave" OnFuente="AbrirFuente" PreguntaInicial="@_preguntaParaChat" />
                     </div>
                 }
                 @if (!_chat)
@@ -28,7 +28,7 @@
                    el campo sólo se vacía al cambiar de manual, recreándolo con @key. *@
                 <div class="ayuda-contextual__buscador">
                     <i class="bi bi-search" aria-hidden="true"></i>
-                    <input id="ayuda-buscar" @key="_versionBuscador" type="search" maxlength="200" aria-label="Buscar en toda la ayuda"
+                    <input id="ayuda-buscar" @key="_versionBuscador" value="@_buscarInicial" type="search" maxlength="200" aria-label="Buscar en toda la ayuda"
                            placeholder="Buscá en toda la ayuda: facturar, dar de alta un cliente, cerrar la caja…"
                            @oninput="AlEscribir" />
                 </div>
@@ -118,6 +118,7 @@
         _esperaBusqueda?.Cancel();
         var espera=_esperaBusqueda=new CancellationTokenSource();
         var texto=e.Value?.ToString() ?? "";
+        _textoEscrito=texto;
         try { await Task.Delay(250,espera.Token); }
         catch(TaskCanceledException) { return; }
         Buscar(texto);
@@ -136,10 +137,15 @@
     private void CambiarTema(string? tema)
     {
         _manual=AyudaManuales.Obtener(AyudaManuales.Temas.Any(t=>t.Clave==tema) ? tema! : "general");
-        _buscar="";_seleccion="";_temaSeleccion="";_completo=false;
+        _buscar="";_buscarInicial="";_textoEscrito="";_seleccion="";_temaSeleccion="";_completo=false;
         _esperaBusqueda?.Cancel();_versionBuscador++;
     }
-    private void AbrirChat() { _chatIniciado=true;_chat=true; }
+    // Lo que se escribió en el buscador pasa al campo de la IA y vuelve al buscador al regresar a Guías
+    // (2026-11-27): antes había que escribir la pregunta de nuevo. _buscarInicial sólo se aplica al recrear el
+    // campo (@key), así no pisa lo que se está escribiendo.
+    private string _buscarInicial="",_preguntaParaChat="",_textoEscrito="";
+    private void AbrirChat() { _preguntaParaChat=_textoEscrito.Trim();_chatIniciado=true;_chat=true; }
+    private void VolverAGuias() { _chat=false;_buscarInicial=_textoEscrito;_versionBuscador++; }
     private void AbrirFuente(AyudaFuente fuente) { CambiarTema(fuente.Tema);Elegir(fuente.Articulo);_chat=false; }
     private void Buscar(string? texto) { _buscar=texto ?? "";_seleccion="";_temaSeleccion="";_completo=false; }
     private void Elegir(string id) { _seleccion=id;_temaSeleccion="";_completo=false; }

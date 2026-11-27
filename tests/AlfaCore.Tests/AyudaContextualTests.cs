@@ -115,6 +115,9 @@ public sealed class AyudaContextualTests
         var dialogo=File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","Shared","AyudaContextualDialog.razor"));
         Assert.Contains("@oninput=\"AlEscribir\"",dialogo,StringComparison.Ordinal);
         Assert.DoesNotContain("Value=\"@_buscar\"",dialogo,StringComparison.Ordinal);
+        // Lo escrito en el buscador pasa a "Preguntar a IA" y vuelve al regresar a Guías (2026-11-27).
+        Assert.Contains("PreguntaInicial=\"@_preguntaParaChat\"",dialogo,StringComparison.Ordinal);
+        Assert.Contains("_buscarInicial=_textoEscrito",dialogo,StringComparison.Ordinal);
         // Seleccionar texto y soltar el mouse fuera de una ventana no la cierra (todas las ventanas).
         Assert.Contains("alfa-seleccion-sin-cerrar.js",File.ReadAllText(Path.Combine(RepoRoot(),"src","AlfaCore","Components","App.razor")),StringComparison.Ordinal);
     }
