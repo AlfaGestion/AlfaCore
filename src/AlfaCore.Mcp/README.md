@@ -110,6 +110,11 @@ OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_IN
 | `clientes_top(desde, hasta, top, articulo)` | mejores clientes (opcional: de un artículo); nombre del maestro y aviso si el código junta varios compradores (Consumidor Final) |
 | `deuda_clientes(minimo, top)` | saldos deudores, vencido y vencido a más de 90 días |
 | `stock_critico(top)` | artículos en o bajo su punto de pedido |
+| `buscar_proveedores(texto, top)` | código exacto de un proveedor (requiere script 013) |
+| `compras_resumen(desde, hasta, agrupar_por: mes\|dia\|proveedor\|tipo\|comprobante, proveedor)` | libro de IVA compras + proformas: neto, IVA, percepciones, total |
+| `deuda_proveedores(minimo, top)` | a quién le debemos: facturas impagas, créditos a favor, deuda neta, vencido |
+| `ficha_proveedor(proveedor)` | datos, deuda, compras 12 meses y comprobantes abiertos |
+| `compras_articulo(articulo, desde, hasta, top)` | historial de compras de un artículo: proveedor, costo unitario, último costo, promedio ponderado |
 | `describir_esquema()` | vistas y columnas de `dir` (llamarla antes de `consultar_sql`) |
 | `consultar_sql(sql, max_filas)` | SELECT libre, una sentencia, solo `dir.*`, con tope de filas |
 

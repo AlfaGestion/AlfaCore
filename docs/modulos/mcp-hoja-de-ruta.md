@@ -23,7 +23,8 @@ Consumidor Final no lo encuentra por su nombre.
 
 Falta, en orden de valor (todo requiere vistas nuevas en un script `013`, revisado y corrido por Alberto):
 
-1. **Compras y proveedores**: `dir.vw_Proveedores`, `dir.vw_Compras` y `buscar_proveedores` / `ficha_proveedor`.
+1. ~~**Compras y proveedores**~~: hecho el 27/11/2026 (script `013` + `buscar_proveedores`, `compras_resumen`, `deuda_proveedores`,
+   `ficha_proveedor`, `compras_articulo`). Fuente fiscal = libro de IVA compras, no la cabecera (ver README de `dir-mcp`).
 2. **Cuenta corriente con movimientos** (no solo lo abierto) de clientes y luego de proveedores.
 3. **Libros de IVA** ventas/compras y comparación mensual (se alinea con el control fiscal del Director IA).
 4. **Cheques**: cartera de terceros y propios emitidos.

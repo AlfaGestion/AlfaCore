@@ -221,4 +221,69 @@ public class HerramientasIntegracionTests
 
         await Assert.ThrowsAsync<McpException>(() => f.BuscarArticulos("x"));
     }
+
+    // ---- Compras y proveedores: requieren el script 013_vistas_compras.sql aplicado en la base de prueba ----
+
+    private static ComprasTools CrearCompras()
+    {
+        var cs = Environment.GetEnvironmentVariable(FactIntegracionAttribute.Variable)!;
+        var cfg = new McpRuntimeSettings(true, 500, 100, 120, true, true, true, 5m);
+        var runner = new ToolRunner(new ConfigFija(cfg), new AuditoriaMemoria(), new UsuarioFijoContext("test"), NullLogger<ToolRunner>.Instance);
+        return new ComprasTools(runner, new SqlExecutor(new ConexionUnicaResolver(cs)));
+    }
+
+    [FactIntegracion]
+    public async Task compras_resumen_las_filas_suman_el_total_en_cada_agrupacion()
+    {
+        var c = CrearCompras();
+        foreach (var g in new[] { "mes", "proveedor", "tipo" })
+        {
+            var r = await c.ComprasResumen("2026-10-01", "2026-10-31", g);
+            Assert.True(Num(r.Totales!["Total"]) > 0);
+            if (!r.Truncado)
+            {
+                Assert.Equal(Num(r.Totales["Total"]), r.Filas.Sum(f => Num(f["Total"])));
+                Assert.Equal(Num(r.Totales["Iva"]), r.Filas.Sum(f => Num(f["Iva"])));
+            }
+        }
+    }
+
+    [FactIntegracion]
+    public async Task deuda_y_ficha_de_proveedor_cuadran_entre_si()
+    {
+        var c = CrearCompras();
+        var deuda = await c.DeudaProveedores(null, 1);
+        var codigo = (string)deuda.Filas[0]["ProveedorCodigo"]!;
+
+        var exacto = await c.BuscarProveedores(codigo);
+        Assert.Equal(codigo, exacto.Filas[0]["ProveedorCodigo"]);
+
+        var ficha = await c.FichaProveedor(codigo);
+        Assert.Equal(Num(deuda.Filas[0]["DeudaNeta"]), Num(ficha.Totales!["DeudaNeta"]));
+        if (!ficha.Truncado) Assert.Equal(Num(ficha.Totales["DeudaNeta"]), ficha.Filas.Sum(f => Num(f["Saldo"])));
+        Assert.Equal(Num(deuda.Totales!["DeudaNetaTotal"]), Num(deuda.Totales["FacturasImpagas"]) + Num(deuda.Totales["CreditosAFavor"]));
+
+        // compras_resumen filtrado por ese proveedor = sus compras de los ultimos 12 meses en la ficha
+        var desde = DateTime.Today.AddMonths(-12).ToString("yyyy-MM-dd");
+        var suyo = await c.ComprasResumen(desde, DateTime.Today.ToString("yyyy-MM-dd"), "mes", codigo);
+        Assert.Equal(Num(ficha.Totales["Compras12Meses"]), Num(suyo.Totales!["Total"]));
+    }
+
+    [FactIntegracion]
+    public async Task compras_articulo_devuelve_el_historial_mas_reciente_primero()
+    {
+        var c = CrearCompras();
+        var f = CrearFichas();
+        // Un articulo comprado: el de la primera linea de la ultima compra con articulos.
+        var cs = Environment.GetEnvironmentVariable(FactIntegracionAttribute.Variable)!;
+        var cfg = new McpRuntimeSettings(true, 500, 100, 120, true, true, true, 5m);
+        var art = (await new SqlExecutor(new ConexionUnicaResolver(cs)).QueryAsync(cfg,
+            "SELECT TOP 1 ArticuloCodigo FROM dir.vw_ComprasDetalle WHERE Cantidad > 0 AND Fecha >= '2026-10-01' ORDER BY Fecha DESC", null, default)).Filas[0]["ArticuloCodigo"]!.ToString()!;
+
+        var r = await c.ComprasArticulo(art, "2026-01-01", "2026-11-30", 5);
+        Assert.NotEmpty(r.Filas);
+        Assert.True(string.CompareOrdinal((string)r.Filas[0]["Fecha"]!, (string)r.Filas[^1]["Fecha"]!) >= 0);
+        Assert.NotNull(r.Totales!["UltimoCosto"]);
+        Assert.Equal(art, (await f.FichaArticulo(art)).Totales!["ArticuloCodigo"]);
+    }
 }

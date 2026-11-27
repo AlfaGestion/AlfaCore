@@ -13,6 +13,7 @@ Capa semantica para consultar la base en lenguaje natural desde Claude / ChatGPT
 | 10 | `010_oauth_tablas.sql` | tablas del servidor OAuth: `MCP_USUARIO`, `MCP_CLIENTE_OAUTH`, `MCP_CODIGO`, `MCP_REFRESH_TOKEN`, `MCP_EVENTO` (en la base del almacén, p. ej. `ALFA_CENTRAL`) | db_owner |
 | 11 | `011_oauth_login_almacen.sql` | login **distinto** (`mcp_auth_rw`) con permisos solo sobre las tablas `MCP_*` (Modo SQLCMD) | sysadmin / securityadmin |
 | 12 | `012_config_oauth.sql` | claves `IA_MCP_OAUTH_*` y la lista blanca de redirects (en la base de **datos**) | db_owner |
+| 13 | `013_vistas_compras.sql` | `dir.vw_Proveedores`, `vw_Compras`, `vw_ComprasDetalle`, `vw_CuentaCorrienteProveedores` + clave `IA_MCP_TC_PROFORMA_COMPRAS` (no pisa) | db_owner |
 | 99 | `099_verificacion.sql` | calidad de datos, cuadre contra el libro y prueba de permisos | el login de 5 |
 
 Todos son idempotentes. UTF-8 sin BOM: correrlos con `sqlcmd -f i:65001`. Los scripts 10-12 son de la etapa 5 (OAuth); ver [README del servidor](../../../../src/AlfaCore.Mcp/README.md).
@@ -42,6 +43,14 @@ La contrasena **no esta en ningun script**: se pasa por `-v` y despues va a la v
 - **Cuenta corriente**: fuente oficial `VE_CPTES_SALDOS_VENTAS` (creditos pendientes con signo negativo).
 - **Stock**: `V_MV_Stock.Cantidad` (con signo, unidad base). `CantidadUD` NO sirve para stock. `PuntoPedido` es por articulo:
   para stock critico sumar `Stock` de todos los depositos.
+
+- **Compra** = comprobante del libro de IVA compras (`MV_ASIENTOS.LIVA_TIPO='COMPRAS'`, una fila por comprobante, importes `LIVA_*`
+  ya con signo) + proformas de compra de la cabecera (`IA_MCP_TC_PROFORMA_COMPRAS`, hoy `FPC,NCCP`). Cuadra mes a mes al centavo
+  con `Libro_ComprasConFP` (2026). La cabecera `C_MV_Cpte` NO sirve como fuente fiscal: su neto difiere del libro en algunos meses
+  y 280 de 1998 comprobantes de 2026 no tienen cabecera (liquidaciones de tarjeta `LT`, gastos bancarios `GB`).
+- **Neto de linea de compra** = `CANTIDAD * IMPORTE_S_IVA * (1 - PorcDto/100)`; cuadra con `C_MV_Cpte.ImporteInsumos`.
+- **Saldos con proveedores**: `CO_CPTES_SALDOS` (facturas) + `CO_CPTES_CREDITOS_PENDIENTES` (pagos a cuenta y NC sin aplicar,
+  en negativo). En la base de pruebas los creditos suman 46,8 M: sin restarlos la deuda queda inflada.
 
 ## Trampas conocidas
 

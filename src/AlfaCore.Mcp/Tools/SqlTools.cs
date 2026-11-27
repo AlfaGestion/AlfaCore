@@ -24,7 +24,9 @@ public sealed class SqlTools(ToolRunner runner, SqlExecutor ejecutor)
             var r = new ToolResponse
             {
                 Criterio = "Una fila por vista. dir.vw_Ventas = una fila por línea vendida, con signo aplicado (NC negativas), neto sin IVA, costo y margen. " +
-                           "dir.vw_CuentaCorriente = saldos abiertos por comprobante. dir.vw_Stock = existencia por artículo y depósito."
+                           "dir.vw_CuentaCorriente = saldos abiertos por comprobante. dir.vw_Stock = existencia por artículo y depósito. " +
+                           "dir.vw_Compras = una fila por comprobante del libro de IVA compras (+ proformas), con signo. dir.vw_ComprasDetalle = líneas de artículos de esas compras. " +
+                           "dir.vw_CuentaCorrienteProveedores = saldos abiertos con proveedores (Saldo < 0 = crédito a favor)."
             };
             foreach (var g in res.Filas.GroupBy(f => (string)f["Vista"]!))
                 r.Filas.Add(new Dictionary<string, object?>
@@ -36,7 +38,7 @@ public sealed class SqlTools(ToolRunner runner, SqlExecutor ejecutor)
         }, ct);
 
     [McpServerTool(Name = "consultar_sql", Title = "Consulta SQL de solo lectura", ReadOnly = true, Idempotent = true)]
-    [Description("Ejecuta una consulta SELECT de T-SQL propia SOLO sobre las vistas del esquema dir (dir.vw_Ventas, dir.vw_Articulos, dir.vw_Clientes, dir.vw_CuentaCorriente, dir.vw_Stock). " +
+    [Description("Ejecuta una consulta SELECT de T-SQL propia SOLO sobre las vistas del esquema dir (dir.vw_Ventas, dir.vw_Articulos, dir.vw_Clientes, dir.vw_CuentaCorriente, dir.vw_Stock, dir.vw_Proveedores, dir.vw_Compras, dir.vw_ComprasDetalle, dir.vw_CuentaCorrienteProveedores). " +
                  "Usarla únicamente cuando ninguna otra herramienta responda la pregunta. Una sola sentencia, sin variables, sin funciones de tabla; CTEs permitidas. " +
                  "Compatible con SQL Server 2008: sin LAG/LEAD, IIF, CONCAT, FORMAT ni OFFSET/FETCH. Los literales de fecha se interpretan como AAAA-MM-DD. " +
                  "Las ventas ya vienen con signo y neto sin IVA en dir.vw_Ventas (columnas NetoSinIva, CostoTotal, Margen): sumarlas sin volver a aplicar signo. " +

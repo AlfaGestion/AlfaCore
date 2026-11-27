@@ -55,6 +55,13 @@ public sealed class ToolRunner(IMcpConfigProvider config, IAuditLog audit, IMcpU
             error = "Cancelada por el cliente.";
             throw;
         }
+        catch (SqlException ex) when (ex.Number == 208)
+        {
+            // Objeto inexistente: casi siempre una vista dir.* de un script que todavia no se corrio en esta base.
+            error = "Objeto inexistente: " + ex.Message;
+            throw new McpException("Falta una vista del esquema dir en esta base (hay un script de docs/base-datos/sql-referencia/dir-mcp sin correr). " +
+                                   "Avisar al administrador; las demás herramientas siguen funcionando.");
+        }
         catch (SqlException ex) when (ex.Number == -2)
         {
             error = "Timeout: " + ex.Message;
