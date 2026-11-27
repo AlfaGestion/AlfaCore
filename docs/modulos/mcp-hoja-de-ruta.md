@@ -3,12 +3,12 @@
 Estado y próximos pasos del servidor MCP (`src/AlfaCore.Mcp`, esquema SQL `dir`).
 Publicación: `docs/modulos/mcp-publicacion-iis.md`. Scripts: `docs/base-datos/sql-referencia/dir-mcp/`.
 
-## 1. Terminar lo encaminado (en curso)
+## 1. Publicación (hecho el 27/11/2026)
 
-1. Correr `004_config_ia_mcp.sql` (clave `IA_MCP_LECTURA_SIN_BLOQUEOS`) y `012_config_oauth.sql` en la base de datos.
-2. Probar el login local con usuario + clave + código TOTP (README de `src/AlfaCore.Mcp`, sección 3).
-3. Correr `010` y `011`, crear usuarios con `crear-usuario --qr` y publicar en el IIS de ALFACENTRAL.
-4. Conectar claude.ai y ChatGPT; confirmar la redirect URI real de ChatGPT.
+1. ~~Scripts `004`, `010`, `011`, `012`~~, ~~login local con TOTP~~, ~~sitio IIS en `https://alfacore-mcp.ddns.net/mcp`~~, ~~claude.ai conectado~~.
+2. Pendiente: conectar **ChatGPT** y confirmar su redirect URI real (paso 6 de la guía).
+3. Pendiente: pasar de la base de **pruebas** a la real cuando se valide con datos conocidos (volver a correr `instalar_mcp_iis.ps1`).
+4. Pendiente: correr `SqlAuthStoreIntegracionTests` contra el almacén real (variable `ALFACORE_MCP_TEST_AUTH_CONNECTION`).
 
 ## 2. Próxima etapa: herramientas puntuales
 

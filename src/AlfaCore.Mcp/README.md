@@ -93,7 +93,7 @@ OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_IN
 |---|---|
 | `ALFACORE_MCP_CONNECTION` o secret `ConnectionStrings:AlfaMcp` | login de **datos** (`mcp_dir_ro`) |
 | `ALFACORE_MCP_AUTH_CONNECTION` o secret `ConnectionStrings:AlfaMcpAuth` | login del **almacén OAuth** (solo tablas `MCP_*`) |
-| `Mcp__Auth__Issuer` | URL pública https de la aplicación (ej. `https://alfacentral.ddns.net:8443`) |
+| `Mcp__Auth__Issuer` | URL pública https de la aplicación (ej. `https://alfacore-mcp.ddns.net`) |
 | `Mcp__Auth__EndpointPath` | ruta del recurso MCP (por defecto `/mcp`) |
 | `Mcp__Auth__SigningKeyPath` | PEM de la clave privada de firma, **fuera** de la carpeta publicada (se crea sola si no existe) |
 | `Mcp__Auth__LimiteLoginPorMin` / `LimiteTokenPorMin` / `LimiteRegistroPorMin` | límites por IP (10 / 60 / 10) |
