@@ -97,7 +97,7 @@
 
         <form class="ayuda-chat__composer" @onsubmit="Enviar" @onsubmit:preventDefault>
             @* El texto no vuelve del servidor al campo mientras se escribe; al enviar se vacía recreándolo. *@
-            <input @key="_versionCampo" type="text" class="ayuda-chat__campo" maxlength="2000" autocomplete="off"
+            <input @key="_versionCampo" value="@_valorInicialCampo" type="text" class="ayuda-chat__campo" maxlength="2000" autocomplete="off"
                    placeholder="Preguntá cómo hacer algo en AlfaCore…" aria-label="Tu pregunta"
                    disabled="@(_ocupado || !AyudaIa.Disponible)" @oninput="e => _pregunta = e.Value?.ToString() ?? string.Empty" />
             @if (_ocupado)
@@ -120,6 +120,21 @@
 @code {
     [Parameter] public string Tema { get; set; } = "general";
     [Parameter] public EventCallback<AyudaFuente> OnFuente { get; set; }
+    /// <summary>Lo que se escribió en el buscador de Guías: queda cargado en el campo, sin enviarse (2026-11-27).</summary>
+    [Parameter] public string? PreguntaInicial { get; set; }
+
+    private string _valorInicialCampo = "", _preguntaInicialAplicada = "";
+
+    protected override void OnParametersSet()
+    {
+        var inicial = (PreguntaInicial ?? "").Trim();
+        if (inicial.Length > 0 && inicial != _preguntaInicialAplicada && !_ocupado)
+        {
+            _preguntaInicialAplicada = inicial;
+            _pregunta = inicial; _valorInicialCampo = inicial; _versionCampo++;
+            _verHistorial = false;
+        }
+    }
 
     private static readonly string[] Sugerencias =
     [
@@ -155,7 +170,7 @@
             return;
         var pregunta = texto.Trim();
         _ocupado = true; _error = null; _scrollPendiente = true; _preguntaEnCurso = pregunta;
-        _pregunta = ""; _versionCampo++;
+        _pregunta = ""; _valorInicialCampo = ""; _versionCampo++;
         using var consulta = new CancellationTokenSource(); _consulta = consulta;
         try
         {
@@ -208,7 +223,7 @@
 
     private void NuevaConversacion()
     {
-        _turnos.Clear(); _error = null; _pregunta = ""; _versionCampo++;
+        _turnos.Clear(); _error = null; _pregunta = ""; _valorInicialCampo = ""; _versionCampo++;
         _idConversacion = Guid.NewGuid(); _verHistorial = false;
     }
 

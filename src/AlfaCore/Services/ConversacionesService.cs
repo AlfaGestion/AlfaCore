@@ -9192,14 +9192,13 @@ public sealed partial class ConversacionesService(
             // Con varias conversaciones a la vez SQL Server puede elegir esta como víctima de un
             // interbloqueo (1205) y el mensaje quedaba sin respuesta (batería 4264, 2026-10-28). Se
             // reintenta: si la respuesta ya había salido, el chequeo de "ya respondido" corta el reintento.
-            async Task ResponderConReintentoAsync(string textoBot, long? automaticoYaConocido)
+            async Task<bool> ResponderConReintentoAsync(string textoBot, long? automaticoYaConocido)
             {
                 for (var intento = 1; ; intento++)
                 {
                     try
                     {
-                        await EjecutarRespuestaBotAsync(idConversacion, textoBot, config, ct, automaticoYaConocido).ConfigureAwait(false);
-                        return;
+                        return await EjecutarRespuestaBotAsync(idConversacion, textoBot, config, ct, automaticoYaConocido).ConfigureAwait(false);
                     }
                     catch (SqlException ex) when (ex.Number == 1205 && intento < 3)
                     {
@@ -9208,8 +9207,11 @@ public sealed partial class ConversacionesService(
                 }
             }
 
-            await ResponderConReintentoAsync(texto, null).ConfigureAwait(false);
-            MarcarEntranteAtendidoBot(idConversacion, ultimoAtendido);
+            // Si la respuesta se descartó porque el cliente mandó algo más (una foto) mientras se armaba, no se
+            // marca como atendido: la vuelta siguiente responde todo lo pendiente junto (2026-11-27).
+            var descartada = await ResponderConReintentoAsync(texto, null).ConfigureAwait(false);
+            if (!descartada)
+                MarcarEntranteAtendidoBot(idConversacion, ultimoAtendido);
             for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
             {
                 // La respuesta recién mandada es posterior al mensaje nuevo y lo haría figurar como
@@ -9227,14 +9229,16 @@ public sealed partial class ConversacionesService(
                     ultimo = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
                 }
 
-                var desde = ultimoAtendido;
+                // Tras una respuesta descartada, todo lo pendiente (null): el mensaje de antes más lo nuevo.
+                long? desde = descartada ? null : ultimoAtendido;
                 ultimoAtendido = ultimo;
                 var textoNuevo = (await GetTextoEntrantesSinResponderAsync(idConversacion, desde, ct).ConfigureAwait(false)).Trim();
                 if (textoNuevo.Length == 0)
                     break;
 
-                await ResponderConReintentoAsync(textoNuevo, automaticoConocido).ConfigureAwait(false);
-                MarcarEntranteAtendidoBot(idConversacion, ultimoAtendido);
+                descartada = await ResponderConReintentoAsync(textoNuevo, automaticoConocido).ConfigureAwait(false);
+                if (!descartada)
+                    MarcarEntranteAtendidoBot(idConversacion, ultimoAtendido);
             }
         }
         catch (Exception ex)
@@ -9300,6 +9304,7 @@ public sealed partial class ConversacionesService(
             ct.ThrowIfCancellationRequested();
             try
             {
+                var descartada = false;
                 if (await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
                 {
                     var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
@@ -9307,10 +9312,14 @@ public sealed partial class ConversacionesService(
                     {
                         var texto = await GetTextoEntrantesSinResponderAsync(idConversacion, null, ct).ConfigureAwait(false);
                         if (!string.IsNullOrWhiteSpace(texto))
-                            await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
+                            descartada = await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
                     }
                 }
 
+                // Si el cliente mandó algo más mientras se armaba la respuesta, queda pendiente para la próxima
+                // vuelta y se responde todo junto.
+                if (descartada)
+                    continue;
                 await MarcarBotPendienteProcesadoAsync(idPendiente, ct).ConfigureAwait(false);
                 procesados++;
             }
@@ -9674,14 +9683,20 @@ public sealed partial class ConversacionesService(
     // automática encima. La política del asistente decide qué pasa cuando la info no alcanza; si no
     // puede resolver, escala a humano. Se llama tanto al llegar el mensaje (sin espera configurada)
     // como desde el job de espera, ya con todos los chequeos de activación resueltos.
-    private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct,
+    /// <returns>true si la respuesta se descartó porque el cliente mandó algo nuevo mientras se armaba: hay que
+    /// volver a responder con todo lo pendiente junto.</returns>
+    private async Task<bool> EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct,
         long? automaticoYaConocido = null)
     {
-        await RunWithConversationAutomationLockAsync(
+        var descartadaPorMensajeNuevo = false;
+        var ejecutada = await RunWithConversationAutomationLockAsync(
             idConversacion,
             "bot-auto-reply",
             async token =>
             {
+                // Último mensaje del cliente al empezar: si llega otro mientras se arma la respuesta (una foto que
+                // sacó después de escribir, con AlfaKnowledge se tarda ~20 s), se responde todo junto una sola vez.
+                var ultimoEntranteAlEmpezar = await GetLastIncomingIdAsync(idConversacion, token).ConfigureAwait(false);
 
                 if (await UltimoEntranteEsEncuestaAsync(idConversacion, token).ConfigureAwait(false))
                     return;
@@ -10386,6 +10401,20 @@ public sealed partial class ConversacionesService(
                     return;
                 }
 
+                // "Otra vez mi computadora tiene problemas de conexión" y 17 s después la foto del error (ALFANET,
+                // 2026-11-27): el bot mandaba una pregunta y enseguida otra respuesta por la foto. Si entró algo
+                // mientras se armaba esta respuesta, no se manda: se vuelve a responder con todo junto.
+                if (await GetLastIncomingIdAsync(idConversacion, token).ConfigureAwait(false) > ultimoEntranteAlEmpezar)
+                {
+                    descartadaPorMensajeNuevo = true;
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotRespuestaRehecha", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El cliente mandó algo más mientras el asistente armaba la respuesta: se responde todo junto.",
+                        new { idConversacion, respuesta }, token).ConfigureAwait(false);
+                    return;
+                }
+
                 // No encontró respuesta: se genera un ticket con la consulta (si la conversación no tiene
                 // ya uno abierto) y el cliente recibe el número.
                 int? numeroTicketBot = null;
@@ -10463,6 +10492,9 @@ public sealed partial class ConversacionesService(
                 }
             },
             ct).ConfigureAwait(false);
+        // Si otro proceso tenía la conversación, lo pendiente lo responde ése: no se marca como atendido acá
+        // (antes se marcaba, y el que la tenía respondía sólo la foto que llegó después, perdiendo el texto).
+        return descartadaPorMensajeNuevo || !ejecutada;
     }
 
     // ===================== Mensajes programados (envío diferido) =====================
@@ -12897,7 +12929,8 @@ public sealed partial class ConversacionesService(
         return result is not null;
     }
 
-    private async Task RunWithConversationAutomationLockAsync(
+    /// <returns>false si otro proceso ya la estaba atendiendo y no se ejecutó.</returns>
+    private async Task<bool> RunWithConversationAutomationLockAsync(
         long idConversacion,
         string motivo,
         Func<CancellationToken, Task> action,
@@ -12917,12 +12950,13 @@ public sealed partial class ConversacionesService(
                 idConversacion.ToString(CultureInfo.InvariantCulture),
                 "Se omitió una automatización porque otro nodo ya la estaba procesando para esta conversación.",
                 new { idConversacion, motivo, lockResult }, ct).ConfigureAwait(false);
-            return;
+            return false;
         }
 
         try
         {
             await action(ct).ConfigureAwait(false);
+            return true;
         }
         finally
         {

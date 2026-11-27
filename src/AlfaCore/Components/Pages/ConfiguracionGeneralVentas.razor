@@ -559,6 +559,39 @@
             </div>
         }
 
+        <div class="cfgarca-row cfgarca-row--general">
+            <label class="cfgarca-field">
+                Medio de pago para QR
+                <select class="cfgarca-select" @bind="_mpMedioQr" @bind:after="SincronizarMedioTarjeta">
+                    <option value="">Seleccionar medio</option>
+                    @foreach (var medio in _mpMediosDePago)
+                    {
+                        <option value="@CodigoMedio(medio)">@medio.Descripcion (@CodigoMedio(medio))</option>
+                    }
+                </select>
+                <small class="cfgarca-hint">VB6: <code>Point_Medio_Pago_QR</code>.</small>
+            </label>
+            <label class="cfgarca-field">
+                Medio de pago para tarjeta
+                <select class="cfgarca-select" @bind="_mpMedioTarjeta" disabled="@_mpMismoMedio">
+                    <option value="">Seleccionar medio</option>
+                    @foreach (var medio in _mpMediosDePago)
+                    {
+                        <option value="@CodigoMedio(medio)">@medio.Descripcion (@CodigoMedio(medio))</option>
+                    }
+                </select>
+                <small class="cfgarca-hint">VB6: <code>Point_Medio_Pago_Tarjeta</code>.</small>
+            </label>
+        </div>
+
+        <label class="mp-auto-payment-option">
+            <input type="checkbox" checked="@_mpMismoMedio" @onchange="e => CambiarMismoMedio(Convert.ToBoolean(e.Value))" />
+            <span>
+                <strong><i class="bi bi-link-45deg"></i> Usar el mismo medio para QR y tarjeta</strong>
+                <small>Replica la opción del formulario legacy de Mercado Pago Point.</small>
+            </span>
+        </label>
+
         <label class="mp-auto-payment-option">
             <input type="checkbox" @bind="_mpObtenerMedioAutomatico" />
             <span>
@@ -985,6 +1018,12 @@
             _mpMedioTarjeta = _mpMedioQr;
     }
 
+    private void SincronizarMedioTarjeta()
+    {
+        if (_mpMismoMedio)
+            _mpMedioTarjeta = _mpMedioQr;
+    }
+
     private bool IsTerminalAsignada(string terminalId)
         => _mpPuntosVenta.FirstOrDefault(x => x.Id == _mpPuntoVentaSeleccionado)?
             .TerminalesAsignadas.Contains(terminalId, StringComparer.OrdinalIgnoreCase) == true;
@@ -1140,8 +1179,8 @@
                 ObtenerMedioPagoAutomatico = _mpObtenerMedioAutomatico,
                 ModoPrueba = _mpModoPrueba,
                 MismoMedioParaQrYTarjeta = _mpMismoMedio,
-                MedioPagoQr = _mpMediosHabilitados.FirstOrDefault() ?? _mpMedioQr,
-                MedioPagoTarjeta = _mpMediosHabilitados.FirstOrDefault() ?? _mpMedioTarjeta,
+                MedioPagoQr = string.IsNullOrWhiteSpace(_mpMedioQr) ? _mpMediosHabilitados.FirstOrDefault() ?? string.Empty : _mpMedioQr,
+                MedioPagoTarjeta = string.IsNullOrWhiteSpace(_mpMedioTarjeta) ? _mpMediosHabilitados.FirstOrDefault() ?? string.Empty : _mpMedioTarjeta,
                 MediosPagoHabilitados = _mpMediosHabilitados.ToList(),
                 PuntosVenta = _mpPuntosVenta
             });

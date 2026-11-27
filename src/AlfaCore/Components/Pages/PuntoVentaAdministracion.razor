@@ -265,6 +265,42 @@
     .pv-admin-quick-modal__quantities { display: flex; flex-wrap: wrap; gap: .45rem; margin: 1rem 0; }
     .pv-admin-quick-modal__quantity { padding: .35rem .6rem; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-muted); font-size: .82rem; }
     .pv-admin-quick-modal__actions { justify-content: flex-end; margin-top: 1rem; }
+
+    .pv-admin-receipt-preview {
+        display: grid;
+        place-items: start center;
+        max-height: 70vh;
+        overflow: auto;
+        padding: 1rem;
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--color-background) 88%, #000);
+    }
+
+    .pv-admin-receipt-paper {
+        width: min(100%, 320px);
+        min-height: 420px;
+        padding: 1.25rem 1rem;
+        background: #fff;
+        color: #151515;
+        font-family: Arial, sans-serif;
+        font-size: .78rem;
+        box-shadow: 0 12px 30px rgba(0,0,0,.3);
+    }
+
+    .pv-admin-receipt-paper.is-a4 {
+        width: min(100%, 680px);
+        min-height: 820px;
+        padding: 2rem;
+        font-size: .9rem;
+    }
+
+    .pv-admin-receipt-paper__header { padding-bottom: .7rem; border-bottom: 1px dashed #777; text-align: center; }
+    .pv-admin-receipt-paper__header strong { display: block; font-size: 1.15em; }
+    .pv-admin-receipt-paper__title { margin: .9rem 0; font-weight: 800; text-align: center; }
+    .pv-admin-receipt-paper__row { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0; }
+    .pv-admin-receipt-paper__row span:first-child { color: #555; }
+    .pv-admin-receipt-paper__total { margin-top: .6rem; padding-top: .6rem; border-top: 1px solid #222; font-weight: 800; }
+    .pv-admin-receipt-paper__footer { margin-top: 2rem; padding-top: .7rem; border-top: 1px dashed #777; text-align: center; color: #555; }
 </style>
 
 <section class="page-grid">
@@ -450,7 +486,7 @@
                                     </label>
                                 }
                             </div>
-                            @if (_catalogos.Rubros.Count > 10)
+                            @if (_catalogos.Rubros.Count > 15)
                             {
                                 <button type="button" class="pv-admin-rubros__more" @onclick="() => _mostrarTodosRubros = !_mostrarTodosRubros">
                                     @(_mostrarTodosRubros ? "Ver menos" : $"Ver todos ({_catalogos.Rubros.Count})")
@@ -481,6 +517,37 @@
                                 <i class="bi bi-pencil-square"></i> Editar importes y cantidades
                             </button>
                         }
+                    </section>
+                    <section class="field">
+                        <h4>Recibo de anticipo</h4>
+                        <small>Configuración exclusiva de este punto de venta para las señas de Notas de Pedido.</small>
+                        <label class="field pv-admin-quick-mode">
+                            <span>Impresión del recibo</span>
+                            <select @bind="_puntoVentaForm.ModalidadReciboAnticipo">
+                                <option value="NO">No imprimir</option>
+                                <option value="PREGUNTAR">Preguntar al vendedor</option>
+                                <option value="AUTOMATICO">Imprimir automáticamente</option>
+                            </select>
+                        </label>
+                        <label class="field pv-admin-quick-mode">
+                            <span>Formato</span>
+                            <select @bind="_puntoVentaForm.FormatoReciboAnticipo">
+                                <option value="TICKET80">Ticket térmico 80 mm</option>
+                                <option value="A4">A4</option>
+                            </select>
+                        </label>
+                        <button type="button" class="pv-admin-quick-edit" @onclick="AbrirVistaPreviaRecibo">
+                            <i class="bi bi-eye"></i> Vista previa
+                        </button>
+                        <div class="pv-admin-rubros">
+                            <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraEmpresa" /> Empresa y sucursal</label>
+                            <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraPedido" /> Pedido y cobranza</label>
+                            <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraCliente" /> Cliente</label>
+                            <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraImportes" /> Total, seña y saldo</label>
+                            <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraMediosPago" /> Medios de pago</label>
+                            <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraEntrega" /> Fecha de entrega</label>
+                            <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraUsuario" /> Usuario</label>
+                        </div>
                     </section>
                     <label class="carga-viajes-check">
                         <input class="carga-viajes-check__input" type="checkbox" checked="@_puntoVentaForm.Activo" @onchange="args => _puntoVentaForm.Activo = args.Value is bool flag && flag" />
@@ -530,6 +597,66 @@
                 <footer class="pv-admin-quick-modal__actions">
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditorIngresoRapido">Cancelar</button>
                     <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarEditorIngresoRapido">Aplicar</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (_showReciboAnticipoPreview)
+    {
+        <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="recibo-anticipo-preview-title">
+            <section class="pv-admin-quick-modal__card pv-admin-catalog-modal__card">
+                <header class="pv-admin-quick-modal__header">
+                    <div>
+                        <h3 id="recibo-anticipo-preview-title">Vista previa del recibo</h3>
+                        <small>@(_puntoVentaForm.FormatoReciboAnticipo == PuntoVentaReciboAnticipoFormatoKeys.A4 ? "Formato A4" : "Ticket térmico 80 mm") · Datos ilustrativos</small>
+                    </div>
+                    <button type="button" class="pv-admin-quick-modal__close" @onclick="CerrarVistaPreviaRecibo" aria-label="Cerrar">×</button>
+                </header>
+
+                <div class="pv-admin-receipt-preview">
+                    <article class="pv-admin-receipt-paper @(_puntoVentaForm.FormatoReciboAnticipo == PuntoVentaReciboAnticipoFormatoKeys.A4 ? "is-a4" : string.Empty)">
+                        @if (_puntoVentaForm.ReciboAnticipoMuestraEmpresa)
+                        {
+                            <div class="pv-admin-receipt-paper__header">
+                                <strong>LA NUEVA</strong>
+                                <span>@(_puntoVentaForm.Nombre.Length > 0 ? _puntoVentaForm.Nombre : "Punto de venta")</span>
+                                <span>Sucursal 0001</span>
+                            </div>
+                        }
+                        <div class="pv-admin-receipt-paper__title">RECIBO DE ANTICIPO</div>
+                        @if (_puntoVentaForm.ReciboAnticipoMuestraPedido)
+                        {
+                            <div class="pv-admin-receipt-paper__row"><span>Pedido</span><strong>NP 0000000001X</strong></div>
+                            <div class="pv-admin-receipt-paper__row"><span>Cobranza</span><strong>CBCT 0000000001X</strong></div>
+                        }
+                        @if (_puntoVentaForm.ReciboAnticipoMuestraCliente)
+                        {
+                            <div class="pv-admin-receipt-paper__row"><span>Cliente</span><strong>Cliente de ejemplo</strong></div>
+                        }
+                        @if (_puntoVentaForm.ReciboAnticipoMuestraImportes)
+                        {
+                            <div class="pv-admin-receipt-paper__row"><span>Total del pedido</span><strong>$ 50.000,00</strong></div>
+                            <div class="pv-admin-receipt-paper__row"><span>Anticipo recibido</span><strong>$ 20.000,00</strong></div>
+                            <div class="pv-admin-receipt-paper__row"><span>Saldo pendiente</span><strong>$ 30.000,00</strong></div>
+                        }
+                        @if (_puntoVentaForm.ReciboAnticipoMuestraMediosPago)
+                        {
+                            <div class="pv-admin-receipt-paper__row"><span>Medio de pago</span><strong>Efectivo</strong></div>
+                        }
+                        @if (_puntoVentaForm.ReciboAnticipoMuestraEntrega)
+                        {
+                            <div class="pv-admin-receipt-paper__row"><span>Entrega</span><strong>28/11/2026 - 17:00</strong></div>
+                        }
+                        @if (_puntoVentaForm.ReciboAnticipoMuestraUsuario)
+                        {
+                            <div class="pv-admin-receipt-paper__row"><span>Usuario</span><strong>Vendedor</strong></div>
+                        }
+                        <div class="pv-admin-receipt-paper__footer">Datos de muestra · No es un comprobante fiscal</div>
+                    </article>
+                </div>
+                <footer class="pv-admin-quick-modal__actions">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="CerrarVistaPreviaRecibo">Cerrar</button>
                 </footer>
             </section>
         </div>
@@ -809,6 +936,7 @@
     private bool _showPuntoVentaForm;
     private bool _showIngresoRapidoModal;
     private bool _showCatalogoModal;
+    private bool _showReciboAnticipoPreview;
     private bool _detectandoTop;
     private bool _guardandoTop;
     private int _topLimiteDraft = 100;
@@ -824,8 +952,8 @@
     private IEnumerable<PuntoVentaCatalogoOpcionDto> RubrosVisibles
         => _mostrarTodosRubros
             ? _catalogos.Rubros
-            : _catalogos.Rubros.Take(10).Concat(
-                _catalogos.Rubros.Skip(10).Where(r => _puntoVentaForm.Rubros.Contains(r.Valor, StringComparer.OrdinalIgnoreCase)));
+            : _catalogos.Rubros.Take(15).Concat(
+                _catalogos.Rubros.Skip(15).Where(r => _puntoVentaForm.Rubros.Contains(r.Valor, StringComparer.OrdinalIgnoreCase)));
 
     private List<PuntoVentaSectorDto> _sectores = [];
     private PuntoVentaSectorDto? _selectedSector;
@@ -937,6 +1065,15 @@
             CantidadRapida4 = pv.CantidadRapida4,
             CantidadRapida5 = pv.CantidadRapida5,
             CantidadRapida6 = pv.CantidadRapida6,
+            ModalidadReciboAnticipo = pv.ModalidadReciboAnticipo,
+            FormatoReciboAnticipo = pv.FormatoReciboAnticipo,
+            ReciboAnticipoMuestraEmpresa = pv.ReciboAnticipoMuestraEmpresa,
+            ReciboAnticipoMuestraPedido = pv.ReciboAnticipoMuestraPedido,
+            ReciboAnticipoMuestraCliente = pv.ReciboAnticipoMuestraCliente,
+            ReciboAnticipoMuestraImportes = pv.ReciboAnticipoMuestraImportes,
+            ReciboAnticipoMuestraMediosPago = pv.ReciboAnticipoMuestraMediosPago,
+            ReciboAnticipoMuestraEntrega = pv.ReciboAnticipoMuestraEntrega,
+            ReciboAnticipoMuestraUsuario = pv.ReciboAnticipoMuestraUsuario,
             Rubros = pv.Rubros.ToList(),
             Activo = pv.Activo
         };
@@ -972,6 +1109,10 @@
     }
 
     private void CerrarEditorCatalogo() => _showCatalogoModal = false;
+
+    private void AbrirVistaPreviaRecibo() => _showReciboAnticipoPreview = true;
+
+    private void CerrarVistaPreviaRecibo() => _showReciboAnticipoPreview = false;
 
     private async Task DetectarTopArticulosAsync()
     {

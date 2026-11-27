@@ -151,6 +151,15 @@ public sealed class PuntoVentaSettingsDto
     /// <summary>Radio máximo de entrega. Vacío = sin límite configurado.</summary>
     public string DistanciaMaximaEntregaKm { get; set; } = string.Empty;
     public bool RelacionaCobranzasConNotasPedido { get; set; }
+    public string ModalidadReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoModalidadKeys.NoImprimir;
+    public string FormatoReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoFormatoKeys.Ticket80;
+    public bool ReciboAnticipoMuestraEmpresa { get; set; } = true;
+    public bool ReciboAnticipoMuestraPedido { get; set; } = true;
+    public bool ReciboAnticipoMuestraCliente { get; set; } = true;
+    public bool ReciboAnticipoMuestraImportes { get; set; } = true;
+    public bool ReciboAnticipoMuestraMediosPago { get; set; } = true;
+    public bool ReciboAnticipoMuestraEntrega { get; set; } = true;
+    public bool ReciboAnticipoMuestraUsuario { get; set; } = true;
     public bool CargaRapidaGrafica { get; set; }
     public string ModoIngresoRapido { get; set; } = "DESHABILITADO";
     public string ImporteRapido1 { get; set; } = "5";

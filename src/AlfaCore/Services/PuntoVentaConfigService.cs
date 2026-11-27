@@ -112,6 +112,19 @@ public sealed class PuntoVentaConfigService(
             : texto;
     }
 
+    private static string NormalizarModalidadReciboAnticipo(string? valor)
+        => valor?.Trim().ToUpperInvariant() switch
+        {
+            PuntoVentaReciboAnticipoModalidadKeys.Preguntar => PuntoVentaReciboAnticipoModalidadKeys.Preguntar,
+            PuntoVentaReciboAnticipoModalidadKeys.Automatico => PuntoVentaReciboAnticipoModalidadKeys.Automatico,
+            _ => PuntoVentaReciboAnticipoModalidadKeys.NoImprimir
+        };
+
+    private static string NormalizarFormatoReciboAnticipo(string? valor)
+        => string.Equals(valor?.Trim(), PuntoVentaReciboAnticipoFormatoKeys.A4, StringComparison.OrdinalIgnoreCase)
+            ? PuntoVentaReciboAnticipoFormatoKeys.A4
+            : PuntoVentaReciboAnticipoFormatoKeys.Ticket80;
+
     public Task<string> GetComprobanteHabitualAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetComprobanteHabitual", async token =>
         {
@@ -344,6 +357,15 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(GOUR_CANTIDAD4, 1) AS CantidadRapida4,
                     ISNULL(GOUR_CANTIDAD5, 6) AS CantidadRapida5,
                     ISNULL(GOUR_CANTIDAD6, 12) AS CantidadRapida6,
+                    ISNULL(RECIBO_ANTICIPO_MODALIDAD, 'NO') AS ModalidadReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_FORMATO, 'TICKET80') AS FormatoReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_EMPRESA, 1) AS ReciboAnticipoMuestraEmpresa,
+                    ISNULL(RECIBO_ANTICIPO_PEDIDO, 1) AS ReciboAnticipoMuestraPedido,
+                    ISNULL(RECIBO_ANTICIPO_CLIENTE, 1) AS ReciboAnticipoMuestraCliente,
+                    ISNULL(RECIBO_ANTICIPO_IMPORTES, 1) AS ReciboAnticipoMuestraImportes,
+                    ISNULL(RECIBO_ANTICIPO_MEDIOS, 1) AS ReciboAnticipoMuestraMediosPago,
+                    ISNULL(RECIBO_ANTICIPO_ENTREGA, 1) AS ReciboAnticipoMuestraEntrega,
+                    ISNULL(RECIBO_ANTICIPO_USUARIO, 1) AS ReciboAnticipoMuestraUsuario,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -390,6 +412,15 @@ public sealed class PuntoVentaConfigService(
                     ISNULL(GOUR_CANTIDAD4, 1) AS CantidadRapida4,
                     ISNULL(GOUR_CANTIDAD5, 6) AS CantidadRapida5,
                     ISNULL(GOUR_CANTIDAD6, 12) AS CantidadRapida6,
+                    ISNULL(RECIBO_ANTICIPO_MODALIDAD, 'NO') AS ModalidadReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_FORMATO, 'TICKET80') AS FormatoReciboAnticipo,
+                    ISNULL(RECIBO_ANTICIPO_EMPRESA, 1) AS ReciboAnticipoMuestraEmpresa,
+                    ISNULL(RECIBO_ANTICIPO_PEDIDO, 1) AS ReciboAnticipoMuestraPedido,
+                    ISNULL(RECIBO_ANTICIPO_CLIENTE, 1) AS ReciboAnticipoMuestraCliente,
+                    ISNULL(RECIBO_ANTICIPO_IMPORTES, 1) AS ReciboAnticipoMuestraImportes,
+                    ISNULL(RECIBO_ANTICIPO_MEDIOS, 1) AS ReciboAnticipoMuestraMediosPago,
+                    ISNULL(RECIBO_ANTICIPO_ENTREGA, 1) AS ReciboAnticipoMuestraEntrega,
+                    ISNULL(RECIBO_ANTICIPO_USUARIO, 1) AS ReciboAnticipoMuestraUsuario,
                     ACTIVO,
                     ISNULL(USUARIO, '') AS Usuario,
                     FECHAHORA_ALTA, FECHAHORA_MODIFICACION
@@ -454,6 +485,8 @@ public sealed class PuntoVentaConfigService(
             request.CantidadRapida4 = NormalizarImporteRapido(request.CantidadRapida4, 1m);
             request.CantidadRapida5 = NormalizarImporteRapido(request.CantidadRapida5, 6m);
             request.CantidadRapida6 = NormalizarImporteRapido(request.CantidadRapida6, 12m);
+            request.ModalidadReciboAnticipo = NormalizarModalidadReciboAnticipo(request.ModalidadReciboAnticipo);
+            request.FormatoReciboAnticipo = NormalizarFormatoReciboAnticipo(request.FormatoReciboAnticipo);
 
             var validation = await validator.ValidatePuntoVentaForSaveAsync(request, token);
             if (!validation.IsValid)
@@ -470,9 +503,9 @@ public sealed class PuntoVentaConfigService(
             {
                 const string insertSql = """
                     INSERT INTO dbo.POS_PUNTOVENTA
-                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, CARGARAPIDAGRAFICA, MODO_INGRESO_RAPIDO, GOUR_IMPORTE1, GOUR_IMPORTE2, GOUR_IMPORTE3, GOUR_IMPORTE4, GOUR_IMPORTE5, GOUR_IMPORTE6, GOUR_CANTIDAD1, GOUR_CANTIDAD2, GOUR_CANTIDAD3, GOUR_CANTIDAD4, GOUR_CANTIDAD5, GOUR_CANTIDAD6, ACTIVO, USUARIO, FECHAHORA_ALTA)
+                        (CODIGO, NOMBRE, MODO, UNEGOCIO, IDCAJA, SUCURSAL, IDLISTA, CLASEPRECIO, CARGARAPIDAGRAFICA, MODO_INGRESO_RAPIDO, GOUR_IMPORTE1, GOUR_IMPORTE2, GOUR_IMPORTE3, GOUR_IMPORTE4, GOUR_IMPORTE5, GOUR_IMPORTE6, GOUR_CANTIDAD1, GOUR_CANTIDAD2, GOUR_CANTIDAD3, GOUR_CANTIDAD4, GOUR_CANTIDAD5, GOUR_CANTIDAD6, RECIBO_ANTICIPO_MODALIDAD, RECIBO_ANTICIPO_FORMATO, RECIBO_ANTICIPO_EMPRESA, RECIBO_ANTICIPO_PEDIDO, RECIBO_ANTICIPO_CLIENTE, RECIBO_ANTICIPO_IMPORTES, RECIBO_ANTICIPO_MEDIOS, RECIBO_ANTICIPO_ENTREGA, RECIBO_ANTICIPO_USUARIO, ACTIVO, USUARIO, FECHAHORA_ALTA)
                     VALUES
-                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @CargaRapidaGrafica, @ModoIngresoRapido, @ImporteRapido1, @ImporteRapido2, @ImporteRapido3, @ImporteRapido4, @ImporteRapido5, @ImporteRapido6, @CantidadRapida1, @CantidadRapida2, @CantidadRapida3, @CantidadRapida4, @CantidadRapida5, @CantidadRapida6, @Activo, @Usuario, GETDATE());
+                        (@Codigo, @Nombre, @Modo, @Unegocio, @IdCaja, @Sucursal, @IdLista, @ClasePrecio, @CargaRapidaGrafica, @ModoIngresoRapido, @ImporteRapido1, @ImporteRapido2, @ImporteRapido3, @ImporteRapido4, @ImporteRapido5, @ImporteRapido6, @CantidadRapida1, @CantidadRapida2, @CantidadRapida3, @CantidadRapida4, @CantidadRapida5, @CantidadRapida6, @ModalidadReciboAnticipo, @FormatoReciboAnticipo, @ReciboAnticipoMuestraEmpresa, @ReciboAnticipoMuestraPedido, @ReciboAnticipoMuestraCliente, @ReciboAnticipoMuestraImportes, @ReciboAnticipoMuestraMediosPago, @ReciboAnticipoMuestraEntrega, @ReciboAnticipoMuestraUsuario, @Activo, @Usuario, GETDATE());
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """;
                 var nuevoId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
@@ -499,6 +532,15 @@ public sealed class PuntoVentaConfigService(
                     request.CantidadRapida4,
                     request.CantidadRapida5,
                     request.CantidadRapida6,
+                    request.ModalidadReciboAnticipo,
+                    request.FormatoReciboAnticipo,
+                    request.ReciboAnticipoMuestraEmpresa,
+                    request.ReciboAnticipoMuestraPedido,
+                    request.ReciboAnticipoMuestraCliente,
+                    request.ReciboAnticipoMuestraImportes,
+                    request.ReciboAnticipoMuestraMediosPago,
+                    request.ReciboAnticipoMuestraEntrega,
+                    request.ReciboAnticipoMuestraUsuario,
                     request.Activo,
                     Usuario = usuario
                 }, tx, cancellationToken: token));
@@ -533,6 +575,15 @@ public sealed class PuntoVentaConfigService(
                     GOUR_CANTIDAD4 = @CantidadRapida4,
                     GOUR_CANTIDAD5 = @CantidadRapida5,
                     GOUR_CANTIDAD6 = @CantidadRapida6,
+                    RECIBO_ANTICIPO_MODALIDAD = @ModalidadReciboAnticipo,
+                    RECIBO_ANTICIPO_FORMATO = @FormatoReciboAnticipo,
+                    RECIBO_ANTICIPO_EMPRESA = @ReciboAnticipoMuestraEmpresa,
+                    RECIBO_ANTICIPO_PEDIDO = @ReciboAnticipoMuestraPedido,
+                    RECIBO_ANTICIPO_CLIENTE = @ReciboAnticipoMuestraCliente,
+                    RECIBO_ANTICIPO_IMPORTES = @ReciboAnticipoMuestraImportes,
+                    RECIBO_ANTICIPO_MEDIOS = @ReciboAnticipoMuestraMediosPago,
+                    RECIBO_ANTICIPO_ENTREGA = @ReciboAnticipoMuestraEntrega,
+                    RECIBO_ANTICIPO_USUARIO = @ReciboAnticipoMuestraUsuario,
                     ACTIVO = @Activo,
                     USUARIO = @Usuario,
                     FECHAHORA_MODIFICACION = GETDATE()
@@ -563,6 +614,15 @@ public sealed class PuntoVentaConfigService(
                 request.CantidadRapida4,
                 request.CantidadRapida5,
                 request.CantidadRapida6,
+                request.ModalidadReciboAnticipo,
+                request.FormatoReciboAnticipo,
+                request.ReciboAnticipoMuestraEmpresa,
+                request.ReciboAnticipoMuestraPedido,
+                request.ReciboAnticipoMuestraCliente,
+                request.ReciboAnticipoMuestraImportes,
+                request.ReciboAnticipoMuestraMediosPago,
+                request.ReciboAnticipoMuestraEntrega,
+                request.ReciboAnticipoMuestraUsuario,
                 request.Activo,
                 Usuario = usuario
             }, tx, cancellationToken: token));

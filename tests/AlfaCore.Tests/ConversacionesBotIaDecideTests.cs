@@ -122,8 +122,11 @@ public sealed class ConversacionesBotIaDecideTests
     {
         var source = Fuente();
         Assert.Contains("IF @Atendido > @Desde SET @Desde = @Atendido;", source, StringComparison.Ordinal);
-        Assert.Matches(@"await ResponderConReintentoAsync\(texto, null\)\.ConfigureAwait\(false\);\s*MarcarEntranteAtendidoBot\(idConversacion, ultimoAtendido\);", source);
-        Assert.Matches(@"await ResponderConReintentoAsync\(textoNuevo, automaticoConocido\)\.ConfigureAwait\(false\);\s*MarcarEntranteAtendidoBot\(idConversacion, ultimoAtendido\);", source);
+        Assert.Matches(@"var descartada = await ResponderConReintentoAsync\(texto, null\)\.ConfigureAwait\(false\);\s*if \(!descartada\)\s*MarcarEntranteAtendidoBot\(idConversacion, ultimoAtendido\);", source);
+        Assert.Matches(@"descartada = await ResponderConReintentoAsync\(textoNuevo, automaticoConocido\)\.ConfigureAwait\(false\);\s*if \(!descartada\)\s*MarcarEntranteAtendidoBot\(idConversacion, ultimoAtendido\);", source);
+        // Si el cliente manda algo mientras se arma la respuesta (una foto), se descarta y se responde todo junto.
+        Assert.Contains("if (await GetLastIncomingIdAsync(idConversacion, token).ConfigureAwait(false) > ultimoEntranteAlEmpezar)", source, StringComparison.Ordinal);
+        Assert.Contains("long? desde = descartada ? null : ultimoAtendido;", source, StringComparison.Ordinal);
         // Fotos y audios de la tanda salen del mismo corte que el texto.
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(source, @"\{SqlDesdeSinResponder\}").Count);
     }
