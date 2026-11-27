@@ -17,8 +17,8 @@
 7. [Tono y traducción del borrador](#7-tono-y-traducción-del-borrador)
 8. [Fuentes de la respuesta](#8-fuentes-de-la-respuesta)
 9. [Hablarle a la IA sobre el caso](#9-hablarle-a-la-ia-sobre-el-caso)
-10. [Configuración (admin/soporte): instrucciones del asistente](#10-configuración-instrucciones-del-asistente)
-11. [Automatizaciones: fuera de horario y bot autónomo](#11-automatizaciones-fuera-de-horario-y-bot-autónomo)
+10. [Configuración del asistente](#10-configuración-del-asistente)
+11. [Cuándo responde solo y cuándo no](#11-cuándo-responde-solo-y-cuándo-no)
 12. [Prioridad, asignación automática e íconos del inbox](#12-prioridad-asignación-automática-e-íconos-del-inbox)
 13. [Qué hace y qué NO hace](#13-qué-hace-y-qué-no-hace)
 14. [Requisitos técnicos y diagnóstico](#14-requisitos-técnicos-y-diagnóstico)
@@ -98,11 +98,11 @@ Debajo de la sugerencia:
 
 | Botón | Qué hace |
 |---|---|
-| **Aprobar y enviar** | Manda la respuesta del asistente al cliente en un clic (respeta canal y la ventana de 24h de WhatsApp; se deshabilita si no corresponde). |
-| **Editar antes** | Copia la sugerencia al compositor para revisarla/ajustarla y enviar cuando quieras. |
-| **Regenerar** | Pide una sugerencia nueva con el mismo contexto. |
-| **Corregir respuesta** | Le indicás a la IA qué cambiar; la corrección se guarda en AlfaKnowledge (mejora la base). |
-| **Descartar** | Cierra la sugerencia sin usarla. |
+| [[bi:send-check]] **Aprobar y enviar** | Manda la respuesta del asistente al cliente en un clic (respeta canal y la ventana de 24h de WhatsApp; se deshabilita si no corresponde). |
+| [[bi:pencil]] **Editar antes** | Copia la sugerencia al compositor para revisarla/ajustarla y enviar cuando quieras. |
+| [[bi:arrow-repeat]] **Regenerar** | Pide una sugerencia nueva con el mismo contexto. |
+| [[bi:pencil-square]] **Corregir respuesta** | Le indicás a la IA qué cambiar; la corrección se guarda en AlfaKnowledge (mejora la base). |
+| [[bi:x-lg]] **Descartar** | Cierra la sugerencia sin usarla. |
 
 > **Importante:** "Aprobar y enviar" **sí manda el mensaje** — es una decisión humana en un clic.
 > Si preferís revisar, usá **Editar antes**.
@@ -139,56 +139,83 @@ para pedir resúmenes, aclaraciones o versiones alternativas.
 
 ---
 
-## 10. Configuración: instrucciones del asistente
+## 10. Configuración del asistente
 
-*(Sección para admin/soporte — Configuración de Conversaciones → sección AlfaKnowledge.)*
+Está en **Conversaciones → Configuración → Asistente IA** (hace falta el permiso **Configurar Conversaciones** o ser administrador). Las secciones de la izquierda son:
 
-- **Base URL / API Key / Knowledge Base Id:** conexión con AlfaKnowledge. El **Knowledge Base Id**
-  es el "sector Conversaciones" — la base/colección de conocimiento que consulta el asistente.
-- **Instrucciones del asistente:** un texto donde definís **cómo debe actuar y responder** el
-  asistente: persona, tono, reglas, qué escalar, qué **no** decir. Ej: *"Sos el asistente de Alfa
-  Net. Respondé cordial y breve en español rioplatense. No inventes precios: si preguntan precio,
-  ofrecé pasar con un vendedor."* Se **anteponen** a cada sugerencia de respuesta.
+- **General**: el estado del asistente y sus límites (ver abajo).
+- **Personalidad**: las **Instrucciones de comportamiento** (cómo habla y qué no tiene que decir) y la política **Cuando no sabe la respuesta**.
+- **Información del negocio**: los datos que puede usar para responder (horarios, direcciones, formas de pago, precios y catálogo).
+- **Lo que aprendió**: las correcciones que le enseñaron desde las conversaciones (ver **Enseñarle al asistente**).
+- **Herramientas**: los datos del sistema que puede consultar (por ejemplo, el saldo o los comprobantes del cliente).
+- **Derivación y urgencias**: cuándo pasa la charla a una persona y qué técnicos reciben las alertas de urgencia (con la plantilla de WhatsApp que se usa).
+- **Conocimiento externo**: la conexión con AlfaKnowledge (**URL de AlfaKnowledge**, **API Key**, **Knowledge Base Id**, **Tiempo máximo de espera**) y las **Instrucciones para las sugerencias de la bandeja**. También se cargan bloques de **Información por tema** ([[bi:plus-circle]] **Agregar bloque**) y archivos.
 
-Cambiar estas instrucciones **no requiere tocar código**: se guardan en la configuración de la base
-activa (`TA_CONFIGURACION`, claves `CONV_ALFAKNOWLEDGE_*`).
+Los cambios se guardan con [[bi:floppy]] **Guardar**, arriba a la izquierda.
 
----
+### Estado: en qué canales y cuándo responde
 
-## 11. Automatizaciones: fuera de horario y bot autónomo
+En **General → Estado**:
 
-*(Sección para admin/soporte — Configuración de Conversaciones → Automatizaciones. Requiere el
-módulo AUTOMATIZACIONES activo.)*
+- **Canales**: en qué canales responde solo (WhatsApp, chat del sitio web…).
+- **Si no encuentra respuesta**: qué hace cuando no sabe (pedir una aclaración o pasar a una persona).
+- **Cuándo abrir un ticket**: el criterio para abrir un ticket. Por defecto, solo cuando hace falta un desarrollo o un arreglo en el sistema, no para consultas.
+- **Cuándo responde**: siempre, o solo fuera del horario de atención.
 
-### Fuera de horario (Nivel 0, regla fija)
-Respuesta automática fija cuando llega un WhatsApp fuera del horario/días configurados. Sin IA.
+### Modelo de IA
 
-### Bot autónomo (Nivel 3, con IA) — **apagado por defecto**
-El bot responde WhatsApp entrantes **por sí solo**, pero **solo si cumple TODOS** estos
-guardarraíles; si falla cualquiera, **escala silenciosamente a un humano** (queda sin asignar):
+En **General → Modelo de IA** se elige el modelo que usa el asistente en esta base:
 
-1. **Bot activo** (interruptor) + AlfaKnowledge configurado.
-2. **Sin palabras de escalado** en el mensaje (configurable: humano, persona, reclamo, operador…).
-3. **Conversación sin asignar** (si un humano la tomó, el bot calla) — opción recomendada.
-4. **Ventana de 24h de WhatsApp activa.**
-5. **No superó el tope** de respuestas por conversación (configurable, evita loops).
-6. **La IA tiene respaldo suficiente** (contexto + fuentes citadas, sin pedir aclaración).
-7. **"Responder solo fuera de horario"** (opcional): si está tildado, el bot solo contesta fuera del
-   horario de atención configurado; en horario calla y lo dejan los agentes humanos.
-8. **"Esperar N minutos antes de responder"** (opcional): si tiene minutos cargados, el bot no
-   contesta apenas llega el mensaje — espera ese tiempo (para darle margen a un agente humano) y
-   recién ahí vuelve a chequear todos los guardarraíles con el último mensaje del cliente. Si un
-   agente ya respondió o tomó la conversación mientras tanto, el bot no dice nada. 0 = responde
-   de inmediato.
+- **Estándar** (recomendado): rápido y económico; alcanza para la mayoría de las consultas.
+- **Avanzado**: entiende mejor los casos difíciles, pero consume varias veces más créditos por respuesta.
 
-Cada respuesta automática (`BotAutoReply`) y cada escalado (`BotHandoff`) quedan **auditados**.
+Cada opción muestra cuántos créditos consume por respuesta, aproximadamente. Al elegir un modelo más caro aparece una ventana para confirmar: el consumo se descuenta de los créditos del plan y, si se pasa, el excedente se factura a fin de mes. El cambio se aplica al tocar **Guardar**.
 
-> **Recomendación:** habilitarlo primero en una base de prueba, con el "sector Conversaciones"
-> curado y las **instrucciones del asistente** cargadas, y con **"solo sin asignar"** tildado.
-> Es la única función donde la IA **manda mensajes sin un humano** — usarla con criterio.
+### Límites
 
----
+En **General → Límites**:
 
+- **Máximo de respuestas por conversación**: después de esa cantidad, el asistente pasa la charla a una persona (evita que se quede respondiendo sin fin). Se reinicia cuando la conversación se cierra.
+- **Minutos de espera en horario de atención**: cuánto espera antes de responder, para darle tiempo al equipo. Fuera de horario responde enseguida. 0 = responde enseguida siempre.
+- **Horas de charla que lee**: cuántas horas hacia atrás de la conversación lee para entender el contexto.
+- **Segundos para que el cliente termine de escribir**: si el cliente manda varios mensajes seguidos, espera y responde todo junto.
+- **Horas que se calla cuando contesta alguien del equipo**: si alguien del equipo responde o toma la conversación, el asistente no responde durante ese tiempo.
+
+### Consumo de IA
+
+En **Asistente IA → Consumo** se ve el **Consumo de IA este mes** y el **Plan de IA**. Si hace falta más, **Pedir plan**.
+
+## 11. Cuándo responde solo y cuándo no
+
+El asistente responde solo en los canales activados y **solo si**:
+
+1. Está activo en esa base y en ese canal.
+2. La conversación no está **pausada a mano** (ver abajo).
+3. Nadie del equipo contestó ni tomó la conversación en las últimas horas configuradas.
+4. No llegó al **Máximo de respuestas por conversación**.
+5. En WhatsApp, la ventana de 24 horas está abierta.
+6. Si está configurado **Cuándo responde: solo fuera de horario**, estamos fuera del horario de atención.
+
+Lee la conversación completa (las horas configuradas) y decide con ese contexto: responde, pide una aclaración, pasa la charla a una persona o, si de verdad hace falta un desarrollo, abre un ticket. Si la charla ya se pasó al equipo pero nadie la tomó, sigue acompañando al cliente sin prometer lo que no puede hacer.
+
+Si el cliente manda otro mensaje o una foto mientras el asistente arma la respuesta, la descarta y responde todo junto.
+
+Cada respuesta automática y cada paso a una persona quedan registrados.
+
+### Pausar el asistente en una conversación
+
+En la conversación, arriba a la derecha, debajo del botón de asignarse, está [[bi:robot]] **Asistente activo**. Tocalo para pausarlo en esa conversación: pasa a [[bi:pause-circle-fill]] **Asistente pausado** y no responde hasta que lo vuelvas a tocar. Si lo pausó el sistema porque alguien del equipo está atendiendo, el botón lo indica.
+
+### Enseñarle al asistente
+
+En cada respuesta del asistente, en la conversación:
+
+- [[bi:hand-thumbs-up]] **Esta respuesta del asistente estuvo bien**: la marca como correcta.
+- [[bi:mortarboard]] **Enseñarle al asistente**: escribí **Qué tiene que hacer** o **Qué tiene que responder** en ese caso y tocá **Guardar y aprobar**.
+
+Las correcciones se revisan en **Asistente IA → Lo que aprendió**, con las solapas **Aprendido** y **Rechazadas**: cada una se puede **Aprobar**, **Editar**, **Rechazar** o **Eliminar**.
+
+> **Recomendación:** antes de activarlo en un canal, cargá bien la **Información del negocio** y las **Instrucciones de comportamiento**, y probalo en una base de prueba.
 ## 12. Prioridad, asignación automática e íconos del inbox
 
 - **Badge de prioridad P1-P4:** sobre el avatar, un badge con el **color de la clasificación** del
@@ -247,11 +274,10 @@ responde solo, y únicamente dentro de sus guardarraíles.
 al compositor para que la ajustes y la envíes vos.
 
 **¿Cómo cambio la forma en que responde el asistente?**
-Con las **Instrucciones del asistente** (Config → AlfaKnowledge). No hace falta tocar código.
+Con las **Instrucciones de comportamiento** (Configuración → Asistente IA → Personalidad) y enseñándole desde las conversaciones con [[bi:mortarboard]]. No hace falta tocar código.
 
 **¿El bot puede mandar algo incorrecto?**
-Solo responde con respaldo de la base; ante baja confianza, palabras de escalado, ventana vencida o
-tope alcanzado, **no responde** y escala. Aun así, conviene curar bien el conocimiento antes de
+Responde con lo que sabe del negocio y de la charla; si no tiene respaldo, llegó al tope o la ventana de WhatsApp está vencida, **no responde** y pasa la charla a una persona. Aun así, conviene curar bien el conocimiento antes de
 activarlo en producción.
 
 **¿Puedo seguir atendiendo si la IA no está disponible?**

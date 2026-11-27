@@ -4,7 +4,7 @@ El módulo **Informes** tiene dos pestañas: **Artículos** (documentos e inform
 
 ## Artículos e informes
 
-En **Informes → Artículos** se escriben documentos internos (procedimientos, informes, notas) con un editor de texto. Al crear uno, elegí una plantilla (**Seleccione una plantilla**) y, si querés, **Agregar portada**. El documento guarda sus **Versiones** anteriores y admite **Comentarios** del equipo.
+En **Informes → Artículos** se escriben documentos internos (procedimientos, informes, notas) con un editor de texto. Al crear uno, elegí una plantilla (**Seleccione una plantilla**) y, si querés, [[bi:image]] **Agregar portada**. El documento guarda sus **Versiones** anteriores y admite **Comentarios** del equipo.
 
 ## Novedades y comunicados
 
@@ -12,13 +12,13 @@ En **Informes → Artículos** se escriben documentos internos (procedimientos, 
 
 - **Campana (barra superior):** cuando hay algo nuevo aparece con un punto azul. Al tocarlo se
   abre completo.
-- **Página Novedades:** desde la campana, **Ver todas las novedades**. Tiene dos secciones:
+- **Página Novedades:** desde la campana, [[bi:megaphone]] **Ver todas las novedades**. Tiene dos secciones:
   - **Novedades de AlfaCore:** lo nuevo de cada versión del sistema. Las escribe el equipo de
     AlfaCore y son las mismas para todas las empresas.
   - **Comunicados:** los avisos que publica tu empresa para su equipo (solo aparece si hay alguno).
 
-Cada novedad se abre y se cierra tocando su título, y hay botones para **Abrir todas** y
-**Cerrar todas**. Abrir una la marca como leída: deja de aparecer en la campana, pero queda guardada
+Cada novedad se abre y se cierra tocando su título, y hay botones para [[bi:arrows-expand]] **Abrir todas** y
+[[bi:arrows-collapse]] **Cerrar todas**. Abrir una la marca como leída: deja de aparecer en la campana, pero queda guardada
 en la página.
 
 ## Escribir un comunicado (Informes → Comunicados)
@@ -31,7 +31,7 @@ en la página.
    - **Antes / Después:** dos columnas para mostrar cómo era y cómo queda.
    - **Tarjetas con ícono:** tres puntos destacados, cada uno con su ícono.
 4. En **Ajustes** van el título, una etiqueta opcional, el color y el ícono.
-5. **Publicar ahora** (o **Programar** para una fecha): todo el equipo recibe el aviso en la campana.
+5. [[bi:send-check]] **Publicar ahora** (o [[bi:calendar2-check]] **Programar** para una fecha): todo el equipo recibe el aviso en la campana.
 
 Un comunicado publicado muestra el aviso "Ya está publicado": lo que se guarde se actualiza
-enseguida para todos. **Vista previa** muestra cómo lo va a ver el usuario.
+enseguida para todos. [[bi:eye]] **Vista previa** muestra cómo lo va a ver el usuario.

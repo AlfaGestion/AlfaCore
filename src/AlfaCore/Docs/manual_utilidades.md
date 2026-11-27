@@ -22,12 +22,12 @@ En **Configuración General → Email** se configura la cuenta desde la que el s
 
 ## Portal web
 
-En **Utilidades → Configuración → Configuración Web / Portal** se define cómo se presenta la empresa en el portal de autogestión de clientes: **Nombre de empresa**, **Dirección**, **Número**, **Teléfono**, **Email**, **Sitio web** (con https://) y el **Logo** (PNG, JPG, WEBP o GIF). La **Vista previa** muestra cómo queda. Pulsá [[bi:floppy]] **Guardar**.
+En **Utilidades → Configuración → Configuración Web / Portal** se define cómo se presenta la empresa en el portal de autogestión de clientes: **Nombre de empresa**, **Dirección**, **Número**, **Teléfono**, **Email**, **Sitio web** (con https://) y el **Logo** (PNG, JPG, WEBP o GIF). La [[bi:eye]] **Vista previa** muestra cómo queda. Pulsá [[bi:floppy]] **Guardar**.
 
 ## Diseñador de comprobantes
 
-En **Utilidades → Diseñador de comprobantes** se diseña cómo se imprimen facturas, remitos, recibos y otros documentos. Elegí el documento, usá [[bi:plus-lg]] **Nueva** (arriba a la izquierda) para crear un diseño o **Editar original** para partir del estándar, ubicá los campos y pulsá [[bi:floppy]] **Guardar**. En **Configuración** del diseñador se define el **Tema general** (tipografías y colores).
+En **Utilidades → Diseñador de comprobantes** se diseña cómo se imprimen facturas, remitos, recibos y otros documentos. Elegí el documento, usá [[bi:plus-lg]] **Nueva** (arriba a la izquierda) para crear un diseño o [[bi:shield-lock]] **Editar original** para partir del estándar, ubicá los campos y pulsá [[bi:floppy]] **Guardar**. En **Configuración** del diseñador se define el **Tema general** (tipografías y colores).
 
 ## Actualizaciones
 
-En **Utilidades → Actualizaciones** se ve el estado de las actualizaciones de la base de datos: los **Scripts disponibles**, cuáles faltan aplicar y el **Historial**. **Ejecutar pendientes** aplica los que faltan; **Recargar** vuelve a leer el estado. Normalmente las actualizaciones se aplican solas al iniciar el sistema; esta pantalla es para revisar o forzar. Si algo falla, se muestra el motivo y queda registrado.
+En **Utilidades → Actualizaciones** se ve el estado de las actualizaciones de la base de datos: los **Scripts disponibles**, cuáles faltan aplicar y el [[bi:clock-history]] **Historial**. [[bi:play-circle]] **Ejecutar pendientes** aplica los que faltan; [[bi:arrow-clockwise]] **Recargar** vuelve a leer el estado. Normalmente las actualizaciones se aplican solas al iniciar el sistema; esta pantalla es para revisar o forzar. Si algo falla, se muestra el motivo y queda registrado.

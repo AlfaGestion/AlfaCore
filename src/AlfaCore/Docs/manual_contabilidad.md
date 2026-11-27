@@ -23,7 +23,7 @@ En cada movimiento que tiene comprobante aparece **Ver**. Abre el detalle del co
 Es la lista ordenada de las cuentas de la contabilidad. Los **títulos** agrupan cuentas (por ejemplo, Activo → Disponibilidades → Caja); en las cuentas **imputables** se registran los movimientos.
 
 - Arriba se ve cuántas cuentas, títulos, imputables y cajas o bancos tiene el plan.
-- Al entrar, el plan se muestra resumido hasta los rubros. Tocá un grupo (o su flecha) para abrirlo o cerrarlo; al lado del grupo cerrado se ve cuántas cuentas tiene. **Expandir todo** y **Contraer todo** abren o cierran todos los grupos.
+- Al entrar, el plan se muestra resumido hasta los rubros. Tocá un grupo (o su flecha) para abrirlo o cerrarlo; al lado del grupo cerrado se ve cuántas cuentas tiene. [[bi:arrows-expand]] **Expandir todo** y [[bi:arrows-collapse]] **Contraer todo** abren o cierran todos los grupos.
 - La columna **Tipo** indica con una etiqueta si es Título, Imputable, Caja/Banco, Cliente o Proveedor, y si está dada de baja.
 - **Tocá una cuenta imputable para abrir su Mayor** con el ejercicio actual.
 - Escribí parte del código o de la descripción en el buscador: la lista se filtra mientras escribís, sin pulsar Enter. Por ejemplo, «caja» muestra las cuentas de caja y los títulos que las agrupan, con todo abierto. La **X** borra la búsqueda.

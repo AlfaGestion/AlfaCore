@@ -8,11 +8,11 @@ Muestra los errores de hoy y de los últimos 7 días, el proceso con más errore
 
 ## Errores del sistema
 
-Lista los incidentes registrados (cada uno con su **código de incidente**, el mismo que ve el usuario en el aviso). Filtrá por fecha, proceso o usuario y pulsá [[bi:search]] **Aplicar**; [[bi:eraser]] **Limpiar** quita los filtros. Al abrir un error se ven los **Datos principales**, la **Descripción** y el detalle técnico. **Volver a errores** regresa a la lista. Cuando un cliente te pasa un código de incidente, buscalo acá.
+Lista los incidentes registrados (cada uno con su **código de incidente**, el mismo que ve el usuario en el aviso). Filtrá por fecha, proceso o usuario y pulsá [[bi:search]] **Aplicar**; [[bi:eraser]] **Limpiar** quita los filtros. Al abrir un error se ven los **Datos principales**, la **Descripción** y el detalle técnico. [[bi:arrow-left]] **Volver a errores** regresa a la lista. Cuando un cliente te pasa un código de incidente, buscalo acá.
 
 ## Auditoría de comprobantes
 
-Revisa los comprobantes con controles automáticos y muestra **alertas** por nivel de riesgo (alto, medio). Elegí el período en la barra superior; al abrir una alerta se ve su **Detalle de alerta**. **Recargar** vuelve a calcular.
+Revisa los comprobantes con controles automáticos y muestra **alertas** por nivel de riesgo (alto, medio). Elegí el período en la barra superior; al abrir una alerta se ve su **Detalle de alerta**. [[bi:arrow-clockwise]] **Recargar** vuelve a calcular.
 
 ## Actividad de usuarios
 
@@ -114,7 +114,7 @@ Permite buscar por texto libre:
 
 ### 4.2 Panel de filtros
 
-Tocá el embudo [[bi:funnel-fill]] (**Mostrar filtros**) del buscador de arriba para acotar el análisis. Después tocá [[bi:search]] **Aplicar**; [[bi:eraser]] **Limpiar** los saca y [[bi:sliders]] **Configuración** abre los umbrales. Podés filtrar por:
+Tocá el embudo [[bi:funnel-fill]] ([[bi:funnel-fill]] **Mostrar filtros**) del buscador de arriba para acotar el análisis. Después tocá [[bi:search]] **Aplicar**; [[bi:eraser]] **Limpiar** los saca y [[bi:sliders]] **Configuración** abre los umbrales. Podés filtrar por:
 
 - fechas
 - usuario
