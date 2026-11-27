@@ -50,6 +50,8 @@ public sealed class PuntoVentaTopArticuloDto
     public int Posicion { get; set; }
     public string IdArticulo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
+    public string IdRubro { get; set; } = string.Empty;
+    public string Rubro { get; set; } = string.Empty;
     public decimal CantidadVendida { get; set; }
     public decimal TotalVendido { get; set; }
 }

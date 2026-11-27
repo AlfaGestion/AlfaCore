@@ -192,7 +192,7 @@ public sealed class PuntoVentaConfigService(
                 WHERE LTRIM(RTRIM(IDARTICULO)) IN @Ids;
                 """, new { Ids = ids }, cancellationToken: token))).ToDictionary(x => x.IdArticulo, StringComparer.OrdinalIgnoreCase);
 
-            return (IReadOnlyList<PuntoVentaTopArticuloDto>)ids
+            var lista = ids
                 .Where(rows.ContainsKey)
                 .Select((id, index) => new PuntoVentaTopArticuloDto
                 {
@@ -201,6 +201,8 @@ public sealed class PuntoVentaConfigService(
                     Descripcion = rows[id].Descripcion
                 })
                 .ToList();
+            await CompletarRubrosTopAsync(cn, lista, token);
+            return (IReadOnlyList<PuntoVentaTopArticuloDto>)lista;
         }, "No se pudo leer la lista Top de artículos.", ct);
 
     public Task<IReadOnlyList<PuntoVentaTopArticuloDto>> DetectarTopArticulosAsync(int limite = 100, CancellationToken ct = default)
@@ -248,16 +250,18 @@ public sealed class PuntoVentaConfigService(
             var rows = (await cn.QueryAsync<PuntoVentaTopArticuloDto>(new CommandDefinition(
                 sql, new { Limite = cantidad }, cancellationToken: token))).ToList();
 
-            return (IReadOnlyList<PuntoVentaTopArticuloDto>)rows
+            var lista = rows
                 .Select((row, index) => new PuntoVentaTopArticuloDto
                 {
                     Posicion = index + 1,
-                    IdArticulo = row.IdArticulo,
+                    IdArticulo = row.IdArticulo.Trim(),
                     Descripcion = row.Descripcion,
                     CantidadVendida = row.CantidadVendida,
                     TotalVendido = row.TotalVendido
                 })
                 .ToList();
+            await CompletarRubrosTopAsync(cn, lista, token);
+            return (IReadOnlyList<PuntoVentaTopArticuloDto>)lista;
         }, "No se pudo detectar los artículos más vendidos.", ct);
 
     public Task<int> GetTopArticulosConfiguradosCountAsync(CancellationToken ct = default)
@@ -309,6 +313,42 @@ public sealed class PuntoVentaConfigService(
                 """, new { Valor = valor }, cancellationToken: token));
             return 0;
         }, "No se pudo guardar la lista Top de artículos.", ct);
+
+    /// <summary>Completa código y nombre del rubro de cada artículo de la lista Top (el orden no cambia).</summary>
+    private static async Task CompletarRubrosTopAsync(SqlConnection cn, List<PuntoVentaTopArticuloDto> lista, CancellationToken token)
+    {
+        if (lista.Count == 0)
+            return;
+
+        var ids = lista.Select(x => x.IdArticulo.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var rubros = (await cn.QueryAsync<(string IdArticulo, string IdRubro, string Rubro)>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.V_TA_Rubros') IS NOT NULL
+                SELECT LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
+                       LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) AS IdRubro,
+                       LTRIM(RTRIM(ISNULL(r.Descripcion, ISNULL(a.IDRUBRO, '')))) AS Rubro
+                FROM dbo.V_MA_ARTICULOS a
+                LEFT JOIN dbo.V_TA_Rubros r
+                    ON LTRIM(RTRIM(r.IdRubro)) = LTRIM(RTRIM(a.IDRUBRO))
+                WHERE LTRIM(RTRIM(a.IDARTICULO)) IN @Ids;
+            ELSE
+                SELECT LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
+                       LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) AS IdRubro,
+                       LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) AS Rubro
+                FROM dbo.V_MA_ARTICULOS a
+                WHERE LTRIM(RTRIM(a.IDARTICULO)) IN @Ids;
+            """, new { Ids = ids }, cancellationToken: token)))
+            .GroupBy(x => x.IdArticulo, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in lista)
+        {
+            if (rubros.TryGetValue(item.IdArticulo.Trim(), out var rubro))
+            {
+                item.IdRubro = rubro.IdRubro;
+                item.Rubro = rubro.Rubro;
+            }
+        }
+    }
 
     private static List<string> ParseTopArticuloIds(string? value)
         => (value ?? string.Empty)

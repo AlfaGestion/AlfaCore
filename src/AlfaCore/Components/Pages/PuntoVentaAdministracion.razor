@@ -232,6 +232,16 @@
     .pv-admin-catalog-modal__grid th { position:sticky; top:0; z-index:1; background:var(--color-surface); color:var(--color-text); }
     .pv-admin-catalog-modal__grid .numeric { text-align:right; white-space:nowrap; }
     .pv-admin-catalog-modal__grid .empty { padding:1.4rem; text-align:center; color:var(--color-muted); }
+    .pv-admin-catalog-modal__order { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin-top:.7rem; }
+    .pv-admin-catalog-modal__order small { color:var(--color-muted); margin-left:auto; }
+    .pv-admin-catalog-modal__grid tr.is-draggable { cursor:grab; }
+    .pv-admin-catalog-modal__grid tr.is-dragging { opacity:.45; }
+    .pv-admin-catalog-modal__grid tr.is-drop-target td { border-top:2px solid var(--color-primary); }
+    .pv-admin-catalog-modal__grid .handle { width:1.6rem; color:var(--color-muted); text-align:center; }
+    .pv-admin-catalog-modal__grid .rubro { white-space:nowrap; color:var(--color-muted); }
+    .pv-admin-catalog-modal__move { display:inline-flex; gap:.2rem; }
+    .pv-admin-catalog-modal__move button { padding:.15rem .4rem; border:1px solid var(--color-border); border-radius:.35rem; background:transparent; color:var(--color-text); cursor:pointer; }
+    .pv-admin-catalog-modal__move button:disabled { opacity:.35; cursor:default; }
     .pv-admin-catalog-modal__code-input { width:8rem; min-width:6rem; padding:.35rem .45rem; border:1px solid var(--color-border); border-radius:.35rem; background:var(--color-input); color:var(--color-text); font:inherit; }
 
     @@media (max-width: 560px) {
@@ -974,26 +984,58 @@
                     <div class="pv-admin-catalog-modal__feedback @(_catalogoFeedbackOk ? "is-ok" : "is-error")">@_catalogoFeedback</div>
                 }
 
+                @if (_topArticulos.Count > 1)
+                {
+                    <div class="pv-admin-catalog-modal__order">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="OrdenarTopPorRubro">
+                            <i class="bi bi-sort-alpha-down"></i> Ordenar por rubro
+                        </button>
+                        @if (_topArticulos.Any(x => x.CantidadVendida > 0))
+                        {
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="OrdenarTopPorVentas">
+                                <i class="bi bi-sort-numeric-down"></i> Ordenar por ventas
+                            </button>
+                        }
+                        <small>Arrastrá las filas o usá las flechas para acomodarlas. El orden se aplica al guardar.</small>
+                    </div>
+                }
+
                 <div class="pv-admin-catalog-modal__grid-wrap">
                     <table class="pv-admin-catalog-modal__grid">
                         <thead>
-                            <tr><th>Pos.</th><th>Código</th><th>Descripción</th><th class="numeric">Cantidad</th><th class="numeric">Total</th></tr>
+                            <tr><th class="handle"></th><th>Pos.</th><th>Código</th><th>Descripción</th><th>Rubro</th><th class="numeric">Cantidad</th><th class="numeric">Total</th><th>Mover</th></tr>
                         </thead>
                         <tbody>
                             @if (_topArticulos.Count == 0)
                             {
-                                <tr><td colspan="5" class="empty">No hay artículos Top configurados. Presioná “Detectar Top 100”.</td></tr>
+                                <tr><td colspan="8" class="empty">No hay artículos Top configurados. Presioná “Detectar Top @_topLimiteDraft”.</td></tr>
                             }
                             else
                             {
-                                @foreach (var articulo in _topArticulos)
+                                @for (var i = 0; i < _topArticulos.Count; i++)
                                 {
-                                    <tr>
+                                    var indice = i;
+                                    var articulo = _topArticulos[indice];
+                                    <tr @key="articulo" draggable="true"
+                                        class="is-draggable @(_dragIndex == indice ? "is-dragging" : null) @(_dropIndex == indice && _dragIndex != indice ? "is-drop-target" : null)"
+                                        @ondragstart="() => _dragIndex = indice"
+                                        @ondragenter="() => _dropIndex = indice"
+                                        @ondragover:preventDefault="true"
+                                        @ondrop="() => SoltarTopEn(indice)"
+                                        @ondragend="FinArrastreTop">
+                                        <td class="handle" title="Arrastrar para mover"><i class="bi bi-grip-vertical" aria-hidden="true"></i></td>
                                         <td>@articulo.Posicion</td>
                                         <td><input class="pv-admin-catalog-modal__code-input" @bind="articulo.IdArticulo" aria-label="Código del artículo @articulo.Posicion" /></td>
                                         <td>@articulo.Descripcion</td>
+                                        <td class="rubro">@(string.IsNullOrWhiteSpace(articulo.Rubro) ? "Sin rubro" : articulo.Rubro)</td>
                                         <td class="numeric">@articulo.CantidadVendida.ToString("N2")</td>
                                         <td class="numeric">@articulo.TotalVendido.ToString("C2", _culturaAr)</td>
+                                        <td>
+                                            <span class="pv-admin-catalog-modal__move">
+                                                <button type="button" title="Subir" aria-label="Subir @articulo.Descripcion" disabled="@(indice == 0)" @onclick="() => MoverTop(indice, indice - 1)"><i class="bi bi-arrow-up"></i></button>
+                                                <button type="button" title="Bajar" aria-label="Bajar @articulo.Descripcion" disabled="@(indice == _topArticulos.Count - 1)" @onclick="() => MoverTop(indice, indice + 1)"><i class="bi bi-arrow-down"></i></button>
+                                            </span>
+                                        </td>
                                     </tr>
                                 }
                             }
@@ -1354,7 +1396,9 @@
     private PuntoVentaCatalogosDto _catalogos = new();
     private string _comprobanteHabitual = "FC";
     private bool _mostrarTodosRubros;
-    private IReadOnlyList<PuntoVentaTopArticuloDto> _topArticulos = [];
+    private List<PuntoVentaTopArticuloDto> _topArticulos = [];
+    private int? _dragIndex;
+    private int? _dropIndex;
     private string? _catalogoFeedback;
     private bool _catalogoFeedbackOk;
     private static readonly CultureInfo _culturaAr = CultureInfo.GetCultureInfo("es-AR");
@@ -1534,7 +1578,7 @@
         _showCatalogoModal = true;
         var result = await UiOps.RunAsync(() => PosConfigSvc.GetTopArticulosAsync(), "No se pudo cargar la lista Top.");
         if (result.Success && result.Value is not null)
-            _topArticulos = result.Value;
+            _topArticulos = result.Value.ToList();
         else if (!result.Success)
         {
             _catalogoFeedbackOk = false;
@@ -1543,6 +1587,56 @@
     }
 
     private void CerrarEditorCatalogo() => _showCatalogoModal = false;
+
+    // Orden de la lista Top: es el orden en que el facturador gráfico muestra los artículos destacados.
+    private void OrdenarTopPorRubro()
+    {
+        // Estable: dentro de cada rubro se respeta el orden que ya tenía la lista.
+        _topArticulos = _topArticulos
+            .OrderBy(x => string.IsNullOrWhiteSpace(x.Rubro) ? 1 : 0)
+            .ThenBy(x => x.Rubro, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        RenumerarTop();
+    }
+
+    private void OrdenarTopPorVentas()
+    {
+        _topArticulos = _topArticulos
+            .OrderByDescending(x => x.CantidadVendida)
+            .ThenByDescending(x => x.TotalVendido)
+            .ToList();
+        RenumerarTop();
+    }
+
+    private void MoverTop(int desde, int hasta)
+    {
+        if (desde < 0 || desde >= _topArticulos.Count || hasta < 0 || hasta >= _topArticulos.Count || desde == hasta)
+            return;
+
+        var item = _topArticulos[desde];
+        _topArticulos.RemoveAt(desde);
+        _topArticulos.Insert(hasta, item);
+        RenumerarTop();
+    }
+
+    private void SoltarTopEn(int indice)
+    {
+        if (_dragIndex is int desde)
+            MoverTop(desde, indice);
+        FinArrastreTop();
+    }
+
+    private void FinArrastreTop()
+    {
+        _dragIndex = null;
+        _dropIndex = null;
+    }
+
+    private void RenumerarTop()
+    {
+        for (var i = 0; i < _topArticulos.Count; i++)
+            _topArticulos[i].Posicion = i + 1;
+    }
 
     private async Task AbrirSectoresModalAsync()
     {
@@ -1582,7 +1676,7 @@
         var result = await UiOps.RunAsync(() => PosConfigSvc.DetectarTopArticulosAsync(_topLimiteDraft), "No se pudieron detectar los artículos más vendidos.");
         if (result.Success && result.Value is not null)
         {
-            _topArticulos = result.Value;
+            _topArticulos = result.Value.ToList();
             _catalogoFeedbackOk = true;
             _catalogoFeedback = $"Se detectaron {_topArticulos.Count} artículos. Revisá la lista y guardala para usarla en el catálogo.";
         }
