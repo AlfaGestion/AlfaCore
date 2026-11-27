@@ -67,6 +67,11 @@ Var Mcp__Auth__SigningKeyPath     "C:\ProgramData\AlfaCoreMcp\signing-key.pem"
 Reemplazar `<...>` por los valores reales **a mano en la consola**; no guardar este bloque completado en ningún archivo ni chat.
 
 ## 4. Crear los usuarios (hasta 10)
+**Forma simple:** `tools/mcp/usuarios_mcp.ps1` (copiarlo a la carpeta publicada) toma las variables del pool de IIS, así no hay que volver a escribirlas.
+PowerShell como administrador: `Set-ExecutionPolicy -Scope Process Bypass -Force` y luego
+`C:\inetpub\AlfaCoreMcp\usuarios_mcp.ps1 crear-usuario fulano "Nombre" --qr C:\ProgramData\AlfaCoreMcp\fulano.png`.
+
+**Forma manual:**
 Con las mismas variables definidas en la sesión de PowerShell (`$env:ALFACORE_MCP_CONNECTION`, `$env:ALFACORE_MCP_AUTH_CONNECTION`, `$env:Mcp__Auth__Issuer`, `$env:ASPNETCORE_ENVIRONMENT="Production"`
 y **`$env:Mcp__Auth__SigningKeyPath="C:\ProgramData\AlfaCoreMcp\signing-key.pem"`**, la MISMA ruta que el pool: ahí al lado queda la clave que cifra los segundos factores;
 con otra ruta el sitio no puede leerlos y nadie entra. En producción el programa se niega a arrancar si falta):
