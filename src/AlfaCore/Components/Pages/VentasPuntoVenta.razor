@@ -7697,7 +7697,7 @@
         <section class="pos-receipt-modal__actions-panel">
             <div class="pos-receipt-modal__header">
                 <div>
-                    <h3>Recibo</h3>
+                    <h3>@(_receiptIsAnticipo ? "Recibo de anticipo" : "Recibo")</h3>
                     <p>Imprimí el comprobante, envialo por email o seguí con una nueva venta.</p>
                 </div>
                 <button type="button" class="pos-receipt-modal__close" @onclick="CloseReceiptModal">X</button>
@@ -7713,6 +7713,14 @@
                 <i class="bi bi-printer"></i>
                 Imprimir recibo
             </button>
+
+            @if (_anticipoReceiptData is not null)
+            {
+                <button type="button" class="pos-receipt-modal__print" @onclick="PrintAnticipoReceiptAsync" disabled="@_anticipoPrinting">
+                    <i class="bi bi-cash-coin"></i>
+                    @(_anticipoPrinting ? "Preparando recibo de anticipo..." : "Imprimir recibo de anticipo")
+                </button>
+            }
 
             <div class="pos-receipt-modal__contact-grid">
                 <div class="pos-receipt-modal__mail">
@@ -7811,6 +7819,31 @@
                 <div class="pos-receipt-modal__preview-loading">Cargando la plantilla del diseñador...</div>
             }
             <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión ticket POS"></iframe>
+
+            @if (_anticipoReceiptData is not null)
+            {
+                <div class="pos-receipt-modal__preview-header" style="margin-top: 1rem;">
+                    <div>
+                        <h4>Vista previa del anticipo</h4>
+                        <p>@($"{_anticipoReceiptData.Resultado.TipoComprobante} {_anticipoReceiptData.Resultado.IdComprobanteTexto}")</p>
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_anticipoReceiptPreviewHtml))
+                {
+                    <iframe class="pos-receipt-modal__designer-frame"
+                            title="Vista previa del recibo de anticipo"
+                            srcdoc="@_anticipoReceiptPreviewHtml"></iframe>
+                }
+                else if (!string.IsNullOrWhiteSpace(_anticipoReceiptPreviewError))
+                {
+                    <div class="pos-receipt-modal__preview-loading">@_anticipoReceiptPreviewError</div>
+                }
+                else
+                {
+                    <div class="pos-receipt-modal__preview-loading">Cargando el recibo de anticipo...</div>
+                }
+                <iframe id="pos-anticipo-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión recibo de anticipo"></iframe>
+            }
         </section>
 
         @if (_mobileReceiptPreviewOpen)
@@ -9084,6 +9117,11 @@
     private bool _receiptEmailSending;
     private bool _reprintLoading;
     private bool _receiptIsReprint;
+    private bool _receiptIsAnticipo;
+    private PuntoVentaReceiptDataDto? _anticipoReceiptData;
+    private string? _anticipoReceiptPreviewHtml;
+    private string? _anticipoReceiptPreviewError;
+    private bool _anticipoPrinting;
     private bool _mobileReceiptPreviewOpen;
     private bool _showPublicQrModal;
     private string? _receiptPublicQrDataUrl;
@@ -10444,6 +10482,15 @@
         _settings.CantidadRapida4 = puntoVenta.CantidadRapida4.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
         _settings.CantidadRapida5 = puntoVenta.CantidadRapida5.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
         _settings.CantidadRapida6 = puntoVenta.CantidadRapida6.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        _settings.ModalidadReciboAnticipo = puntoVenta.ModalidadReciboAnticipo;
+        _settings.FormatoReciboAnticipo = puntoVenta.FormatoReciboAnticipo;
+        _settings.ReciboAnticipoMuestraEmpresa = puntoVenta.ReciboAnticipoMuestraEmpresa;
+        _settings.ReciboAnticipoMuestraPedido = puntoVenta.ReciboAnticipoMuestraPedido;
+        _settings.ReciboAnticipoMuestraCliente = puntoVenta.ReciboAnticipoMuestraCliente;
+        _settings.ReciboAnticipoMuestraImportes = puntoVenta.ReciboAnticipoMuestraImportes;
+        _settings.ReciboAnticipoMuestraMediosPago = puntoVenta.ReciboAnticipoMuestraMediosPago;
+        _settings.ReciboAnticipoMuestraEntrega = puntoVenta.ReciboAnticipoMuestraEntrega;
+        _settings.ReciboAnticipoMuestraUsuario = puntoVenta.ReciboAnticipoMuestraUsuario;
     }
 
     private bool _mobileCartView;
@@ -12830,7 +12877,13 @@
                         NoGravado = _settings.RecargoTarjetaSinIva
                     }))
                 .ToList();
+            var tieneAnticipoRegistrado = EsRemitoONotaPedido
+                && string.Equals(result.TipoComprobante.Trim(), "NP", StringComparison.OrdinalIgnoreCase)
+                && result.IdCobranza > 0;
+
             await OpenReceiptModalAsync(result, receiptItems, soldPayments);
+            if (tieneAnticipoRegistrado)
+                await PrepararAnticipoReceiptPreviewAsync(result.IdCobranza);
             // La próxima venta debe iniciar nuevamente con Consumidor Final.
             // Se hace después de preparar el comprobante para no alterar el cliente
             // de la venta recién grabada.
@@ -13016,6 +13069,10 @@
         _receiptPreviewHtml = null;
         _receiptPreviewError = null;
         _receiptIsReprint = false;
+        _receiptIsAnticipo = false;
+        _anticipoReceiptData = null;
+        _anticipoReceiptPreviewHtml = null;
+        _anticipoReceiptPreviewError = null;
         // El comprobante ya está grabado. Abrimos el modal sin esperar consultas
         // complementarias (contexto de email y QR público), así Aceptar termina
         // inmediatamente y esas ayudas se cargan en segundo plano.
@@ -13037,6 +13094,126 @@
         await LoadReceiptDesignerPreviewAsync();
     }
 
+    private async Task PrepararAnticipoReceiptPreviewAsync(int idCobranza)
+    {
+        _anticipoReceiptData = null;
+        _anticipoReceiptPreviewHtml = null;
+        _anticipoReceiptPreviewError = null;
+
+        try
+        {
+            var receipt = await PuntoVentaSvc.GetReceiptDataAsync(idCobranza);
+            _anticipoReceiptData = receipt;
+            _anticipoReceiptPreviewHtml = BuildAnticipoReceiptHtml(receipt);
+        }
+        catch (Exception ex)
+        {
+            _anticipoReceiptPreviewError = $"No se pudo cargar el recibo de anticipo: {ex.Message}";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string BuildAnticipoReceiptHtml(PuntoVentaReceiptDataDto receipt)
+    {
+        var esA4 = string.Equals(_settings.FormatoReciboAnticipo, PuntoVentaReciboAnticipoFormatoKeys.A4, StringComparison.OrdinalIgnoreCase);
+        var total = receipt.Resultado.Total;
+        var anticipo = receipt.Pagos.Sum(x => x.Importe);
+        var saldo = Math.Max(total - anticipo, 0m);
+        var empresa = HtmlEncode(string.IsNullOrWhiteSpace(receipt.Contexto.Empresa) ? "LA NUEVA" : receipt.Contexto.Empresa);
+        var pedido = HtmlEncode($"NP {_lastSaleResult?.IdComprobanteTexto ?? "-"}");
+        var cobranza = HtmlEncode($"{receipt.Resultado.TipoComprobante} {receipt.Resultado.IdComprobanteTexto}");
+        var cliente = HtmlEncode(_cuentaClienteNombre);
+        var fechaEntrega = CombinarNpFechaHora()?.ToString("dd/MM/yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "-";
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<!doctype html><html lang='es'><head><meta charset='utf-8'><style>");
+        sb.AppendLine(esA4
+            ? "@page{size:A4;margin:14mm}body{width:auto;font-size:12px}"
+            : "@page{size:80mm auto;margin:0}body{width:80mm;font-size:10.5px}");
+        sb.AppendLine("body{margin:0;padding:0;font-family:Arial,sans-serif;color:#111}.ticket{box-sizing:border-box;padding:4mm}.center{text-align:center}.brand{font-size:16px;font-weight:800}.title{margin:5mm 0 3mm;text-align:center;font-weight:800;font-size:14px}.line{border-top:1px dashed #555;margin:3mm 0}.row{display:flex;justify-content:space-between;gap:4mm;margin:2mm 0}.row span{color:#555}.row strong{text-align:right}.total{border-top:1px solid #111;margin-top:4mm;padding-top:3mm;font-size:13px;font-weight:800}.footer{text-align:center;border-top:1px dashed #555;margin-top:6mm;padding-top:3mm;color:#555;font-size:9px}");
+        sb.AppendLine("</style></head><body><main class='ticket'>");
+        if (_settings.ReciboAnticipoMuestraEmpresa)
+            sb.AppendLine($"<div class='center'><div class='brand'>{empresa}</div><div>RECIBO DE ANTICIPO</div></div>");
+        else
+            sb.AppendLine("<div class='title'>RECIBO DE ANTICIPO</div>");
+        sb.AppendLine("<div class='line'></div>");
+        if (_settings.ReciboAnticipoMuestraPedido)
+        {
+            sb.AppendLine($"<div class='row'><span>Pedido</span><strong>{pedido}</strong></div>");
+            sb.AppendLine($"<div class='row'><span>Cobranza</span><strong>{cobranza}</strong></div>");
+        }
+        if (_settings.ReciboAnticipoMuestraCliente)
+            sb.AppendLine($"<div class='row'><span>Cliente</span><strong>{(string.IsNullOrWhiteSpace(cliente) ? "-" : cliente)}</strong></div>");
+        if (_settings.ReciboAnticipoMuestraImportes)
+        {
+            sb.AppendLine($"<div class='row'><span>Total del pedido</span><strong>{HtmlEncode(FmtMoney(total))}</strong></div>");
+            sb.AppendLine($"<div class='row'><span>Anticipo recibido</span><strong>{HtmlEncode(FmtMoney(anticipo))}</strong></div>");
+            sb.AppendLine($"<div class='row total'><span>Saldo pendiente</span><strong>{HtmlEncode(FmtMoney(saldo))}</strong></div>");
+        }
+        if (_settings.ReciboAnticipoMuestraMediosPago)
+            foreach (var pago in receipt.Pagos)
+                sb.AppendLine($"<div class='row'><span>{HtmlEncode(pago.DescripcionMedioPago)}</span><strong>{HtmlEncode(FmtMoney(pago.Importe))}</strong></div>");
+        if (_settings.ReciboAnticipoMuestraEntrega)
+            sb.AppendLine($"<div class='row'><span>Entrega</span><strong>{HtmlEncode(fechaEntrega)}</strong></div>");
+        if (_settings.ReciboAnticipoMuestraUsuario)
+            sb.AppendLine($"<div class='row'><span>Usuario</span><strong>{HtmlEncode(AppUserSession.GetCurrentUserName(string.Empty))}</strong></div>");
+        sb.AppendLine("<div class='footer'>No es un comprobante fiscal<br>Gracias por su compra</div></main></body></html>");
+        return sb.ToString();
+    }
+
+    private async Task PrintAnticipoReceiptAsync()
+    {
+        if (_anticipoReceiptData is null)
+            return;
+
+        try
+        {
+            _anticipoPrinting = true;
+            if (string.IsNullOrWhiteSpace(_anticipoReceiptPreviewHtml))
+                throw new InvalidOperationException(_anticipoReceiptPreviewError ?? "No se pudo preparar el recibo de anticipo para imprimir.");
+
+            await PuntoVentaSvc.MarkReceiptPrintedAsync(_anticipoReceiptData.Resultado.IdComprobante);
+            var printed = await Js.InvokeAsync<bool>("alfaPosPrintHtml", "pos-anticipo-receipt-frame", _anticipoReceiptPreviewHtml);
+            if (!printed)
+                throw new InvalidOperationException("No se encontró el visor del recibo de anticipo para imprimir.");
+        }
+        catch (Exception ex)
+        {
+            _anticipoReceiptPreviewError = ex.Message;
+        }
+        finally
+        {
+            _anticipoPrinting = false;
+        }
+    }
+
+    private async Task OpenAnticipoReceiptModalAsync(int idCobranza, bool imprimirAutomaticamente)
+    {
+        var receipt = await PuntoVentaSvc.GetReceiptDataAsync(idCobranza);
+        _lastSaleResult = receipt.Resultado;
+        _receiptItems.Clear();
+        _receiptItems.AddRange(receipt.Items);
+        _receiptPayments.Clear();
+        _receiptPayments.AddRange(receipt.Pagos);
+        _receiptContext = receipt.Contexto;
+        _receiptEmail = receipt.Contexto.EmailSugerido;
+        _receiptEmailFeedback = null;
+        _receiptEmailError = null;
+        _receiptPreviewHtml = null;
+        _receiptPreviewError = null;
+        _receiptIsReprint = false;
+        _receiptIsAnticipo = true;
+        _showReceiptModal = true;
+        await InvokeAsync(StateHasChanged);
+        await LoadReceiptDesignerPreviewAsync();
+
+        if (imprimirAutomaticamente)
+        {
+            _closeReceiptAfterPrint = true;
+            _printReceiptAfterRender = true;
+        }
+    }
+
     private async Task OpenExistingReceiptAsync(int idComprobante)
     {
         try
@@ -13055,9 +13232,25 @@
             _receiptPreviewHtml = null;
             _receiptPreviewError = null;
             _receiptIsReprint = receipt.Impreso;
+            _receiptIsAnticipo = false;
             await PrepareReceiptPublicQrAsync(receipt.Resultado);
             _showReceiptModal = true;
             await LoadReceiptDesignerPreviewAsync();
+            if (string.Equals(receipt.Resultado.TipoComprobante.Trim(), "NP", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var notaPedido = await AnticiposSvc.GetNotaPedidoAsync(receipt.Resultado.IdComprobanteTexto);
+                    var cobranzaAnticipo = notaPedido?.Cobranzas
+                        .FirstOrDefault(x => !x.Anulada && x.ImporteOriginal > 0m);
+                    if (cobranzaAnticipo is not null)
+                        await PrepararAnticipoReceiptPreviewAsync(cobranzaAnticipo.Id);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "No se pudo cargar el recibo de anticipo para reimprimir la NP {Comprobante}.", receipt.Resultado.IdComprobanteTexto);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -13075,8 +13268,13 @@
         _receiptPreviewHtml = null;
         _receiptPreviewError = null;
         _receiptIsReprint = false;
+        _receiptIsAnticipo = false;
         _receiptPublicQrDataUrl = null;
         _receiptPublicUrl = null;
+        _anticipoReceiptData = null;
+        _anticipoReceiptPreviewHtml = null;
+        _anticipoReceiptPreviewError = null;
+        _anticipoPrinting = false;
 
         // Si el comprobante se generó cerrando un pedido de Delivery/Take Away,
         // no tiene sentido quedarse en Mostrador: se vuelve al tablero de pedidos.

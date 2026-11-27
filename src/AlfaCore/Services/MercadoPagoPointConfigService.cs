@@ -20,7 +20,10 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
     private const string KeyPointOfSaleReadersPrefix = "MERCADOPAGO_LECTORES_PV_";
     private const string LegacyTokenKey = "Point_Token";
     private const string LegacyPaymentMethodsKey = "Point_Medios_Pago";
+    private const string LegacyQrPaymentMethodKey = "Point_Medio_Pago_QR";
+    private const string LegacyCardPaymentMethodKey = "Point_Medio_Pago_Tarjeta";
     private const string LegacyAutomaticPaymentMethodKey = "Point_Obtener_Medio_Pago_Automatico";
+    private const string LegacyPointOfSaleReadersPrefix = "Point_Lectores_Caja_";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -31,8 +34,8 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
     {
         var values = await ReadConfigAsync(ct);
         var legacy = ReadValue(values, KeyLegacyPaymentMethod);
-        var qr = ReadValue(values, KeyQrPaymentMethod);
-        var tarjeta = ReadValue(values, KeyCardPaymentMethod);
+        var qr = ReadCompatValue(values, KeyQrPaymentMethod, LegacyQrPaymentMethodKey);
+        var tarjeta = ReadCompatValue(values, KeyCardPaymentMethod, LegacyCardPaymentMethodKey);
 
         if (qr.Length == 0) qr = legacy;
         if (tarjeta.Length == 0) tarjeta = qr;
@@ -150,6 +153,8 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
         await GuardarValorAsync(cn, tran, LegacyPaymentMethodsKey, medios, ct);
         await GuardarValorAsync(cn, tran, KeyQrPaymentMethod, configuracion.MedioPagoQr, ct);
         await GuardarValorAsync(cn, tran, KeyCardPaymentMethod, configuracion.MismoMedioParaQrYTarjeta ? configuracion.MedioPagoQr : configuracion.MedioPagoTarjeta, ct);
+        await GuardarValorAsync(cn, tran, LegacyQrPaymentMethodKey, configuracion.MedioPagoQr, ct);
+        await GuardarValorAsync(cn, tran, LegacyCardPaymentMethodKey, configuracion.MismoMedioParaQrYTarjeta ? configuracion.MedioPagoQr : configuracion.MedioPagoTarjeta, ct);
         var automatico = configuracion.ObtenerMedioPagoAutomatico ? "SI" : "NO";
         await GuardarValorAsync(cn, tran, KeyAutomaticPaymentMethod, automatico, ct);
         await GuardarValorAsync(cn, tran, LegacyAutomaticPaymentMethodKey, automatico, ct);
@@ -167,8 +172,11 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
         foreach (var puntoVenta in configuracion.PuntosVenta)
         {
             if (puntoVenta.Id <= 0) continue;
-            await GuardarValorAsync(cn, tran, KeyPointOfSaleReadersPrefix + puntoVenta.Id,
-                string.Join(',', NormalizeCodes(puntoVenta.TerminalesAsignadas)), ct);
+            var lectores = string.Join(',', NormalizeCodes(puntoVenta.TerminalesAsignadas));
+            await GuardarValorAsync(cn, tran, KeyPointOfSaleReadersPrefix + puntoVenta.Id, lectores, ct);
+            // VB6 identifica la caja por su código, no por el ID interno de POS_PUNTOVENTA.
+            if (!string.IsNullOrWhiteSpace(puntoVenta.Codigo))
+                await GuardarValorAsync(cn, tran, LegacyPointOfSaleReadersPrefix + puntoVenta.Codigo.Trim(), lectores, ct);
         }
 
         await tran.CommitAsync(ct);
@@ -221,9 +229,11 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
                 N'MERCADOPAGO_MEDIO_PAGO_QR', N'MERCADOPAGO_MEDIO_PAGO_TARJETA',
                 N'MERCADOPAGO_OBTENER_MEDIO_PAGO_AUTOMATICO',
                 N'MERCADOPAGO_MODO_PRUEBA', N'ARCA_AMBIENTE',
-                N'POINT_TOKEN', N'POINT_MEDIOS_PAGO', N'POINT_OBTENER_MEDIO_PAGO_AUTOMATICO'
+                N'POINT_TOKEN', N'POINT_MEDIOS_PAGO', N'POINT_MEDIO_PAGO_QR',
+                N'POINT_MEDIO_PAGO_TARJETA', N'POINT_OBTENER_MEDIO_PAGO_AUTOMATICO'
             )
             OR UPPER(LTRIM(RTRIM(CLAVE))) LIKE N'MERCADOPAGO_LECTORES_PV_%'
+            OR UPPER(LTRIM(RTRIM(CLAVE))) LIKE N'POINT_LECTORES_CAJA_%'
             """, cn);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
@@ -256,6 +266,8 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
             var codigo = rd.IsDBNull(1) ? string.Empty : rd.GetString(1).Trim();
             if (id <= 0) continue;
             values.TryGetValue((KeyPointOfSaleReadersPrefix + id).ToUpperInvariant(), out var assigned);
+            if (string.IsNullOrWhiteSpace(assigned) && !string.IsNullOrWhiteSpace(codigo))
+                values.TryGetValue((LegacyPointOfSaleReadersPrefix + codigo).ToUpperInvariant(), out assigned);
             puntosVenta.Add(new MercadoPagoPointPuntoVentaDto
             {
                 Id = id,

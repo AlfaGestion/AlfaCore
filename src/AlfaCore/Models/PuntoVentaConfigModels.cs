@@ -17,6 +17,19 @@ public static class PuntoVentaIngresoRapidoModoKeys
     public const string Completo = "COMPLETO";
 }
 
+public static class PuntoVentaReciboAnticipoModalidadKeys
+{
+    public const string NoImprimir = "NO";
+    public const string Preguntar = "PREGUNTAR";
+    public const string Automatico = "AUTOMATICO";
+}
+
+public static class PuntoVentaReciboAnticipoFormatoKeys
+{
+    public const string Ticket80 = "TICKET80";
+    public const string A4 = "A4";
+}
+
 public sealed class PuntoVentaCatalogoOpcionDto
 {
     public string Valor { get; init; } = string.Empty;
@@ -68,6 +81,15 @@ public sealed class PuntoVentaEntidadDto
     public decimal CantidadRapida4 { get; set; } = 1m;
     public decimal CantidadRapida5 { get; set; } = 6m;
     public decimal CantidadRapida6 { get; set; } = 12m;
+    public string ModalidadReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoModalidadKeys.NoImprimir;
+    public string FormatoReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoFormatoKeys.Ticket80;
+    public bool ReciboAnticipoMuestraEmpresa { get; set; } = true;
+    public bool ReciboAnticipoMuestraPedido { get; set; } = true;
+    public bool ReciboAnticipoMuestraCliente { get; set; } = true;
+    public bool ReciboAnticipoMuestraImportes { get; set; } = true;
+    public bool ReciboAnticipoMuestraMediosPago { get; set; } = true;
+    public bool ReciboAnticipoMuestraEntrega { get; set; } = true;
+    public bool ReciboAnticipoMuestraUsuario { get; set; } = true;
     /// <summary>Rubros que vende el punto de venta. Vacio = todos.</summary>
     public List<string> Rubros { get; set; } = [];
     public bool Activo { get; set; } = true;
@@ -101,6 +123,15 @@ public sealed class PuntoVentaEntidadSaveRequest
     public decimal CantidadRapida4 { get; set; } = 1m;
     public decimal CantidadRapida5 { get; set; } = 6m;
     public decimal CantidadRapida6 { get; set; } = 12m;
+    public string ModalidadReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoModalidadKeys.NoImprimir;
+    public string FormatoReciboAnticipo { get; set; } = PuntoVentaReciboAnticipoFormatoKeys.Ticket80;
+    public bool ReciboAnticipoMuestraEmpresa { get; set; } = true;
+    public bool ReciboAnticipoMuestraPedido { get; set; } = true;
+    public bool ReciboAnticipoMuestraCliente { get; set; } = true;
+    public bool ReciboAnticipoMuestraImportes { get; set; } = true;
+    public bool ReciboAnticipoMuestraMediosPago { get; set; } = true;
+    public bool ReciboAnticipoMuestraEntrega { get; set; } = true;
+    public bool ReciboAnticipoMuestraUsuario { get; set; } = true;
     public List<string> Rubros { get; set; } = [];
     public bool Activo { get; set; } = true;
     public string? UsuarioAccion { get; set; }
