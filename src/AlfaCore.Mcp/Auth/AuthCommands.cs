@@ -135,7 +135,9 @@ public static class AuthCommands
             await cn.OpenAsync();
             await using var cmd = cn.CreateCommand();
             // Tiene que leer el esquema dir y NO las tablas de la base (si no, no es el login de solo lectura del script 005).
-            cmd.CommandText = "SELECT (SELECT COUNT(*) FROM dir.vw_Config), HAS_PERMS_BY_NAME('dbo.TA_CONFIGURACION', 'OBJECT', 'SELECT')";
+            // IA_MCP_ESQUEMA_ERRORES: vistas que la actualizacion de AlfaCore no pudo crear en esta base (vacio = todas bien).
+            cmd.CommandText = "SELECT (SELECT COUNT(*) FROM dir.vw_Config), HAS_PERMS_BY_NAME('dbo.TA_CONFIGURACION', 'OBJECT', 'SELECT'), " +
+                              "(SELECT MAX(Valor) FROM dir.vw_Config WHERE Clave = 'IA_MCP_ESQUEMA_ERRORES')";
             await using var rd = await cmd.ExecuteReaderAsync();
             await rd.ReadAsync();
             if (!rd.IsDBNull(1) && rd.GetInt32(1) == 1)
@@ -144,10 +146,12 @@ public static class AuthCommands
                 return 1;
             }
             Console.WriteLine($"Conexion OK ({rd.GetInt32(0)} claves IA_MCP_* en dir.vw_Config).");
+            if (!rd.IsDBNull(2) && rd.GetString(2).Trim().Length > 0)
+                Console.WriteLine("ATENCION: en esta base no se pudieron crear algunas vistas (esas herramientas van a fallar):\n" + rd.GetString(2));
         }
         catch (Microsoft.Data.SqlClient.SqlException ex)
         {
-            Console.Error.WriteLine($"No se pudo conectar o falta el esquema dir (scripts 001-005 y 013 en esa base): {ex.Message}");
+            Console.Error.WriteLine($"No se pudo conectar o falta el esquema dir. El esquema lo crea la actualizacion de AlfaCore (2026-11-27-040__ia_mcp_esquema_dir.sql) al entrar a esa base; el login, 005_login_solo_lectura.sql: {ex.Message}");
             return 1;
         }
         await accesos.GuardarBaseAsync(idBase, usuarioSql, sp.GetRequiredService<SecretProtector>().Proteger(clave), CancellationToken.None);

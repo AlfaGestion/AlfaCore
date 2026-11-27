@@ -1,30 +1,19 @@
-# Scripts SQL del servidor MCP de consulta (esquema `dir`)
+# MCP de consulta: donde esta cada parte de la base
 
-Capa semantica para consultar la base en lenguaje natural desde Claude / ChatGPT (proyecto `AlfaCore.Mcp`, etapa 3).
-**Estos scripts NO se aplican solos**: no estan en `App_Data/updates/`. Se revisan y se corren a mano, en este orden:
+Capa semantica para consultar la base en lenguaje natural desde Claude / ChatGPT (proyecto `AlfaCore.Mcp`).
+Desde el 2026-11-27 sigue el mismo circuito que el resto de AlfaCore:
 
-| # | Script | Que hace | Requiere |
-|---|---|---|---|
-| 1 | `001_esquema_dir.sql` | `CREATE SCHEMA dir AUTHORIZATION dbo` | db_owner |
-| 2 | `002_vistas_dir.sql` | `dir.vw_Ventas`, `vw_Articulos`, `vw_Clientes`, `vw_CuentaCorriente`, `vw_Stock`, `vw_Config` | db_owner |
-| 3 | `003_ia_log_consultas.sql` | tabla `dbo.IA_LOG_CONSULTAS` (auditoria) | db_owner |
-| 4 | `004_config_ia_mcp.sql` | claves `IA_MCP_*` en `TA_CONFIGURACION` (no pisa existentes) | db_owner |
-| 5 | `005_login_solo_lectura.sql` | login/usuario dedicado: SELECT en `dir` + INSERT en el log | sysadmin / securityadmin |
-| 10 | `010_oauth_tablas.sql` | tablas del servidor OAuth: `MCP_USUARIO`, `MCP_CLIENTE_OAUTH`, `MCP_CODIGO`, `MCP_REFRESH_TOKEN`, `MCP_EVENTO` (en la base del almacén, p. ej. `ALFA_CENTRAL`) | db_owner |
-| 11 | `011_oauth_login_almacen.sql` | login **distinto** (`mcp_auth_rw`) con permisos solo sobre las tablas `MCP_*` (Modo SQLCMD) | sysadmin / securityadmin |
-| 12 | `012_config_oauth.sql` | claves `IA_MCP_OAUTH_*` y la lista blanca de redirects (en la base de **datos**) | db_owner |
-| 13 | `013_vistas_compras.sql` | `dir.vw_Proveedores`, `vw_Compras`, `vw_ComprasDetalle`, `vw_CuentaCorrienteProveedores` + clave `IA_MCP_TC_PROFORMA_COMPRAS` (no pisa) | db_owner |
-| 14 | `014_multibase_central.sql` | **en ALFA_CENTRAL**: `MCP_BASE`, `MCP_ACCESO`, `MCP_CODIGO_EMAIL`, columnas `Base`/`Metodo` y lectura por columna de `users`/`bases`/`Clientes` para `mcp_auth_rw` (sqlcmd `-v MCP_AUTH_LOGIN`) | db_owner |
-| 15 | `015_config_email.sql` | claves `IA_MCP_OAUTH_EMAIL_*` en la base por defecto (opcional, no pisa) | db_owner |
-| 99 | `099_verificacion.sql` | calidad de datos, cuadre contra el libro y prueba de permisos | el login de 5 |
+| Que | Donde | Como se aplica |
+|---|---|---|
+| Esquema `dir`, sus 10 vistas, `IA_LOG_CONSULTAS` y claves `IA_MCP_*` (antes 001-004, 012, 013, 015) | `src/AlfaCore/App_Data/updates/2026-11-27-040__ia_mcp_esquema_dir.sql` | **Solo**, en cada base, como cualquier actualizacion de AlfaCore. Si una vista no se puede crear (base vieja), se saltea sin frenar la actualizacion y el motivo queda en la clave `IA_MCP_ESQUEMA_ERRORES` |
+| Tablas `MCP_*` de `ALFA_CENTRAL` (antes 010 y 014) | `docs/base-datos/sql-referencia/2026-11-27-041__alfa_central_mcp_oauth.sql` y `-042__alfa_central_mcp_multibase.sql` | A mano, como los demas scripts `alfa_central` |
+| Logins de solo lectura (llevan contrasena y permisos de servidor) | esta carpeta: `005_login_solo_lectura.sql` (por base de datos) y `011_oauth_login_almacen.sql` (`ALFA_CENTRAL`) | A mano, una vez por servidor / base |
+| Verificacion | esta carpeta: `099_verificacion.sql` | A mano, antes de invitar a nadie |
 
-Todos son idempotentes. UTF-8 sin BOM: correrlos con `sqlcmd -f i:65001`. Los scripts 10-12 son de la etapa 5 (OAuth); ver [README del servidor](../../../../src/AlfaCore.Mcp/README.md).
+**Cambiar o agregar una vista**: un script NUEVO en `App_Data/updates/` (mismo patron: `BEGIN TRY` + `EXEC(N'CREATE VIEW ...')`
++ registro en `#mcp_errores` / `IA_MCP_ESQUEMA_ERRORES`), nunca editar el `040` ya publicado. Compatibilidad 80/100.
 
 ```
-sqlcmd -S <servidor> -d <base> -f i:65001 -i 001_esquema_dir.sql
-sqlcmd -S <servidor> -d <base> -f i:65001 -i 002_vistas_dir.sql
-sqlcmd -S <servidor> -d <base> -f i:65001 -i 003_ia_log_consultas.sql
-sqlcmd -S <servidor> -d <base> -f i:65001 -i 004_config_ia_mcp.sql
 sqlcmd -S <servidor> -f i:65001 -i 005_login_solo_lectura.sql -v MCP_DB="<base>" MCP_LOGIN="mcp_dir_ro" MCP_PASSWORD="<contrasena fuerte>"
 sqlcmd -S <servidor> -d <base> -f i:65001 -i 099_verificacion.sql -v MCP_LOGIN="mcp_dir_ro"
 ```

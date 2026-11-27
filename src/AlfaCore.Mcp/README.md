@@ -16,9 +16,12 @@ Dos modos de uso:
 > niega a arrancar si `Mcp:Auth:Enabled=false`.
 
 ## 1. Requisitos en la base de datos (una sola vez)
-Scripts de `docs/base-datos/sql-referencia/dir-mcp/`, en orden: `001`–`004` (esquema `dir`, vistas, auditoría, claves) y `005` (login
-de datos `mcp_dir_ro`, solo lectura). Para OAuth además: `010` (tablas `MCP_*`), `011` (login del almacén OAuth) y `012` (claves
-`IA_MCP_OAUTH_*`). En SSMS activar **Consulta → Modo SQLCMD** para los que llevan variables (005 y 011).
+- **Esquema `dir`, vistas, auditoría y claves `IA_MCP_*`**: los crea solo AlfaCore con la actualización
+  `src/AlfaCore/App_Data/updates/2026-11-27-040__ia_mcp_esquema_dir.sql`, en cada base, como cualquier actualización.
+- **Login de datos `mcp_dir_ro`** (solo lectura): a mano, `dir-mcp/005_login_solo_lectura.sql` (lleva contraseña).
+- **Para OAuth, en `ALFA_CENTRAL`**: `docs/base-datos/sql-referencia/2026-11-27-041__alfa_central_mcp_oauth.sql` (tablas `MCP_*`),
+  `-042__alfa_central_mcp_multibase.sql` (multi-base) y `dir-mcp/011_oauth_login_almacen.sql` (login del almacén).
+En SSMS activar **Consulta → Modo SQLCMD** para los que llevan variables (005, 011 y 042). Detalle: [dir-mcp](../../docs/base-datos/sql-referencia/dir-mcp/README.md).
 
 ## 2. Modo local simple (el que ya venís usando)
 ```
@@ -86,7 +89,7 @@ UPDATE dbo.MCP_REFRESH_TOKEN SET Revocado = 1 WHERE UsuarioId = (SELECT Id FROM 
 La base de cada consulta sale del token (claim `base` = `ALFA_CENTRAL.bases.id`, claim `amr` = `email` o `pwd`) y la resuelve
 `ConexionPorBaseResolver`: servidor y nombre de `ALFA_CENTRAL.bases` + login de solo lectura de `MCP_BASE` (clave cifrada con la
 clave del servidor). Sin base en el token (usuarios con clave sin base, y la pantalla de login) se usa `ALFACORE_MCP_CONNECTION`.
-Una base con token nunca cae a otra. Tablas y permisos: script `014` en `ALFA_CENTRAL`. Comandos: `habilitar-base`, `dar-acceso`,
+Una base con token nunca cae a otra. Tablas y permisos: `2026-11-27-042__alfa_central_mcp_multibase.sql` en `ALFA_CENTRAL`. Comandos: `habilitar-base`, `dar-acceso`,
 `invitar`, `quitar-acceso`, `accesos` (ver `docs/modulos/mcp-publicacion-iis.md`, sección 7). SMTP: `Mcp__Email__*`
 (`tools/mcp/configurar_email_mcp.ps1`); en Development sin SMTP los mails se escriben en el log.
 
@@ -94,7 +97,7 @@ Una base con token nunca cae a otra. Tablas y permisos: script `014` en `ALFA_CE
 Negocio: `IA_MCP_HABILITADO` (interruptor general, también corta el login), `IA_MCP_MAX_FILAS`, `IA_MCP_TOP_MAXIMO`, `IA_MCP_TIMEOUT_SEG`,
 `IA_MCP_TC_PROFORMA`, `IA_MCP_INCLUIR_PROFORMAS`, `IA_MCP_CONSULTAR_SQL_HABILITADO`, `IA_MCP_LOG_PARAMETROS`, `IA_MCP_ADVERTIR_SIN_COSTO_PCT`, `IA_MCP_LECTURA_SIN_BLOQUEOS`.
 OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_INTENTOS`, `_BLOQUEO_MIN`, `_MAX_CLIENTES`, `_REQUIERE_TOTP`,
-`_EMAIL_HABILITADO`, `_EMAIL_CODIGO_MIN`, `_EMAIL_MAX_ENVIOS`, `_EMAIL_AVISO_CONEXION` (script `015`) y
+`_EMAIL_HABILITADO`, `_EMAIL_CODIGO_MIN`, `_EMAIL_MAX_ENVIOS`, `_EMAIL_AVISO_CONEXION` (las agrega la actualización `2026-11-27-040`) y
 **`IA_MCP_OAUTH_REDIRECTS`** (lista blanca de aplicaciones que pueden conectarse). Si una clave falta, lo riesgoso queda apagado.
 
 ### Configuración de infraestructura (appsettings / variables de entorno; nunca en el repo)

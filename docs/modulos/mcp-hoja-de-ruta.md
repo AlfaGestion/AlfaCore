@@ -1,7 +1,7 @@
 # MCP de consulta (AlfaCore.Mcp) — hoja de ruta
 
 Estado y próximos pasos del servidor MCP (`src/AlfaCore.Mcp`, esquema SQL `dir`).
-Publicación: `docs/modulos/mcp-publicacion-iis.md`. Scripts: `docs/base-datos/sql-referencia/dir-mcp/`.
+Publicación: `docs/modulos/mcp-publicacion-iis.md`. Base: esquema `dir` en `App_Data/updates/2026-11-27-040__ia_mcp_esquema_dir.sql` (automático); `ALFA_CENTRAL` y logins: ver `docs/base-datos/sql-referencia/dir-mcp/README.md`.
 
 ## 1. Publicación (hecho el 27/11/2026)
 
@@ -21,10 +21,10 @@ Trampa hallada: el código **Consumidor Final** junta ventas con el nombre de ca
 nombre del maestro y avisa cuántos nombres distintos agrupa; `buscar_clientes` busca en el maestro, así que a un particular facturado como
 Consumidor Final no lo encuentra por su nombre.
 
-Falta, en orden de valor (todo requiere vistas nuevas en un script `013`, revisado y corrido por Alberto):
+Falta, en orden de valor (cada vista nueva va en un script nuevo de `App_Data/updates/`, con el patron del `2026-11-27-040`):
 
-1. ~~**Compras y proveedores**~~: hecho el 27/11/2026 (script `013` + `buscar_proveedores`, `compras_resumen`, `deuda_proveedores`,
-   `ficha_proveedor`, `compras_articulo`). Fuente fiscal = libro de IVA compras, no la cabecera (ver README de `dir-mcp`).
+1. ~~**Compras y proveedores**~~: hecho el 27/11/2026 (vistas en la actualizacion `2026-11-27-040` + `buscar_proveedores`, `compras_resumen`, `deuda_proveedores`,
+   `ficha_proveedor`, `compras_articulo`). Fuente fiscal = libro de IVA compras, no la cabecera (ver reglas en el README de `dir-mcp`).
 2. **Cuenta corriente con movimientos** (no solo lo abierto) de clientes y luego de proveedores.
 3. **Libros de IVA** ventas/compras y comparación mensual (se alinea con el control fiscal del Director IA).
 4. **Cheques**: cartera de terceros y propios emitidos.
@@ -36,7 +36,7 @@ Cada vista nueva: verificar el tipo real de cada objeto en SQL Server y cuadrar 
 ## 3. Multi-base y permisos por usuario
 
 **Hecho (27/11/2026):** multi-base con ingreso por mail. La base va atada a cada autorización y la resuelve
-`ConexionPorBaseResolver` desde `ALFA_CENTRAL`. Tablas `MCP_BASE`/`MCP_ACCESO`/`MCP_CODIGO_EMAIL` (script `014`) y comandos
+`ConexionPorBaseResolver` desde `ALFA_CENTRAL`. Tablas `MCP_BASE`/`MCP_ACCESO`/`MCP_CODIGO_EMAIL` (`2026-11-27-042__alfa_central_mcp_multibase.sql`) y comandos
 `habilitar-base`/`invitar`/`quitar-acceso`/`accesos`. Falta:
 - **Pantalla en `/admin` (AlfaCore)**: en Usuarios, botón "MCP" con elección de base e invitación; en Bases, marca "MCP habilitado".
   La clave de solo lectura de la base la sigue cargando `habilitar-base` en el servidor (la cifra la clave del MCP).

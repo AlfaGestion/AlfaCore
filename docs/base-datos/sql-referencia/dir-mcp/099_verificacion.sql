@@ -1,5 +1,5 @@
 -- MCP de consulta en lenguaje natural - verificacion posterior (solo SELECT).
--- Correr despues de 001..005. Parte A: calidad de datos. Parte B: prueba de permisos del login (EXECUTE AS).
+-- Correr despues de la actualizacion 2026-11-27-040__ia_mcp_esquema_dir.sql y del 005. Parte A: calidad de datos. Parte B: prueba de permisos del login (EXECUTE AS).
 -- sqlcmd -S <servidor> -d <base> -f i:65001 -i 099_verificacion.sql -v MCP_LOGIN="mcp_dir_ro"
 SET NOCOUNT ON;
 GO

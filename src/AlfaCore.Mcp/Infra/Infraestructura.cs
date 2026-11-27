@@ -136,7 +136,7 @@ public sealed class McpConfigProvider(IConexionResolver resolver, ILogger<McpCon
         }
         catch (SqlException ex) when (ex.Number == 208) // objeto inexistente
         {
-            throw new ToolUserException("Falta instalar la capa semántica en la base (esquema dir). Ejecutar los scripts de docs/base-datos/sql-referencia/dir-mcp.");
+            throw new ToolUserException("Falta la capa semántica en esta base (esquema dir). La crea la actualización de AlfaCore 2026-11-27-040__ia_mcp_esquema_dir.sql: entrar a esa base con AlfaCore o aplicar las actualizaciones pendientes.");
         }
         catch (SqlException ex) when (hit.Valores is not null)
         {

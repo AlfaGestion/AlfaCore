@@ -1,4 +1,4 @@
--- MCP / script 14: MULTI-BASE con ingreso por mail. Se corre en el ALMACEN OAuth = ALFA_CENTRAL (10.8.0.31).
+-- MCP (antes dir-mcp/014): MULTI-BASE con ingreso por mail. Se corre en el ALMACEN OAuth = ALFA_CENTRAL (10.8.0.31).
 -- Idempotente. Crea solo tablas MCP_* nuevas, agrega dos columnas a tablas MCP_* existentes y da permisos al login del almacen.
 -- NO modifica users, bases ni Clientes: solo les da al login del MCP permiso de LECTURA sobre las columnas que necesita
 -- (nunca password ni dbpassword).
@@ -7,7 +7,7 @@
 -- MCP_CODIGO y MCP_REFRESH_TOKEN; sin estas columnas el login falla).
 --
 -- Ejecutar (sin contrasenas: solo el nombre del login):
---   sqlcmd -S 10.8.0.31 -d ALFA_CENTRAL -f i:65001 -i 014_multibase_central.sql -v MCP_AUTH_LOGIN="mcp_auth_rw"
+--   sqlcmd -S 10.8.0.31 -d ALFA_CENTRAL -f i:65001 -i 2026-11-27-042__alfa_central_mcp_multibase.sql -v MCP_AUTH_LOGIN="mcp_auth_rw"
 -- En SSMS: Consulta > Modo SQLCMD y completar el :setvar.
 --
 -- :setvar MCP_AUTH_LOGIN "mcp_auth_rw"

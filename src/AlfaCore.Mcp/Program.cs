@@ -49,7 +49,7 @@ if (authOpt.Enabled)
         if (string.IsNullOrWhiteSpace(authCs))
             throw new InvalidOperationException(
                 "Falta la cadena de conexión del almacén OAuth: variable ALFACORE_MCP_AUTH_CONNECTION o user-secrets 'ConnectionStrings:AlfaMcpAuth' " +
-                "(login con permisos solo sobre las tablas MCP_*; ver docs/base-datos/sql-referencia/dir-mcp/010_oauth_tablas.sql).");
+                "(login con permisos solo sobre las tablas MCP_*; ver docs/base-datos/sql-referencia/dir-mcp/011_oauth_login_almacen.sql).");
         builder.Services.AddSingleton<IAuthStore>(sp => new SqlAuthStore(authCs, sp.GetRequiredService<ILogger<SqlAuthStore>>()));
     }
 

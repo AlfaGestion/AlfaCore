@@ -57,9 +57,9 @@ public sealed class ToolRunner(IMcpConfigProvider config, IAuditLog audit, IMcpU
         }
         catch (SqlException ex) when (ex.Number == 208)
         {
-            // Objeto inexistente: casi siempre una vista dir.* de un script que todavia no se corrio en esta base.
+            // Objeto inexistente: una vista dir.* que la actualizacion de AlfaCore no pudo crear en esta base (ver IA_MCP_ESQUEMA_ERRORES).
             error = "Objeto inexistente: " + ex.Message;
-            throw new McpException("Falta una vista del esquema dir en esta base (hay un script de docs/base-datos/sql-referencia/dir-mcp sin correr). " +
+            throw new McpException("Falta una vista del esquema dir en esta base (la actualización de AlfaCore no la pudo crear o todavía no se aplicó; ver IA_MCP_ESQUEMA_ERRORES). " +
                                    "Avisar al administrador; las demás herramientas siguen funcionando.");
         }
         catch (SqlException ex) when (ex.Number == -2)

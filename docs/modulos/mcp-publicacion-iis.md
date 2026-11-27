@@ -22,8 +22,9 @@ Por qué así:
   (el log de IIS no mostraba ningún pedido suyo). Con SNI, el 443 se comparte con AlfaCore sin tocarlo: IIS elige el sitio por el nombre.
 
 ## 0. Antes de empezar
-1. **SQL** (scripts de `docs/base-datos/sql-referencia/dir-mcp/`): `001`–`005` y `012` en la base de gestión; `010` y `011` en la base del almacén OAuth (`ALFA_CENTRAL`, 10.8.0.31).
-   Las contraseñas de `mcp_dir_ro` y `mcp_auth_rw` no van en ningún archivo del repo.
+1. **SQL**: el esquema `dir` (vistas, auditoría y claves `IA_MCP_*`) lo crea **AlfaCore** con su actualización
+   `2026-11-27-040__ia_mcp_esquema_dir.sql`. A mano: `dir-mcp/005` (login `mcp_dir_ro`) en la base de datos; en `ALFA_CENTRAL`,
+   `2026-11-27-041__alfa_central_mcp_oauth.sql`, `-042__alfa_central_mcp_multibase.sql` y `dir-mcp/011` (login `mcp_auth_rw`).
 2. **DNS:** crear el nombre en No-IP (registro A con la IP pública) y mantenerlo actualizado igual que `alfacentral.ddns.net`.
 3. **Red:** el 443 ya está abierto hacia `10.8.0.53` por AlfaCore. No hace falta abrir nada más.
 4. **Hosting Bundle:** AlfaCore ya corre sobre .NET 8 ahí. Verificar con `dotnet --list-runtimes` (debe aparecer `Microsoft.AspNetCore.App 8.x`). **No reiniciar IIS.**
@@ -129,18 +130,20 @@ pedido: un cliente no puede ver datos de otro. El ingreso con usuario + clave + 
 personal de ALFA NET.
 
 **Una sola vez (servidor):**
-1. `014_multibase_central.sql` en `ALFA_CENTRAL` (10.8.0.31) con `-v MCP_AUTH_LOGIN="mcp_auth_rw"`. **Antes** de publicar esta versión:
-   la nueva versión graba `Base` y `Metodo` en `MCP_CODIGO` / `MCP_REFRESH_TOKEN`.
-2. Opcional: `015_config_email.sql` en la base por defecto (la de `ALFACORE_MCP_CONNECTION`).
+1. `docs/base-datos/sql-referencia/2026-11-27-042__alfa_central_mcp_multibase.sql` en `ALFA_CENTRAL` (10.8.0.31) con
+   `-v MCP_AUTH_LOGIN="mcp_auth_rw"`. **Antes** de publicar esta versión: graba `Base` y `Metodo` en `MCP_CODIGO` / `MCP_REFRESH_TOKEN`.
+2. Las claves `IA_MCP_OAUTH_EMAIL_*` las agrega sola la actualización de AlfaCore (valores por defecto si faltan).
 3. Publicar y copiar como siempre (incluye `configurar_email_mcp.ps1`).
 4. `configurar_email_mcp.ps1` (como administrador): pide el SMTP (Enter = los mismos datos de AlfaCore), la clave oculta,
    manda una prueba y recién ahí lo guarda en el pool. Sin SMTP la pantalla sigue pidiendo usuario y clave.
 
 **Por cada base de cliente** (llega por la WireGuard, como AlfaCore):
-1. En su base: `001`–`005` (con su propia clave de `mcp_dir_ro`) y `013`. El `012` no hace falta (la configuración OAuth es la
-   de la base por defecto). Correr el `099` y comparar un mes contra su libro de IVA antes de invitar a nadie.
+1. Su base ya tiene el esquema `dir` si AlfaCore le aplicó la actualización `2026-11-27-040` (pasa sola al entrar a esa base).
+   A mano: `dir-mcp/005_login_solo_lectura.sql` (su propia clave de `mcp_dir_ro`) y el `099`; comparar un mes contra su libro de IVA
+   antes de invitar a nadie.
 2. `usuarios_mcp.ps1 habilitar-base <idbase>`: toma servidor y base de `ALFA_CENTRAL.bases`, pide la clave de `mcp_dir_ro`, prueba
-   la conexión, **rechaza un login que pueda leer tablas** (tiene que ser el de solo lectura) y guarda la clave cifrada en `MCP_BASE`.
+   la conexión, **rechaza un login que pueda leer tablas** (tiene que ser el de solo lectura), avisa si en esa base quedó alguna vista
+   sin crear (`IA_MCP_ESQUEMA_ERRORES`) y guarda la clave cifrada en `MCP_BASE`.
 
 **Por cada persona:**
 - El mail tiene que estar como usuario del cliente en la administración central (`/admin`, sección Usuarios).

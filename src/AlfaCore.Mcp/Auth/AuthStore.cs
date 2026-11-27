@@ -167,7 +167,7 @@ public sealed class MemoryAuthStore : IAuthStore
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-/// <summary>Tablas MCP_* (script 010_oauth_tablas.sql). Todas las operaciones sensibles son UPDATE condicionados: son atomicas.</summary>
+/// <summary>Tablas MCP_* (ALFA_CENTRAL: docs/base-datos/sql-referencia/2026-11-27-041__alfa_central_mcp_oauth.sql y -042__alfa_central_mcp_multibase.sql). Todas las operaciones sensibles son UPDATE condicionados: son atomicas.</summary>
 public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> log) : IAuthStore
 {
     private async Task<SqlConnection> AbrirAsync(CancellationToken ct)

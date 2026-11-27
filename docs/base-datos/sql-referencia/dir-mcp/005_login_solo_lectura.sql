@@ -2,7 +2,7 @@
 -- NO contiene contrasena: se pasa por variable sqlcmd, p. ej.:
 --   sqlcmd -S <servidor> -f i:65001 -i 005_login_solo_lectura.sql ^
 --          -v MCP_DB="ALFANET" MCP_LOGIN="mcp_dir_ro" MCP_PASSWORD="<elegir una contrasena fuerte>"
--- Requiere un login con permiso para crear logins (sysadmin / securityadmin). Ejecutar DESPUES de 001, 002 y 003.
+-- Requiere un login con permiso para crear logins (sysadmin / securityadmin). Ejecutar DESPUES de que AlfaCore aplique la actualizacion 2026-11-27-040__ia_mcp_esquema_dir.sql en esa base (crea el esquema dir y IA_LOG_CONSULTAS).
 --
 -- Permisos que recibe (nada mas):
 --   * SELECT sobre el esquema dir (vistas). Las vistas pertenecen a dbo, asi que el ownership chaining

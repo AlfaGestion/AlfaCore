@@ -3,8 +3,9 @@
 -- (recomendado: ALFA_CENTRAL, para que despues sirva a todas las bases/tenants; para pruebas, la misma base de pruebas).
 -- Sin contrasenas en este script: el login del almacen (ver abajo) se crea con variable sqlcmd o a mano.
 --
--- Ejecutar:  sqlcmd -S <servidor> -d <base_almacen> -f i:65001 -i 010_oauth_tablas.sql
--- Despues, en SSMS o sqlcmd (Modo SQLCMD): 011_oauth_login_almacen.sql crea el login con permisos SOLO sobre estas tablas.
+-- (Antes: dir-mcp/010_oauth_tablas.sql; ya aplicado en ALFA_CENTRAL el 2026-11-27. Re-ejecutarlo no cambia nada.)
+-- Ejecutar:  sqlcmd -S <servidor> -d <base_almacen> -f i:65001 -i 2026-11-27-041__alfa_central_mcp_oauth.sql
+-- Despues, en SSMS o sqlcmd (Modo SQLCMD): dir-mcp/011_oauth_login_almacen.sql crea el login con permisos SOLO sobre estas tablas.
 SET NOCOUNT ON;
 GO
 IF OBJECT_ID(N'dbo.MCP_USUARIO', N'U') IS NULL
