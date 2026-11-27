@@ -11,6 +11,15 @@ var builder = WebApplication.CreateBuilder(args);
 var authOpt = AuthOptions.Load(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(authOpt);
 
+// Filtro de host: ademas de los de appsettings (localhost), se acepta SOLO el host publico del Issuer.
+// Sin esto, detras de IIS todo pedido a alfacentral.ddns.net volveria con 400 (Invalid Hostname).
+if (authOpt.Enabled && Uri.TryCreate(authOpt.Issuer, UriKind.Absolute, out var issuerUri))
+{
+    var permitidos = (builder.Configuration["AllowedHosts"] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    if (!permitidos.Contains("*") && !permitidos.Contains(issuerUri.Host, StringComparer.OrdinalIgnoreCase))
+        builder.Configuration["AllowedHosts"] = string.Join(';', permitidos.Append(issuerUri.Host));
+}
+
 // Cadena de conexion de DATOS: variable de entorno ALFACORE_MCP_CONNECTION o user-secrets (ConnectionStrings:AlfaMcp).
 // NUNCA en el repo ni en appsettings. Debe ser la del login de solo lectura (005_login_solo_lectura.sql).
 var connectionString = builder.Configuration["ALFACORE_MCP_CONNECTION"]
