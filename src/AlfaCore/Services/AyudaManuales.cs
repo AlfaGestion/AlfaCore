@@ -175,6 +175,15 @@ public static class AyudaManuales
         ("/actualizaciones","utilidades","Actualizaciones"),
         ("/configuracion$","utilidades","Dónde está cada configuración") });
 
+    /// <summary>
+    /// Pantalla principal de los manuales que abarcan varias pantallas: es el camino que da la ayuda con IA cuando
+    /// el artículo no tiene pantalla propia en <see cref="Pantallas"/>. Sin esto, "¿cómo pospongo un ticket?"
+    /// mandaba a Partes de horas, la primera pantalla del manual de Tickets en la lista (2026-11-27).
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string,string> PantallaPrincipal=new Dictionary<string,string>{
+        ["tickets"]="/tickets",["crm"]="/crm",["conversaciones"]="/conversaciones",["compras"]="/compras",
+        ["contabilidad"]="/contabilidad",["logistica"]="/carga-viajes",["calendario"]="/calendario",["informes"]="/informes",
+        ["caja"]="/caja-bancos",["ventas-modulo"]="/ventas-dashboard",["stock"]="/stock",["catalogos"]="/catalogo"};
     public static string TemaParaRuta(string ruta)=>Ubicar(ruta).Tema;
     /// <summary>Id del artículo de la pantalla (para abrir la ayuda directo ahí), o null.</summary>
     public static string? SeccionParaRuta(string ruta)=>Ubicar(ruta).Articulo is { } titulo ? IdArticulo(titulo) : null;

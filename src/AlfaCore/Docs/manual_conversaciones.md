@@ -43,7 +43,9 @@ Algunos botones aparecen solo si la empresa tiene ese módulo (Tickets, CRM, asi
 
 Arriba a la derecha de la conversación, al lado del **Estado**, está el botón grande de color con el ícono [[bi:person-check-fill]] (**Asignarme · Tomar esta conversación**). Tocalo para tomarla: así el resto del equipo sabe que la estás atendiendo y el asistente de IA deja de responder.
 
-## Pausar el asistente de IA en una conversación
+## Pausar el asistente de IA (el bot) en una conversación
+
+Para que el bot no conteste en un chat puntual:
 
 Debajo del botón de asignarse está el botón [[bi:robot]] **Asistente activo**. Tocalo para pausar el asistente solo en esa conversación: pasa a decir [[bi:pause-circle-fill]] **Asistente pausado** y el asistente no responde hasta que lo vuelvas a tocar. El asistente también se calla solo cuando alguien del equipo responde o toma la conversación.
 

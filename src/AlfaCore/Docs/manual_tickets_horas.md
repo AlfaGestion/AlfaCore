@@ -74,9 +74,9 @@ Tocá un ticket (en el Kanban o en la Lista) para abrir su ficha. Arriba de todo
   - **Informes**: los informes para el cliente (ver **Informes para el cliente**).
 - Al terminar, tocá **Guardar** (arriba a la izquierda). **Cancelar** vuelve sin guardar.
 
-## Recordarme (seguimiento)
+## Recordarme: que un ticket vuelva a aparecer otro día
 
-Si un ticket tiene que esperar (por ejemplo, el cliente prueba algo y avisa), programá un recordatorio en vez de dejarlo en la lista:
+Si un ticket tiene que esperar (por ejemplo, el cliente prueba algo y avisa), posponelo con un recordatorio (seguimiento) en vez de dejarlo en la lista:
 
 1. En la ficha del ticket, arriba a la derecha, tocá [[bi:alarm]] **Recordarme…**.
 2. Elegí [[bi:sunrise]] **Mañana**, [[bi:calendar3]] **En 3 días**, [[bi:calendar-week]] **La semana que viene**, o elegí una fecha y tocá **Programar**.

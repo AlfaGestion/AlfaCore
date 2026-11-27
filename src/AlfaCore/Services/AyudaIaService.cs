@@ -86,6 +86,7 @@ public sealed class AyudaIaService(IHttpClientFactory http,IIaUsoRecorder uso,IS
     internal static string? ComoLlegar(AyudaFuente fuente,IReadOnlyList<ShellMenuSearchItemDto> menu)
     {
         var rutas=AyudaManuales.Pantallas.Where(p=>p.Tema==fuente.Tema && p.Articulo is not null && AyudaManuales.IdArticulo(p.Articulo)==fuente.Articulo).Select(p=>p.Ruta)
+            .Concat(AyudaManuales.PantallaPrincipal.TryGetValue(fuente.Tema,out var principal) ? [principal] : [])
             .Concat(AyudaManuales.Pantallas.Where(p=>p.Tema==fuente.Tema && p.Articulo is null).Select(p=>p.Ruta))
             .Concat(AyudaManuales.Pantallas.Where(p=>p.Tema==fuente.Tema).Select(p=>p.Ruta));
         return rutas.Select(r=>CaminoMenu(r,menu)).FirstOrDefault(c=>c is not null);

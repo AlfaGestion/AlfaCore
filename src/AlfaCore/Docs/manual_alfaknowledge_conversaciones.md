@@ -202,9 +202,9 @@ Si el cliente manda otro mensaje o una foto mientras el asistente arma la respue
 
 Cada respuesta automática y cada paso a una persona quedan registrados.
 
-### Pausar el asistente en una conversación
+### Pausar el asistente (el bot) en una conversación
 
-En la conversación, arriba a la derecha, debajo del botón de asignarse, está [[bi:robot]] **Asistente activo**. Tocalo para pausarlo en esa conversación: pasa a [[bi:pause-circle-fill]] **Asistente pausado** y no responde hasta que lo vuelvas a tocar. Si lo pausó el sistema porque alguien del equipo está atendiendo, el botón lo indica.
+Para que el bot no conteste en un chat: En la conversación, arriba a la derecha, debajo del botón de asignarse, está [[bi:robot]] **Asistente activo**. Tocalo para pausarlo en esa conversación: pasa a [[bi:pause-circle-fill]] **Asistente pausado** y no responde hasta que lo vuelvas a tocar. Si lo pausó el sistema porque alguien del equipo está atendiendo, el botón lo indica.
 
 ### Enseñarle al asistente
 
