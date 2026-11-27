@@ -1,254 +1,67 @@
 # Manual General de AlfaCore
-### Alfa Gestión · Guía principal de uso
 
----
+**AlfaCore** es la plataforma web de Alfa Gestión. Reúne en el navegador las herramientas de gestión, análisis, atención de clientes y administración de la empresa: ventas, compras, caja y bancos, stock, contabilidad, conversaciones, tickets, CRM y más. Cada usuario ve los módulos que tiene habilitados.
 
-## Índice
+## Ingresar al sistema
 
-1. [¿Qué es AlfaCore?](#1-qué-es-alfacore)
-2. [¿Para qué sirve?](#2-para-qué-sirve)
-3. [Ingreso al sistema](#3-ingreso-al-sistema)
-4. [Selección de base de datos](#4-selección-de-base-de-datos)
-5. [Pantalla principal y navegación](#5-pantalla-principal-y-navegación)
-6. [Cómo usar el menú](#6-cómo-usar-el-menú)
-7. [Cómo leer una pantalla de AlfaCore](#7-cómo-leer-una-pantalla-de-alfacore)
-8. [Filtros, búsquedas y listados](#8-filtros-búsquedas-y-listados)
-9. [Detalle, acciones y exportaciones](#9-detalle-acciones-y-exportaciones)
-10. [Ayuda y manuales por módulo](#10-ayuda-y-manuales-por-módulo)
-11. [Buenas prácticas de uso](#11-buenas-prácticas-de-uso)
-12. [Preguntas frecuentes](#12-preguntas-frecuentes)
+1. Abrí en el navegador la dirección que te dio el área de sistemas.
+2. Escribí tu **usuario** y tu **contraseña** y tocá **Ingresar**.
+3. Si tenés acceso a varias empresas o bases, elegí con cuál querés trabajar.
 
----
+Si no podés ingresar, revisá usuario y contraseña. Si sigue sin funcionar, avisá a soporte.
 
-## 1. ¿Qué es AlfaCore?
+## La pantalla de inicio
 
-**AlfaCore** es la plataforma web de Alfa Gestión.
+Al ingresar se ve **Inicio**:
 
-Su objetivo es concentrar en una sola aplicación distintas herramientas de gestión, análisis, auditoría, consultas, seguimiento operativo y soporte a decisiones.
+- Arriba, el buscador **Buscar una aplicación** (también se abre con **Ctrl + K**). Escribí lo que buscás, por ejemplo «clientes», «cierre de caja» o «compras», y elegí la pantalla.
+- **Favoritos**: accesos directos a las pantallas que más usás. Para agregar una, buscala y tocá la estrella [[bi:star]] (**Agregar a favoritos**); se pone llena [[bi:star-fill]]. Para sacarla, tocá la estrella de nuevo o la **x** del favorito.
+- **Módulos**: un cuadro por cada módulo (Archivos, Compras, Ventas, Caja y Bancos, Stock, Gestión Contable, Conversaciones, Tickets…). Tocá uno para ver sus pantallas.
 
-No es un único módulo.  
-Es una **base común** desde la que se accede a distintas áreas del negocio.
+## La barra de arriba
 
-Por ejemplo, según la instalación y los permisos, AlfaCore puede incluir:
+Está siempre visible, en todas las pantallas.
 
-- dashboards de gestión
-- consultas SQL
-- auditoría
-- tareas
-- conversaciones
-- interfaces
-- costos
-- seguridad
+A la izquierda:
 
-Cada módulo conserva su propia lógica, pero todos comparten una misma forma de navegación.
+- El logo de **AlfaCore**, con el nombre del módulo en el que estás. [[bi:house]] (**Ir a Inicio**) vuelve a la pantalla de inicio.
+- [[bi:chevron-left]] **Atrás** y [[bi:chevron-right]] **Adelante**: como las flechas del navegador.
+- Al lado, las **pestañas del módulo** (por ejemplo, en Tickets: **Mesa de ayuda**, **Seguimiento**, **Configuración**). Si no entran, las demás están en **Más**.
 
----
+A la derecha:
 
-## 2. ¿Para qué sirve?
+- **A cargo**: quién está de guardia o de turno ahora y quién sigue (aparece si se configuró en **Calendario → Indicador**). Tocalo para abrir el calendario.
+- [[bi:chat-left-text]] **Mensajes**: los mensajes de Conversaciones sin leer. El número rojo dice cuántos hay.
+- [[bi:bell]] **Avisos**: las notificaciones del sistema (por ejemplo, un ticket por vencer).
+- [[bi:question-circle]] **Ayuda y chat con IA**: abre esta ayuda.
+- [[bi:gear]] **Configuración**: todas las configuraciones del sistema, ordenadas por tema.
+- [[bi:database]] **Base activa**: muestra con qué empresa o base estás trabajando.
+- Tu usuario (por ejemplo **Administrador**): abre el menú con **Cambiar usuario o base**, **Tareas**, **Portal Cliente** (con [[bi:box-arrow-up-right]] para abrirlo y [[bi:clipboard]] para copiar el enlace) y **Ayuda**.
 
-AlfaCore sirve para:
+## Cómo es una pantalla de trabajo
 
-- consultar información del sistema desde el navegador
-- analizar indicadores del negocio
-- revisar operaciones y alertas
-- administrar configuraciones y procesos
-- acceder a herramientas de apoyo para usuarios, supervisores y dueños
+Casi todas las pantallas tienen, debajo de la barra de arriba, una **barra de acciones**:
 
-En términos simples:
+- **A la izquierda**, los botones de la pantalla. El principal es azul (por ejemplo [[bi:plus-circle]] **Nuevo cliente** o [[bi:floppy]] **Guardar**). [[bi:arrow-clockwise]] **Recargar** o **Actualizar** vuelve a consultar. **…** abre más opciones.
+- **En el medio**, el buscador con sus filtros.
+- **A la derecha**, la cantidad de registros, las flechas [[bi:chevron-left]] [[bi:chevron-right]] para pasar de página y la forma de ver: [[bi:table]] **Listado** o [[bi:kanban]] **Kanban**, según la pantalla.
 
-> AlfaCore permite trabajar con información de Alfa Gestión de forma moderna, visual y centralizada.
+Más abajo puede haber **tarjetas** con los números más importantes (por ejemplo, total vendido o pendiente de cobro), **solapas** para pasar de una parte a otra de la pantalla, y la tabla con el detalle.
 
----
+Al pasar el mouse por un botón que solo tiene un dibujo, aparece un cartel con lo que hace.
 
-## 3. Ingreso al sistema
+## Filtros, búsquedas y listados
 
-La aplicación se abre desde un navegador web.
+### Buscador y filtros de la barra de arriba
 
-Según cómo esté instalada en tu empresa, podés ingresar con una dirección como:
-
-```text
-http://localhost:5055
-```
-
-o bien con la dirección del servidor publicada por el área de sistemas.
-
-Al ingresar, el sistema puede pedirte:
-
-- seleccionar una base activa
-- iniciar sesión con usuario del sistema
-
-Si no podés ingresar:
-
-- verificá que la base correcta esté activa
-- revisá usuario y contraseña
-- si persiste, contactá a soporte
-
----
-
-## 4. Selección de base de datos
-
-AlfaCore trabaja sobre una **base activa**.
-
-Eso significa que la información que ves depende de la sesión SQL seleccionada.
-
-### ¿Dónde se ve?
-
-En la parte superior de la aplicación aparece un chip o indicador con:
-
-- servidor
-- base de datos activa
-
-### ¿Qué pasa si cambiás de base?
-
-Al cambiar la base:
-
-- la sesión funcional actual puede cerrarse
-- tenés que volver a ingresar
-- cambiás el contexto completo de trabajo
-
-### Recomendación
-
-Antes de revisar datos o hacer análisis, confirmá siempre:
-
-- qué base está activa
-- si corresponde al cliente o empresa con la que querés trabajar
-
----
-
-## 5. Pantalla principal y navegación
-
-La interfaz de AlfaCore tiene una estructura general común:
-
-### Encabezado
-
-En la parte superior vas a encontrar normalmente:
-
-- nombre del entorno
-- módulo actual
-- base activa
-- usuario logueado
-- acceso a ayuda
-
-### Menú lateral
-
-Desde el menú lateral accedés a los módulos.
-
-### Área de trabajo
-
-Es la zona central donde se muestra la pantalla activa:
-
-- resumen
-- grilla
-- filtros
-- detalle
-- gráficos
-- formularios
-
-### Acciones rápidas
-
-Algunas pantallas también muestran:
-
-- recargar
-- exportar
-- abrir detalle
-- configurar
-
----
-
-## 6. Cómo usar el menú
-
-El menú lateral es la entrada principal a los módulos.
-
-### Qué podés hacer
-
-- abrir un módulo
-- volver a la opción anterior
-- buscar una opción por nombre
-- acceder a Ayuda
-- ingresar a Tareas
-
-### Búsqueda de menú
-
-Si no sabés dónde está una opción, usá el buscador del menú.
-
-Podés escribir, por ejemplo:
-
-- auditoría
-- consultas
-- clientes
-- interfaces
-- costos
-
-### Recomendación
-
-Si estás empezando, usá primero:
-
-- menú lateral
-- título del módulo activo
-- botón de ayuda
-
-Eso te ubica rápido dentro del sistema.
-
----
-
-## 7. Cómo leer una pantalla de AlfaCore
-
-Aunque cada módulo tiene sus particularidades, la mayoría de las pantallas siguen un patrón similar.
-
-### 7.1 Título y descripción
-
-Arriba de todo se informa:
-
-- qué módulo estás viendo
-- qué analiza o administra
-
-### 7.2 Filtros
-
-Sirven para acotar la información.
-
-Lo más habitual es filtrar por:
-
-- fechas
-- usuario
-- cuenta
-- tipo
-- estado
-- riesgo
-
-### 7.3 KPI
-
-Las tarjetas KPI resumen lo más importante de la pantalla.
-
-Ejemplos:
-
-- cantidades
-- importes
-- alertas
-- tiempos
-- usuarios involucrados
-
-### 7.4 Grilla o tabla
-
-Es el listado detallado del resultado.
-
-### 7.5 Detalle
-
-Al abrir un registro, podés ver información ampliada para analizar mejor el caso.
-
----
-
-## 8. Filtros, búsquedas y listados
-
-### Buscador y filtros de la barra superior
-
-En casi todos los listados y reportes, la búsqueda y los filtros están en la barra superior, en el centro:
+En casi todos los listados y reportes, la búsqueda y los filtros están en la barra de acciones, en el centro:
 
 - Escribí en el buscador y pulsá Enter para buscar por texto (nombre, cuenta, número…).
 - El **embudo** o la **flecha** de la derecha abren el panel de filtros. Está organizado en columnas con título, por ejemplo **Período**, **Comprobante** u **Opciones**.
-- Los filtros aplicados se ven como **chips** dentro del buscador, por ejemplo «Mes anterior».
+- Los filtros aplicados se ven como etiquetas al lado del buscador, por ejemplo «Mes anterior». La **x** de cada etiqueta lo saca.
 - Para cerrar el panel, hacé clic afuera o pulsá Esc.
 
-En los listados, como Ver comprobantes o Asientos, tocar un rango rápido actualiza la lista enseguida. En los reportes, como Libro diario o Reporte de Ventas, elegís los filtros y después pulsás **Generar** o **Aplicar**. Así no se recalcula un reporte grande con cada clic.
+En los listados, como Ver comprobantes o Asientos, tocar un rango rápido actualiza la lista enseguida. En los reportes, como Libro diario o Reporte de Ventas, elegís los filtros y después tocás **Generar** o **Aplicar**. Así no se recalcula un reporte grande con cada clic.
 
 ### Rangos rápidos de fecha
 
@@ -256,212 +69,75 @@ La columna **Período** ofrece los mismos rangos en todas las pantallas: **Hoy**
 
 Por ejemplo, con fecha de hoy 04/11/2026: Últimos 7 días va del 29/10 al 04/11; Mes anterior, del 01/10 al 31/10; Trimestre actual, del 01/10 al 04/11; Trimestre anterior, del 01/07 al 30/09.
 
-Debajo están **Desde** y **Hasta**. Al hacer clic en una fecha se abre el calendario. El aspecto del calendario depende del navegador y de Windows.
+Debajo están **Desde** y **Hasta**. Al hacer clic en una fecha se abre el calendario.
 
-### Filtros
+### Ordenar y pasar de página
 
-Los filtros ayudan a responder preguntas concretas.
+- Tocá el título de una columna para ordenar por ella; otro toque invierte el orden.
+- Cuando hay muchos resultados, la tabla se divide en páginas: usá las flechas de arriba a la derecha o **Anterior** / **Siguiente** abajo. En algunas tablas podés elegir cuántos ver por página (por ejemplo **50 por página**).
 
-Ejemplos:
+## Ver el detalle y exportar
 
-- “mostrame solo este usuario”
-- “quiero revisar solo abril”
-- “quiero ver solo riesgo alto”
+### Abrir un comprobante
 
-### Búsqueda por texto
-
-Muchas pantallas tienen una búsqueda libre para encontrar por coincidencia:
-
-- nombres
-- cuentas
-- comprobantes
-- motivos
-- equipos
-
-### Ordenamiento
-
-En muchas tablas podés ordenar por columnas como:
-
-- fecha
-- importe
-- usuario
-- riesgo
-
-### Paginación
-
-Cuando hay muchos resultados, la tabla se divide en páginas.
-
-Podés:
-
-- cambiar de página
-- ajustar tamaño de página
-
----
-
-## 9. Detalle, acciones y exportaciones
-
-### Ver detalle
-
-Cuando una fila tiene detalle, conviene usarlo antes de sacar conclusiones.
-
-El detalle suele mostrar:
-
-- información ampliada
-- motivo
-- observaciones
-- relaciones con otros registros
-- datos técnicos o funcionales
-
-### Abrir comprobante o registro relacionado
-
-En los listados que muestran comprobantes (reportes contables, cuentas corrientes, libros de IVA, retenciones, actividad, asientos) aparece **Ver**, con un ícono de ojo, junto al número. Abre el detalle del comprobante encima de la pantalla. Al cerrarlo seguís en el mismo lugar: se conservan el listado, los filtros y la página.
-
-No aparece en las filas que no corresponden a un comprobante, como totales o saldos iniciales.
+En los listados que muestran comprobantes (reportes contables, cuentas corrientes, libros de IVA, retenciones, asientos) aparece [[bi:eye]] **Ver** junto al número. Abre el detalle del comprobante encima de la pantalla. Al cerrarlo seguís en el mismo lugar, con el listado, los filtros y la página.
 
 ### Exportar
 
-Según el módulo, puede haber exportación a:
+Según la pantalla, podés bajar el resultado en [[bi:file-earmark-excel]] **Excel** (para trabajarlo) o [[bi:file-earmark-pdf]] **PDF** (para imprimir o compartir). Los botones están en la barra de acciones o en **…**.
 
-- `PDF`
-- `Excel`
+## Ayuda y chat con IA
 
-### Cuándo usar cada formato
+Tocá [[bi:question-circle]] (**Ayuda y chat con IA**) en la barra de arriba. La ayuda se abre encima de la pantalla y, al cerrarla, volvés a lo que estabas haciendo sin perder nada.
 
-Usá `PDF` para:
+### Guías
 
-- compartir
-- imprimir
-- presentar
+La ayuda abre directo la explicación de la pantalla en la que estás. Arriba podés elegir otro **Manual** de la lista. En el buscador **Buscá en toda la ayuda** escribí lo que necesitás (por ejemplo «facturar», «alta de cliente», «cerrar la caja»): busca en todos los manuales. Tocá una tarea de la izquierda para leerla. **Ver manual completo** muestra el manual entero.
 
-Usá `Excel` para:
-
-- analizar
-- ordenar
-- comentar
-- trabajar con más detalle
-
----
-
-## 10. Ayuda y manuales por módulo
-
-Pulsá el icono **?**, junto a las notificaciones de la barra superior. La ayuda se abre sobre la pantalla y podés volver a tu operación sin cambiar sus datos ni selecciones. En las pantallas con menú lateral, utilizá el acceso **Ayuda** del menú.
-
-### Consultar las guías
-
-La ayuda abre directamente la explicación de la pantalla en la que estás, cuando está documentada; en otras pantallas muestra la guía general. Con las pestañas de arriba podés cambiar de manual (**General**, **Contabilidad**, **Ventas: comprobantes**, **Reportes**, **Seguridad**, **Consultas**, **Conciliación**, **Conciliación de tarjetas** o **Cobranzas**). Buscá una palabra y seleccioná la tarea. **Ver manual completo** permite consultar todo el tema.
+Los dibujitos dentro del texto (por ejemplo [[bi:life-preserver]] o [[bi:floppy]]) son los mismos íconos de los botones de la pantalla: buscá ese dibujo para saber qué tocar.
 
 ### Preguntar a IA
 
-Elegí **Preguntar a IA**, escribí tu consulta y pulsá **Preguntar** o Enter. Por ejemplo: «¿Cómo verifico si una cobranza ya está registrada?» o «¿Cómo pago dos facturas juntas?».
+1. Tocá [[bi:stars]] **Preguntar a IA**, arriba a la derecha de la ayuda. Si ya habías escrito algo en el buscador de Guías, la pregunta aparece cargada.
+2. Escribí tu consulta y tocá [[bi:arrow-up]] o Enter. Por ejemplo: «¿Cómo creo un ticket?» o «¿Cómo cobro dos facturas juntas?».
+3. La respuesta te dice cómo llegar desde la pantalla en la que estás y qué botones tocar. Debajo aparecen los manuales que usó: tocá uno para leerlo.
 
-El chat consulta los manuales publicados y muestra debajo de cada respuesta las secciones utilizadas. Pulsá una fuente para leerla en **Guías**; al volver al chat se conserva la conversación. Podés hacer repreguntas, **Cancelar consulta** mientras responde o empezar una **Nueva conversación**.
+Podés seguir preguntando sobre lo mismo. [[bi:stop-fill]] cancela una consulta en curso, [[bi:plus-lg]] **Nueva conversación** empieza otra y [[bi:clock-history]] **Historial** muestra tus consultas anteriores (se guardan unos dos meses; [[bi:trash3]] borra una).
 
-Si el tema no está documentado, la ayuda lo indica. El chat explica procedimientos: no consulta saldos ni comprueba por sí mismo si una cobranza está registrada. Para esos casos, seguí los pasos de cuenta corriente y comprobantes del manual.
+El chat explica cómo se hacen las cosas según los manuales: no consulta saldos ni movimientos. Si el tema no está en los manuales, lo dice.
 
-Se envían al servicio de IA tu pregunta, la conversación reciente y fragmentos de las guías. La conexión de IA debe estar configurada en el servidor; si no lo está, podés seguir consultando las guías. La conversación se conserva mientras la ayuda está abierta; al cerrar o cambiar de pantalla, base o usuario se inicia una nueva.
+Cerrá la ayuda con la **X**, **Volver a la operación** o Esc.
 
-Cerrá con la **X**, **Volver a la operación** o Esc. Hacer clic fuera del panel no lo cierra.
+## Buenas prácticas
 
----
+- **Confirmá la base activa** antes de mirar datos o cargar algo: es lo que define con qué empresa estás trabajando.
+- **Filtrá antes de analizar**: acotá el período, el cliente o el módulo.
+- **Primero el resumen, después el detalle**: mirá las tarjetas, después la tabla, después abrí el detalle.
+- **Una alerta no es un error confirmado**: muchos módulos muestran avisos para revisar, no conclusiones.
 
-## 11. Buenas prácticas de uso
-
-### Confirmá siempre la base activa
-
-Es la validación más importante antes de interpretar cualquier dato.
-
-### Filtrá antes de analizar
-
-No tomes decisiones con resultados demasiado amplios si podés acotar:
-
-- período
-- usuario
-- cuenta
-- módulo
-
-### Leé primero el resumen y después el detalle
-
-El orden recomendado es:
-
-1. mirar KPI
-2. revisar listado
-3. abrir detalle
-4. exportar si hace falta
-
-### No confundas alerta con error confirmado
-
-Muchos módulos muestran hallazgos, no sentencias definitivas.
-
-La regla práctica es:
-
-> primero revisar, después concluir
-
-### Usá Ayuda dentro del contexto correcto
-
-Si estás en un módulo específico, buscá primero su manual.
-
----
-
-## 12. Preguntas frecuentes
+## Preguntas frecuentes
 
 ### ¿AlfaCore reemplaza a Alfa Gestión?
 
-No.  
-Es la capa web y analítica que complementa y moderniza el acceso a información y procesos.
-
-### ¿Todo lo que veo depende de la base activa?
-
-Sí.  
-La base seleccionada define el contexto de datos.
-
-### ¿Puedo trabajar en más de una base?
-
-Sí, pero no al mismo tiempo en la misma sesión funcional sin cambiar el contexto.
+No. Es la parte web que complementa y moderniza el acceso a la información y a los procesos de Alfa Gestión.
 
 ### ¿Todos los usuarios ven los mismos módulos?
 
-No necesariamente.  
-Depende de:
+No. Depende de los permisos de cada usuario, de los módulos que tiene la empresa y de la configuración.
 
-- permisos
-- configuración
-- base activa
-- opciones habilitadas
+### ¿Qué hago si una pantalla no carga o da error?
 
-### ¿Qué hago si una pantalla no carga?
-
-Primero revisá:
-
-- base activa
-- conexión
-- permisos
-
-Si el problema sigue, compartí el código de incidente con soporte.
+Revisá la base activa y tu conexión. Si sigue, pasale a soporte el **código de incidente** que muestra el mensaje de error.
 
 ### ¿Qué hago si no encuentro una opción?
 
-Probá:
-
-- el buscador del menú
-- el botón de ayuda
-- el manual del módulo correspondiente
-
----
-
-## Cierre
-
-AlfaCore está pensado para que el trabajo diario sea más claro, más visible y más controlable.
-
-La mejor manera de aprovecharlo es usarlo con este criterio:
-
-- primero ubicar el módulo correcto
-- después confirmar la base activa
-- luego filtrar
-- y recién ahí analizar o decidir
-
-Este manual general es el punto de partida.  
-Para el uso profundo de cada área, apoyate en los manuales específicos por módulo.
+Usá el buscador de **Inicio** (Ctrl + K), la [[bi:question-circle]] ayuda o **Preguntar a IA**.
 
 ## Tareas
 
-En **Tareas** (desde el menú de usuario o el panel de tareas) cada persona lleva sus pendientes. Pulsá **Nueva tarea**, escribí qué hay que hacer y, si querés, la fecha y el grupo. Las tareas se organizan en **Grupos de tareas**. Marcala como hecha cuando la termines. **Recargar** vuelve a leer la lista.
+Cada persona lleva sus pendientes en **Tareas**. Se abre desde el menú de tu usuario (arriba a la derecha) → **Tareas**.
+
+- Escribí la tarea y, si querés, la fecha y el grupo. Las tareas se organizan en **Grupos de tareas**.
+- Tocá [[bi:circle]] (**Marcar como hecha**) cuando la termines; [[bi:check-circle-fill]] **Restaurar** la vuelve a pendiente.
+- [[bi:arrow-up]] **Subir tarea** y [[bi:arrow-down]] **Bajar tarea** cambian el orden; [[bi:three-dots-vertical]] **Más opciones** muestra el resto.
+- [[bi:box-arrow-up-right]] **Ir al módulo de tareas** abre la pantalla completa, con **Recargar** para volver a leer la lista.
