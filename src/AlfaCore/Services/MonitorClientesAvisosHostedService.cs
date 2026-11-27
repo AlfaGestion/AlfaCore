@@ -92,6 +92,8 @@ public sealed class MonitorClientesAvisosHostedService(
         if (!config.Activo && !forzar)
             return;
 
+        await AvisarBackupsAsync(scope.ServiceProvider, config, tablero, ct);
+
         var pendientes = MonitorClientesAvisos.Pendientes(tablero.Filas, config);
         var decision = MonitorClientesAvisos.Decidir(pendientes, config, ahora, forzar);
         var anteriores = MonitorClientesAvisos.ClavesDeFirma(config.UltimaFirma);
@@ -102,7 +104,7 @@ public sealed class MonitorClientesAvisosHostedService(
                 ? MonitorClientesAvisos.MensajeAlertas(pendientes, anteriores, config)
                 : MonitorClientesAvisos.MensajeNormalizado(forzar && anteriores.Count == 0);
 
-            config.IdHilo = await PublicarAsync(scope.ServiceProvider, config.IdHilo, texto, ct);
+            config.IdHilo = await PublicarAsync(scope.ServiceProvider, config.IdHilo, NombreHilo, AvisoMonitor, texto, ct);
             config.UltimoEnvio = ahora;
 
             if (decision == MonitorClientesAvisos.Decision.Alertas && config.UsuariosPushLista.Count > 0)
@@ -129,8 +131,39 @@ public sealed class MonitorClientesAvisosHostedService(
         await monitor.GuardarAvisoEstadoAsync(config, ct);
     }
 
-    /// <summary>Publica en el hilo interno; si no existe (o lo borraron), crea uno nuevo.</summary>
-    private static async Task<long> PublicarAsync(IServiceProvider sp, long? idHilo, string texto, CancellationToken ct)
+    /// <summary>
+    /// Backup diario fallido o recuperado → hilo "Backups de clientes" (2026-11-27). Un mensaje solo cuando hay
+    /// algo nuevo; la firma guarda qué backups fallaban para no repetir. Un error acá no frena el aviso general.
+    /// </summary>
+    private async Task AvisarBackupsAsync(IServiceProvider sp, MonitorAvisoConfigDto config, MonitorTableroDto tablero, CancellationToken ct)
+    {
+        try
+        {
+            var fallidos = MonitorClientesAvisos.BackupsFallidos(tablero.Filas);
+            var anteriores = MonitorClientesAvisos.ClavesDeFirma(config.BackupFirma);
+            var texto = MonitorClientesAvisos.MensajeBackups(fallidos, anteriores, tablero.Filas);
+            if (texto is not null)
+            {
+                config.BackupIdHilo = await PublicarAsync(sp, config.BackupIdHilo, NombreHiloBackups, AvisoBackups, texto, ct);
+                logger.LogInformation("Monitor de Clientes: aviso de backups ({Fallidos} con problemas) en el hilo {IdHilo}.", fallidos.Count, config.BackupIdHilo);
+            }
+            config.BackupFirma = MonitorClientesAvisos.Firma(fallidos);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Monitor de Clientes: no se pudo avisar los backups fallidos.");
+        }
+    }
+
+    internal const string NombreHiloBackups = "Backups de clientes";
+    private const string AvisoMonitor = "MONITOR";
+    private const string AvisoBackups = "MONITOR-BACKUP";
+
+    /// <summary>
+    /// Publica en el hilo interno de avisos; si no existe (o lo borraron), crea uno nuevo. El hilo queda marcado
+    /// como aviso del sistema: se ve en la bandeja Todos, resaltado (el chat interno no lo miraba nadie).
+    /// </summary>
+    private static async Task<long> PublicarAsync(IServiceProvider sp, long? idHilo, string nombreHilo, string aviso, string texto, CancellationToken ct)
     {
         var conversaciones = sp.GetRequiredService<IConversacionesService>();
 
@@ -139,11 +172,14 @@ public sealed class MonitorClientesAvisosHostedService(
             var hilo = await conversaciones.GetConversationAsync(idHilo.Value, ct);
             if (hilo is null || !string.Equals(hilo.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase))
                 idHilo = null;
+            else
+                await conversaciones.MarcarAvisoSistemaAsync(idHilo.Value, aviso, ct);
         }
 
         idHilo ??= await conversaciones.CreateInternalThreadAsync(new ConversacionCrearHiloInternoRequest
         {
-            NombreHilo = NombreHilo,
+            NombreHilo = nombreHilo,
+            AvisoSistema = aviso,
             UsuarioAccion = NombreHilo,
             SistemaAccion = SistemaAccion
         }, ct);

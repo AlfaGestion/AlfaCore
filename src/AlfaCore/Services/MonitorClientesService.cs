@@ -506,7 +506,9 @@ public sealed class MonitorClientesService(
             IdHilo = long.TryParse(V("AVISO_ID_HILO"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var h) && h > 0 ? h : null,
             UltimoEnvio = ParsearFecha(V("AVISO_ULTIMO_ENVIO")),
             UltimaFirma = V("AVISO_ULTIMA_FIRMA"),
-            Forzar = V("AVISO_FORZAR") == "1"
+            Forzar = V("AVISO_FORZAR") == "1",
+            BackupIdHilo = long.TryParse(V("BACKUP_ID_HILO"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var bh) && bh > 0 ? bh : null,
+            BackupFirma = V("BACKUP_FIRMA")
         };
     }
 
@@ -571,7 +573,9 @@ public sealed class MonitorClientesService(
             ["AVISO_ID_HILO"] = config.IdHilo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             ["AVISO_ULTIMO_ENVIO"] = config.UltimoEnvio?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? string.Empty,
             ["AVISO_ULTIMA_FIRMA"] = config.UltimaFirma.Length > 1000 ? config.UltimaFirma[..1000] : config.UltimaFirma,
-            ["AVISO_FORZAR"] = config.Forzar ? "1" : "0"
+            ["AVISO_FORZAR"] = config.Forzar ? "1" : "0",
+            ["BACKUP_ID_HILO"] = config.BackupIdHilo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            ["BACKUP_FIRMA"] = config.BackupFirma.Length > 1000 ? config.BackupFirma[..1000] : config.BackupFirma
         }, "MONITOR", ct).ConfigureAwait(false);
     }
 

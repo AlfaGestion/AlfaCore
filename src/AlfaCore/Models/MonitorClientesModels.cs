@@ -171,6 +171,12 @@ public sealed class MonitorAvisoConfigDto
     /// <summary>Pedido de "Enviar aviso ahora" desde el tablero; el proceso lo atiende en el próximo minuto.</summary>
     public bool Forzar { get; set; }
 
+    /// <summary>Hilo "Backups de clientes" (avisos de backup diario fallido o recuperado). Se crea solo.</summary>
+    public long? BackupIdHilo { get; set; }
+
+    /// <summary>Claves de los backups que fallaban en el último ciclo.</summary>
+    public string BackupFirma { get; set; } = string.Empty;
+
     public IReadOnlyList<string> PrioridadesLista
         => Prioridades.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 

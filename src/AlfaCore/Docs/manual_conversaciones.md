@@ -186,8 +186,28 @@ Quién ve cada número y quién ve todos se define en **Archivos → Seguridad �
 
 ## Estadísticas
 
-En **Conversaciones → Estadísticas** (pestaña de la barra de arriba), elegí el período (**Desde** / **Hasta** o un rango rápido) y, si querés, un **Técnico**, y tocá **Aplicar**. Muestra la cantidad de conversaciones, los tiempos de respuesta y el movimiento por cliente.
+En **Conversaciones → Estadísticas** (pestaña de la barra de arriba), elegí el período con los rangos rápidos (**Hoy**, **2 días**, **7 días**, **1 mes**…) o con **Desde** / **Hasta** y tocá [[bi:funnel]] **Aplicar**. Si querés ver solo lo de una persona, elegí el **Técnico**.
 
+Arriba hay tres tarjetas con lo principal:
+
+- [[bi:people]] **Clientes que escribieron**: cuántos clientes distintos escribieron en el período, por cualquier canal. Cada cliente cuenta una vez aunque haya escrito varias veces o por varios canales.
+- [[bi:check2-circle]] **Tuvieron respuesta**: cuántos recibieron respuesta, separados en [[bi:person-fill]] **por el equipo** y [[bi:robot]] **solo por el asistente** (los que atendió únicamente el bot).
+- [[bi:hourglass-split]] **Quedaron sin responder**: clientes con la conversación abierta a los que nadie les contestó su último mensaje (ni el equipo ni el asistente). Si la conversación se cerró, cuenta como atendida aunque el cliente haya escrito "gracias" al final.
+
+Tocá una tarjeta para ver esos clientes en la lista de abajo. La lista también se filtra con **Todos**, **Sin responder**, **Con respuesta**, **Equipo** y **Solo asistente**. Tocá un cliente para abrir su conversación.
+
+Los mensajes automáticos (bienvenida, fuera de horario, encuesta) no cuentan como respuesta; las respuestas del asistente sí.
+
+Más abajo, **Más detalle** abre los números de WhatsApp: mensajes, cierres, tickets, actividad del equipo y temas frecuentes.
+
+## Avisos del sistema en la bandeja
+
+En la bandeja **Todos** también aparecen, en rojo y con el ícono [[bi:shield-exclamation]], los avisos automáticos del **Monitor de Clientes** (marcados **Aviso del sistema**):
+
+- **Monitor de Clientes**: alertas críticas de los clientes prioritarios que nadie tomó.
+- **Backups de clientes**: avisa cuando falla el backup diario de un cliente y cuando vuelve a funcionar.
+
+Para resolverlos, entrá a **Administrar → Monitor de Clientes** y tomá o silenciá la alerta.
 ## Informes mensuales
 
 En **Conversaciones → Informes** (en **Más**, en la barra de arriba) elegí **Mes** y **Año** y generá el informe de atención por cliente (por ejemplo, para clientes con abono). **Informes guardados** abre uno anterior y **Excel** lo descarga. Quien puede configurar Conversaciones ve también **Instrucciones de tono y estilo**, que definen cómo redacta la IA el informe.

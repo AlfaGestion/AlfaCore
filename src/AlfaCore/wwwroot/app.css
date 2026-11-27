@@ -30466,3 +30466,28 @@ html[data-theme="dark"] .portal-cliente .alfa-dialog__error {
         min-width: 0;
     }
 }
+
+/* Avisos del sistema (Monitor de Clientes, backups) en la bandeja Todos (2026-11-27): rojo para que se vean.
+   Con !important porque los temas de la bandeja (conversations-page--odoo) pisan el fondo de cada fila. */
+html body .conversations-page .conversation-row.is-aviso-sistema.is-aviso-sistema {
+    border-color: rgba(248, 113, 113, .55) !important;
+    border-left: 4px solid #ef4444 !important;
+    background: linear-gradient(135deg, rgba(239, 68, 68, .22), rgba(239, 68, 68, .06)) !important;
+}
+html body .conversations-page .conversation-row.is-aviso-sistema.is-aviso-sistema.is-selected {
+    background: linear-gradient(135deg, rgba(239, 68, 68, .32), rgba(239, 68, 68, .12)) !important;
+}
+html body .conversations-page .conversation-row__avatar.conversation-row__avatar--aviso.conversation-row__avatar--aviso {
+    background: #ef4444 !important;
+    background-image: none !important;
+    color: #fff !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.conversation-row__aviso-icono { font-size: 1.35rem; line-height: 1; color: #fff; }
+html body .conversations-page .conversation-badge--aviso-sistema.conversation-badge--aviso-sistema {
+    background: rgba(239, 68, 68, .2) !important;
+    color: #fca5a5 !important;
+    font-weight: 600;
+}
