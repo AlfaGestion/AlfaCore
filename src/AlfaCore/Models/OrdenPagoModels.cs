@@ -34,6 +34,8 @@ public sealed class OrdenPagoMedio
     public string Descripcion { get; set; } = "";
     /// <summary>EF efectivo, DB banco/transferencia, CH cheque propio.</summary>
     public string Tipo { get; set; } = "";
+    /// <summary>Código corto para tipear en la carga de medios (como en el POS); si falta se usa la cuenta.</summary>
+    public string CodigoOpcional { get; set; } = "";
 }
 
 public sealed class OrdenPagoChequera
@@ -141,3 +143,41 @@ public sealed record OrdenPagoReparto(
     IReadOnlyList<(OrdenPagoClave Credito, OrdenPagoClave Factura, decimal Importe)> PorCredito,
     IReadOnlyList<OrdenPagoImporte> Propias,
     decimal Dinero, decimal Creditos, decimal Anticipo);
+
+/// <summary>Comprobante pendiente de pago de cualquier proveedor (listado de pagos a proveedores).</summary>
+public sealed class OrdenPagoPendiente
+{
+    public string Proveedor { get; set; } = "";
+    public string Nombre { get; set; } = "";
+    public string Cuit { get; set; } = "";
+    public string Tc { get; set; } = "";
+    public string Sucursal { get; set; } = "";
+    public string Numero { get; set; } = "";
+    public string Letra { get; set; } = "";
+    public DateTime Fecha { get; set; }
+    public DateTime? Vencimiento { get; set; }
+    public decimal Saldo { get; set; }
+    public string Unidad { get; set; } = "";
+    public string Moneda { get; set; } = "";
+    public bool Bloqueado { get; set; }
+    public bool Proforma { get; set; }
+    public string Motivo { get; set; } = "";
+    public bool Seleccionable => Motivo.Length == 0;
+    /// <summary>Misma clave que usa la orden de pago para cada comprobante (TC|sucursal+número+letra).</summary>
+    public string Clave => $"{Tc}|{Sucursal}{Numero}{Letra}";
+    public string Formato => $"{Sucursal}-{Numero}{(Letra.Trim().Length > 0 ? " " + Letra.Trim() : "")}";
+}
+
+public sealed class OrdenPagoIndicadores
+{
+    public decimal PagadoHoy { get; set; }
+    public int OrdenesHoy { get; set; }
+    public decimal PagadoMes { get; set; }
+    public int OrdenesMes { get; set; }
+}
+
+public sealed class OrdenPagoSaldoProveedor
+{
+    public string Proveedor { get; set; } = "";
+    public decimal Saldo { get; set; }
+}
