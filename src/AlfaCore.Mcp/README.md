@@ -82,10 +82,19 @@ UPDATE dbo.MCP_USUARIO SET Intentos = 0, BloqueadoHasta = NULL WHERE Usuario = '
 UPDATE dbo.MCP_REFRESH_TOKEN SET Revocado = 1 WHERE UsuarioId = (SELECT Id FROM dbo.MCP_USUARIO WHERE Usuario = 'fulano');  -- cortar sesiones ya
 ```
 
+### Multi-base e ingreso por mail (clientes de ALFA NET)
+La base de cada consulta sale del token (claim `base` = `ALFA_CENTRAL.bases.id`, claim `amr` = `email` o `pwd`) y la resuelve
+`ConexionPorBaseResolver`: servidor y nombre de `ALFA_CENTRAL.bases` + login de solo lectura de `MCP_BASE` (clave cifrada con la
+clave del servidor). Sin base en el token (usuarios con clave sin base, y la pantalla de login) se usa `ALFACORE_MCP_CONNECTION`.
+Una base con token nunca cae a otra. Tablas y permisos: script `014` en `ALFA_CENTRAL`. Comandos: `habilitar-base`, `dar-acceso`,
+`invitar`, `quitar-acceso`, `accesos` (ver `docs/modulos/mcp-publicacion-iis.md`, sección 7). SMTP: `Mcp__Email__*`
+(`tools/mcp/configurar_email_mcp.ps1`); en Development sin SMTP los mails se escriben en el log.
+
 ### Parámetros (TA_CONFIGURACION de la base de datos, grupo `IA_MCP`; se refrescan cada 30 s)
 Negocio: `IA_MCP_HABILITADO` (interruptor general, también corta el login), `IA_MCP_MAX_FILAS`, `IA_MCP_TOP_MAXIMO`, `IA_MCP_TIMEOUT_SEG`,
 `IA_MCP_TC_PROFORMA`, `IA_MCP_INCLUIR_PROFORMAS`, `IA_MCP_CONSULTAR_SQL_HABILITADO`, `IA_MCP_LOG_PARAMETROS`, `IA_MCP_ADVERTIR_SIN_COSTO_PCT`, `IA_MCP_LECTURA_SIN_BLOQUEOS`.
-OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_INTENTOS`, `_BLOQUEO_MIN`, `_MAX_CLIENTES`, `_REQUIERE_TOTP` y
+OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_INTENTOS`, `_BLOQUEO_MIN`, `_MAX_CLIENTES`, `_REQUIERE_TOTP`,
+`_EMAIL_HABILITADO`, `_EMAIL_CODIGO_MIN`, `_EMAIL_MAX_ENVIOS`, `_EMAIL_AVISO_CONEXION` (script `015`) y
 **`IA_MCP_OAUTH_REDIRECTS`** (lista blanca de aplicaciones que pueden conectarse). Si una clave falta, lo riesgoso queda apagado.
 
 ### Configuración de infraestructura (appsettings / variables de entorno; nunca en el repo)

@@ -18,6 +18,8 @@ public static class AuthCommands
 {
     private const string Emisor = "AlfaCore MCP";
 
+    public static readonly HashSet<string> Comandos = ["crear-usuario", "configurar-totp", "habilitar-base", "dar-acceso", "quitar-acceso", "invitar", "accesos"];
+
     public static async Task<int> EjecutarAsync(string[] args, IServiceProvider sp, AuthOptions opt)
     {
         if (!opt.Enabled) { Console.Error.WriteLine("La autenticacion esta deshabilitada (Mcp:Auth:Enabled=false)."); return 2; }
@@ -25,9 +27,11 @@ public static class AuthCommands
         var posicionales = new List<string>();
         string? qr = null;
         var sinTotp = false;
+        var invitar = false;
         for (var i = 1; i < args.Length; i++)
         {
             if (args[i] == "--sin-totp") sinTotp = true;
+            else if (args[i] == "--invitar") invitar = true;
             else if (args[i] == "--qr" && i + 1 < args.Length) qr = args[++i];
             else if (args[i].StartsWith("--qr=", StringComparison.Ordinal)) qr = args[i][5..];
             else posicionales.Add(args[i]);
@@ -39,6 +43,11 @@ public static class AuthCommands
             {
                 "crear-usuario" => await CrearUsuarioAsync(posicionales, sinTotp, qr, sp),
                 "configurar-totp" => await ConfigurarTotpAsync(posicionales, qr, sp),
+                "habilitar-base" => await HabilitarBaseAsync(posicionales, sp),
+                "dar-acceso" => await DarAccesoAsync(posicionales, invitar, sp, opt),
+                "invitar" => await DarAccesoAsync(posicionales, true, sp, opt),
+                "quitar-acceso" => await QuitarAccesoAsync(posicionales, sp),
+                "accesos" => await ListarAccesosAsync(posicionales, sp),
                 _ => Uso()
             };
         }
@@ -55,6 +64,13 @@ public static class AuthCommands
             Uso:
               dotnet AlfaCore.Mcp.dll crear-usuario <usuario> ["Nombre a mostrar"] [base] [--sin-totp] [--qr archivo.png]
               dotnet AlfaCore.Mcp.dll configurar-totp <usuario> [--qr archivo.png]     (nuevo telefono / secreto perdido; corta sus sesiones)
+
+            Multi-base (ingreso por mail, clientes de ALFA NET):
+              habilitar-base <idbase> [usuario_sql]     registra el login de SOLO LECTURA de esa base (por defecto mcp_dir_ro); pide la clave
+              dar-acceso <mail> <idbase> [--invitar]     el mail tiene que ser usuario del cliente dueno de la base (ALFA_CENTRAL.users)
+              invitar <mail> <idbase>                    da el acceso (si falta) y manda el mail con las instrucciones
+              quitar-acceso <mail> [idbase]              sin idbase: todas sus bases; corta sus sesiones
+              accesos [idbase]                           lista quien tiene acceso
             """);
         return 2;
     }
@@ -94,6 +110,97 @@ public static class AuthCommands
         await InscribirTotpAsync(store, sp.GetRequiredService<SecretProtector>(), u.Id, u.Usuario, qr);
         await store.RevocarUsuarioAsync(u.Id, CancellationToken.None);
         Console.WriteLine("Se cortaron las sesiones activas del usuario: tendra que iniciar sesion de nuevo con el nuevo segundo factor.");
+        return 0;
+    }
+
+    // ---- multi-base ----------------------------------------------------------------------------------------------------
+    private static async Task<int> HabilitarBaseAsync(List<string> p, IServiceProvider sp)
+    {
+        if (p.Count < 1 || !int.TryParse(p[0], out var idBase)) return Uso();
+        var usuarioSql = p.Count > 1 ? p[1].Trim() : "mcp_dir_ro";
+        var accesos = sp.GetRequiredService<IAccesoStore>();
+        var b = await accesos.GetBaseCentralAsync(idBase, CancellationToken.None);
+        if (b is null) { Console.Error.WriteLine($"No existe la base {idBase} en ALFA_CENTRAL.bases."); return 1; }
+        Console.WriteLine($"Base {idBase}: {b.Value.Nombre} (cliente {b.Value.IdCliente}) en {b.Value.Servidor} / {b.Value.BaseDatos}. Login: {usuarioSql}");
+
+        var clave = Pedir($"Clave del login {usuarioSql} en ese servidor: ");
+        var cs = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
+        {
+            DataSource = b.Value.Servidor, InitialCatalog = b.Value.BaseDatos, UserID = usuarioSql, Password = clave,
+            TrustServerCertificate = true, Encrypt = false, ConnectTimeout = 15, ApplicationName = "AlfaCore.Mcp"
+        }.ConnectionString;
+        try
+        {
+            await using var cn = new Microsoft.Data.SqlClient.SqlConnection(cs);
+            await cn.OpenAsync();
+            await using var cmd = cn.CreateCommand();
+            // Tiene que leer el esquema dir y NO las tablas de la base (si no, no es el login de solo lectura del script 005).
+            cmd.CommandText = "SELECT (SELECT COUNT(*) FROM dir.vw_Config), HAS_PERMS_BY_NAME('dbo.TA_CONFIGURACION', 'OBJECT', 'SELECT')";
+            await using var rd = await cmd.ExecuteReaderAsync();
+            await rd.ReadAsync();
+            if (!rd.IsDBNull(1) && rd.GetInt32(1) == 1)
+            {
+                Console.Error.WriteLine($"El login {usuarioSql} puede leer tablas de la base: no es de solo lectura. Usar el login creado con 005_login_solo_lectura.sql.");
+                return 1;
+            }
+            Console.WriteLine($"Conexion OK ({rd.GetInt32(0)} claves IA_MCP_* en dir.vw_Config).");
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex)
+        {
+            Console.Error.WriteLine($"No se pudo conectar o falta el esquema dir (scripts 001-005 y 013 en esa base): {ex.Message}");
+            return 1;
+        }
+        await accesos.GuardarBaseAsync(idBase, usuarioSql, sp.GetRequiredService<SecretProtector>().Proteger(clave), CancellationToken.None);
+        Console.WriteLine($"Base {idBase} habilitada para el MCP (clave guardada cifrada). Ahora: dar-acceso <mail> {idBase} --invitar");
+        return 0;
+    }
+
+    private static async Task<int> DarAccesoAsync(List<string> p, bool invitar, IServiceProvider sp, AuthOptions opt)
+    {
+        if (p.Count < 2 || !int.TryParse(p[1], out var idBase)) return Uso();
+        var email = EmailNormalizado.Normalizar(p[0]);
+        if (email is null) { Console.Error.WriteLine($"'{p[0]}' no es un mail valido."); return 2; }
+        var accesos = sp.GetRequiredService<IAccesoStore>();
+        var b = await accesos.GetBaseAsync(idBase, CancellationToken.None);
+        if (b is not { Habilitada: true }) { Console.Error.WriteLine($"La base {idBase} no esta habilitada para el MCP: correr antes habilitar-base {idBase}."); return 1; }
+        if (!await accesos.EsUsuarioDelClienteAsync(email, b.IdCliente, CancellationToken.None))
+        {
+            Console.Error.WriteLine($"{email} no es usuario del cliente {b.IdCliente} en ALFA_CENTRAL.users: darlo de alta primero en la administracion central.");
+            return 1;
+        }
+        await accesos.DarAccesoAsync(email, idBase, CancellationToken.None);
+        Console.WriteLine($"Acceso dado: {email} -> base {idBase} ({b.NombreBase}).");
+        if (!invitar) { Console.WriteLine("(agregar --invitar para mandarle el mail con las instrucciones)"); return 0; }
+
+        var mail = sp.GetRequiredService<IEmailSender>();
+        if (!mail.Disponible) { Console.Error.WriteLine("No se envio la invitacion: falta configurar el SMTP (Mcp__Email__*)."); return 1; }
+        await mail.EnviarAsync(Mails.Invitacion(email, b.NombreBase, opt.Resource), CancellationToken.None);
+        await accesos.MarcarInvitadoAsync(email, idBase, CancellationToken.None);
+        Console.WriteLine($"Invitacion enviada a {email}.");
+        return 0;
+    }
+
+    private static async Task<int> QuitarAccesoAsync(List<string> p, IServiceProvider sp)
+    {
+        if (p.Count < 1) return Uso();
+        var email = EmailNormalizado.Normalizar(p[0]);
+        if (email is null) { Console.Error.WriteLine($"'{p[0]}' no es un mail valido."); return 2; }
+        int? idBase = p.Count > 1 && int.TryParse(p[1], out var n) ? n : null;
+        var cambiados = await sp.GetRequiredService<IAccesoStore>().QuitarAccesoAsync(email, idBase, CancellationToken.None);
+        var store = sp.GetRequiredService<IAuthStore>();
+        if (await store.GetUsuarioAsync(email, CancellationToken.None) is { } u) await store.RevocarUsuarioAsync(u.Id, CancellationToken.None);
+        Console.WriteLine($"Accesos dados de baja: {cambiados}. Se cortaron las sesiones de {email} (las consultas en curso se cortan en menos de 30 s).");
+        return 0;
+    }
+
+    private static async Task<int> ListarAccesosAsync(List<string> p, IServiceProvider sp)
+    {
+        int? idBase = p.Count > 0 && int.TryParse(p[0], out var n) ? n : null;
+        var lista = await sp.GetRequiredService<IAccesoStore>().ListarAsync(idBase, CancellationToken.None);
+        if (lista.Count == 0) { Console.WriteLine("No hay accesos."); return 0; }
+        foreach (var a in lista)
+            Console.WriteLine($"{(a.Activo ? "ACTIVO " : "baja   ")} {a.Email,-40} base {a.IdBase,-6} {a.NombreBase} ({a.Cliente})" +
+                              $"  invitado: {a.InvitadoUtc?.ToString("yyyy-MM-dd") ?? "-"}  ultimo ingreso: {a.UltimoIngresoUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-"} UTC");
         return 0;
     }
 

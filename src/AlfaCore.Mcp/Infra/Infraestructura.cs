@@ -57,7 +57,11 @@ public sealed record McpRuntimeSettings(
     int MaxClientesOauth = 500,
     IReadOnlyList<string>? RedirectsPermitidos = null,
     bool RequiereTotp = true,
-    bool LecturaSinBloqueos = true)
+    bool LecturaSinBloqueos = true,
+    bool EmailHabilitado = true,
+    int EmailCodigoMin = 10,
+    int EmailMaxEnvios = 3,
+    bool EmailAvisoConexion = true)
 {
     public static McpRuntimeSettings Desde(IReadOnlyDictionary<string, string> v) => new(
         Habilitado: Si(Get(v, "IA_MCP_HABILITADO"), false),
@@ -76,7 +80,11 @@ public sealed record McpRuntimeSettings(
         MaxClientesOauth: Entero(Get(v, "IA_MCP_OAUTH_MAX_CLIENTES"), 500, 1, 10000),
         RedirectsPermitidos: Lista(Get(v, "IA_MCP_OAUTH_REDIRECTS")),
         RequiereTotp: Si(Get(v, "IA_MCP_OAUTH_REQUIERE_TOTP"), true),
-        LecturaSinBloqueos: Si(Get(v, "IA_MCP_LECTURA_SIN_BLOQUEOS"), true));
+        LecturaSinBloqueos: Si(Get(v, "IA_MCP_LECTURA_SIN_BLOQUEOS"), true),
+        EmailHabilitado: Si(Get(v, "IA_MCP_OAUTH_EMAIL_HABILITADO"), true),
+        EmailCodigoMin: Entero(Get(v, "IA_MCP_OAUTH_EMAIL_CODIGO_MIN"), 10, 3, 60),
+        EmailMaxEnvios: Entero(Get(v, "IA_MCP_OAUTH_EMAIL_MAX_ENVIOS"), 3, 1, 20),
+        EmailAvisoConexion: Si(Get(v, "IA_MCP_OAUTH_EMAIL_AVISO_CONEXION"), true));
 
     /// <summary>Lista de URIs separadas por salto de linea, espacio, coma o punto y coma. Vacia = no se permite ningun cliente.</summary>
     public static IReadOnlyList<string> Lista(string? valor) =>

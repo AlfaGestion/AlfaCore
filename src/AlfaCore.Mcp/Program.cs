@@ -29,8 +29,9 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "Falta la cadena de conexión. Definir la variable de entorno ALFACORE_MCP_CONNECTION " +
         "o user-secrets 'ConnectionStrings:AlfaMcp' (ver src/AlfaCore.Mcp/README.md).");
 
-// Etapa 5b (multi-base): reemplazar por un resolver que elija la base segun la claim "base" del token.
-builder.Services.AddSingleton<IConexionResolver>(new ConexionUnicaResolver(connectionString));
+// Base por defecto: la de ALFACORE_MCP_CONNECTION (usuarios con clave sin base asignada y configuracion OAuth).
+// Con login (multi-base) cada consulta usa la base del token; ver ConexionPorBaseResolver.
+if (!authOpt.Enabled) builder.Services.AddSingleton<IConexionResolver>(new ConexionUnicaResolver(connectionString));
 builder.Services.AddSingleton<IMcpConfigProvider, McpConfigProvider>();
 builder.Services.AddSingleton<IAuditLog, SqlAuditLog>();
 builder.Services.AddSingleton<SqlExecutor>();
@@ -51,6 +52,24 @@ if (authOpt.Enabled)
                 "(login con permisos solo sobre las tablas MCP_*; ver docs/base-datos/sql-referencia/dir-mcp/010_oauth_tablas.sql).");
         builder.Services.AddSingleton<IAuthStore>(sp => new SqlAuthStore(authCs, sp.GetRequiredService<ILogger<SqlAuthStore>>()));
     }
+
+    // ---- Multi-base: accesos por mail (ALFA_CENTRAL) y conexion segun la base del token ---------------------------------
+    if (authOpt.Store.Equals("Memory", StringComparison.OrdinalIgnoreCase))
+        builder.Services.AddSingleton<MemoryAccesoStore>().AddSingleton<IAccesoStore>(sp => sp.GetRequiredService<MemoryAccesoStore>());
+    else
+        builder.Services.AddSingleton<IAccesoStore>(new SqlAccesoStore(
+            builder.Configuration["ALFACORE_MCP_AUTH_CONNECTION"] ?? builder.Configuration.GetConnectionString("AlfaMcpAuth")!));
+    builder.Services.AddSingleton<IConexionResolver>(sp => new ConexionPorBaseResolver(
+        sp.GetRequiredService<IHttpContextAccessor>(), sp.GetRequiredService<IAccesoStore>(), sp.GetRequiredService<SecretProtector>(),
+        connectionString, sp.GetRequiredService<ILogger<ConexionPorBaseResolver>>()));
+
+    // ---- Mails (codigos de ingreso, avisos, invitaciones). Sin SMTP: en Development se escriben en el log; en produccion solo usuario y clave.
+    var emailOpt = EmailOptions.Load(builder.Configuration);
+    builder.Services.AddSingleton(emailOpt);
+    if (!emailOpt.Configurado && builder.Environment.IsDevelopment())
+        builder.Services.AddSingleton<IEmailSender, ConsolaEmailSender>();
+    else
+        builder.Services.AddSingleton<IEmailSender>(new SmtpEmailSender(emailOpt));
 
     builder.Services.AddSingleton<SigningKeyProvider>();
     builder.Services.AddSingleton<TokenService>();
@@ -111,7 +130,8 @@ builder.Services
     {
         options.ServerInfo = new() { Name = "alfacore-dir", Version = "0.2.0" };
         options.ServerInstructions =
-            "Consulta de solo lectura sobre la base de gestión de la empresa (ventas, artículos, clientes, cuenta corriente y stock). " +
+            "Consulta de solo lectura sobre la base de gestión de la empresa (ventas, compras, artículos, clientes, proveedores, cuenta corriente y stock). " +
+            "Para un cliente, proveedor o artículo puntual, buscar primero su código con buscar_clientes / buscar_proveedores / buscar_articulos. " +
             "Los importes de ventas son netos de IVA, en pesos, con las notas de crédito restando. " +
             "Para fechas relativas ('este mes', 'el mes pasado') calcular primero el rango AAAA-MM-DD. " +
             "Preferir las herramientas de negocio; usar consultar_sql solo si ninguna alcanza (antes llamar a describir_esquema). " +
@@ -123,7 +143,7 @@ builder.Services
 var app = builder.Build();
 
 // Comandos de administracion (no levantan el servidor): dotnet run --project src/AlfaCore.Mcp -- crear-usuario <usuario> "<Nombre>" [base]
-if (args.Length > 0 && args[0] is "crear-usuario" or "configurar-totp")
+if (args.Length > 0 && AuthCommands.Comandos.Contains(args[0]))
     return await AuthCommands.EjecutarAsync(args, app.Services, authOpt);
 
 if (authOpt.Enabled && app.Services.GetRequiredService<IAuthStore>() is MemoryAuthStore memoria

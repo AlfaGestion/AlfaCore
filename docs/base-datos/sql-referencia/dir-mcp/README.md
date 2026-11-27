@@ -14,6 +14,8 @@ Capa semantica para consultar la base en lenguaje natural desde Claude / ChatGPT
 | 11 | `011_oauth_login_almacen.sql` | login **distinto** (`mcp_auth_rw`) con permisos solo sobre las tablas `MCP_*` (Modo SQLCMD) | sysadmin / securityadmin |
 | 12 | `012_config_oauth.sql` | claves `IA_MCP_OAUTH_*` y la lista blanca de redirects (en la base de **datos**) | db_owner |
 | 13 | `013_vistas_compras.sql` | `dir.vw_Proveedores`, `vw_Compras`, `vw_ComprasDetalle`, `vw_CuentaCorrienteProveedores` + clave `IA_MCP_TC_PROFORMA_COMPRAS` (no pisa) | db_owner |
+| 14 | `014_multibase_central.sql` | **en ALFA_CENTRAL**: `MCP_BASE`, `MCP_ACCESO`, `MCP_CODIGO_EMAIL`, columnas `Base`/`Metodo` y lectura por columna de `users`/`bases`/`Clientes` para `mcp_auth_rw` (sqlcmd `-v MCP_AUTH_LOGIN`) | db_owner |
+| 15 | `015_config_email.sql` | claves `IA_MCP_OAUTH_EMAIL_*` en la base por defecto (opcional, no pisa) | db_owner |
 | 99 | `099_verificacion.sql` | calidad de datos, cuadre contra el libro y prueba de permisos | el login de 5 |
 
 Todos son idempotentes. UTF-8 sin BOM: correrlos con `sqlcmd -f i:65001`. Los scripts 10-12 son de la etapa 5 (OAuth); ver [README del servidor](../../../../src/AlfaCore.Mcp/README.md).

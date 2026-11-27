@@ -122,6 +122,38 @@ UPDATE dbo.TA_CONFIGURACION SET ValorAux = CAST(ValorAux AS nvarchar(max)) + CHA
 **Después de conectar:** `SELECT TOP 20 * FROM dbo.MCP_EVENTO ORDER BY Id DESC` (logins y tokens, en `ALFA_CENTRAL`) y
 `SELECT TOP 20 * FROM dbo.IA_LOG_CONSULTAS ORDER BY Id DESC` (consultas con el usuario real, en la base de datos).
 
+## 7. Multi-base: clientes de ALFA NET con ingreso por mail
+Cada cliente consulta **su** base con la misma URL. El usuario se identifica con su **mail** (el de `ALFA_CENTRAL.users`) y un
+**código de 6 dígitos** que le llega a ese mail; no hay clave ni app autenticadora. La base sale de lo que le asignamos, nunca del
+pedido: un cliente no puede ver datos de otro. El ingreso con usuario + clave + TOTP sigue disponible (enlace en la pantalla) para el
+personal de ALFA NET.
+
+**Una sola vez (servidor):**
+1. `014_multibase_central.sql` en `ALFA_CENTRAL` (10.8.0.31) con `-v MCP_AUTH_LOGIN="mcp_auth_rw"`. **Antes** de publicar esta versión:
+   la nueva versión graba `Base` y `Metodo` en `MCP_CODIGO` / `MCP_REFRESH_TOKEN`.
+2. Opcional: `015_config_email.sql` en la base por defecto (la de `ALFACORE_MCP_CONNECTION`).
+3. Publicar y copiar como siempre (incluye `configurar_email_mcp.ps1`).
+4. `configurar_email_mcp.ps1` (como administrador): pide el SMTP (Enter = los mismos datos de AlfaCore), la clave oculta,
+   manda una prueba y recién ahí lo guarda en el pool. Sin SMTP la pantalla sigue pidiendo usuario y clave.
+
+**Por cada base de cliente** (llega por la WireGuard, como AlfaCore):
+1. En su base: `001`–`005` (con su propia clave de `mcp_dir_ro`) y `013`. El `012` no hace falta (la configuración OAuth es la
+   de la base por defecto). Correr el `099` y comparar un mes contra su libro de IVA antes de invitar a nadie.
+2. `usuarios_mcp.ps1 habilitar-base <idbase>`: toma servidor y base de `ALFA_CENTRAL.bases`, pide la clave de `mcp_dir_ro`, prueba
+   la conexión, **rechaza un login que pueda leer tablas** (tiene que ser el de solo lectura) y guarda la clave cifrada en `MCP_BASE`.
+
+**Por cada persona:**
+- El mail tiene que estar como usuario del cliente en la administración central (`/admin`, sección Usuarios).
+- `usuarios_mcp.ps1 invitar <mail> <idbase>`: le da el acceso y le manda el mail con los pasos para Claude y ChatGPT.
+  (`dar-acceso <mail> <idbase>` hace lo mismo sin mandar el mail.)
+- `usuarios_mcp.ps1 accesos [idbase]`: quién tiene acceso, cuándo se lo invitó y su último ingreso.
+- `usuarios_mcp.ps1 quitar-acceso <mail> [idbase]`: baja inmediata (corta sus sesiones; las consultas en curso, en menos de 30 s).
+  Si se lo borra de `users` o se deshabilita la base, también pierde el acceso.
+
+**Qué ve el cliente:** agrega la URL → escribe su mail → recibe el código → si tiene varias bases elige una → listo. Cada conexión
+nueva le llega por mail ("si no fuiste vos, avisá"). Protecciones: código de un solo uso, vence en 10 min, 3 intentos, 3 códigos
+cada 15 min por mail, el código de un mail no sirve para otro y la pantalla no revela qué mails tienen acceso.
+
 ## Diagnóstico del login
 `SELECT TOP 10 DATEADD(HOUR,-3,Fecha) Hora, Evento, Usuario, Detalle FROM dbo.MCP_EVENTO ORDER BY Id DESC` en `ALFA_CENTRAL`:
 | Evento | Significa |
@@ -132,6 +164,10 @@ UPDATE dbo.TA_CONFIGURACION SET ValorAux = CAST(ValorAux AS nvarchar(max)) + CHA
 | `totp_ilegible` | el sitio no puede descifrar el segundo factor: el usuario se creó con otra `SigningKeyPath` |
 | `login_rechazado` | usuario inactivo o bloqueado |
 | `login_sin_totp` | clave correcta pero el usuario no tiene segundo factor: `configurar-totp` |
+| `email_sin_acceso` | pidió código un mail sin acceso activo (no se le envió nada) |
+| `email_codigo_enviado` / `email_codigo_fallido` / `email_limite` | código enviado / incorrecto o vencido / demasiados pedidos |
+| `email_error_envio` | falló el SMTP (revisar `configurar_email_mcp.ps1`) |
+| `refresh_sin_acceso` | se le quitó el acceso: la sesión no se renueva |
 | `usuario_bloqueado` | 5 intentos fallidos: esperar 15 minutos (`IA_MCP_OAUTH_MAX_INTENTOS` / `_BLOQUEO_MIN`) |
 
 ## Operación

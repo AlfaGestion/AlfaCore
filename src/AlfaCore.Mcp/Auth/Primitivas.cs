@@ -191,7 +191,8 @@ public sealed class SigningKeyProvider
 /// <summary>Emite y valida los access tokens (JWT RS256, audience = URL del recurso MCP).</summary>
 public sealed class TokenService(SigningKeyProvider keys, AuthOptions opt)
 {
-    public string CrearAccessToken(UsuarioAuth usuario, string clientId, string scope, TimeSpan vida, DateTime ahoraUtc)
+    /// <param name="baseId">Base de la autorizacion (claim "base"); null = base por defecto. <paramref name="metodo"/>: "pwd" o "email" (claim "amr").</param>
+    public string CrearAccessToken(UsuarioAuth usuario, string clientId, string scope, TimeSpan vida, DateTime ahoraUtc, string? baseId = null, string metodo = "pwd")
     {
         var descriptor = new SecurityTokenDescriptor
         {
@@ -209,7 +210,8 @@ public sealed class TokenService(SigningKeyProvider keys, AuthOptions opt)
                 ["client_id"] = clientId,
                 ["scope"] = scope,
                 ["jti"] = Guid.NewGuid().ToString("N"),
-                ["base"] = usuario.Base ?? ""
+                ["base"] = baseId ?? usuario.Base ?? "",
+                ["amr"] = metodo
             }
         };
         return new JsonWebTokenHandler().CreateToken(descriptor);

@@ -133,17 +133,33 @@ public static class OAuthEndpoints
         return (new Solicitud(cliente, redirect!, state, challenge!, AuthOptions.Scope), null);
     }
 
-    private static async Task<IResult> AutorizarGet(HttpContext ctx, IAuthStore store, AuthOptions opt, IMcpConfigProvider config, IAntiforgery af, ILogger<TokenService> log, CancellationToken ct)
+    /// <summary>El ingreso por mail requiere la clave IA_MCP_OAUTH_EMAIL_HABILITADO y el SMTP configurado; si no, solo queda usuario y clave.</summary>
+    private static bool PorEmail(McpRuntimeSettings cfg, IEmailSender mail) => cfg.EmailHabilitado && mail.Disponible;
+
+    private static async Task<IResult> AutorizarGet(HttpContext ctx, IAuthStore store, AuthOptions opt, IMcpConfigProvider config, IAntiforgery af,
+        IEmailSender mail, ILogger<TokenService> log, CancellationToken ct)
     {
         if ((await Config(config, log, ct)) is not { Habilitado: true } cfg) return PaginaError("El servicio no esta disponible por el momento. Proba de nuevo en unos minutos.");
         var q = ctx.Request.Query;
         var (s, error) = await Validar(k => q[k].FirstOrDefault(), store, opt, ct);
         if (error is not null) return error;
-        var tokens = af.GetAndStoreTokens(ctx);
-        return Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), Reenviar(k => q[k].FirstOrDefault()), tokens.RequestToken!, null, cfg.RequiereTotp));
+        var campos = Reenviar(k => q[k].FirstOrDefault());
+        var af1 = af.GetAndStoreTokens(ctx).RequestToken!;
+        var conEmail = PorEmail(cfg, mail);
+        return q["modo"].FirstOrDefault() == "clave" || !conEmail
+            ? Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), campos, af1, null, cfg.RequiereTotp, conEmail ? LinkModo(campos, null) : null))
+            : Pagina(LoginPage.RenderEmail(s!.Cliente.Nombre, Host(s.RedirectUri), campos, af1, null, LinkModo(campos, "clave")));
     }
 
-    private static async Task<IResult> AutorizarPost(HttpContext ctx, IAuthStore store, AuthOptions opt, IMcpConfigProvider config, IAntiforgery af, SecretProtector protector, ILogger<TokenService> log, CancellationToken ct)
+    private static string LinkModo(Dictionary<string, string?> campos, string? modo)
+    {
+        var d = new Dictionary<string, string?>(campos);
+        if (modo is not null) d["modo"] = modo;
+        return QueryHelpers.AddQueryString("/oauth/authorize", d);
+    }
+
+    private static async Task<IResult> AutorizarPost(HttpContext ctx, IAuthStore store, IAccesoStore accesos, IEmailSender mail, AuthOptions opt,
+        IMcpConfigProvider config, IAntiforgery af, SecretProtector protector, ILogger<TokenService> log, CancellationToken ct)
     {
         var cfg = await Config(config, log, ct);
         if (cfg is not { Habilitado: true }) return PaginaError("El servicio no esta disponible por el momento. Proba de nuevo en unos minutos.");
@@ -155,14 +171,21 @@ public static class OAuthEndpoints
         var (s, error) = await Validar(V, store, opt, ct);
         if (error is not null) return error;
 
-        if (V("accion") == "cancelar")
+        var accion = V("accion");
+        if (accion == "cancelar")
             return Redirigir(s!.RedirectUri, s.State, opt.Issuer, ("error", "access_denied"), ("error_description", "El usuario cancelo la autorizacion."));
+        if (accion is "enviar-codigo" or "verificar-codigo" or "elegir-base")
+        {
+            if (!PorEmail(cfg, mail)) return PaginaError("El ingreso por mail no esta disponible. Ingresa con usuario y clave o consulta con ALFA NET.");
+            return await IngresoPorEmailAsync(ctx, accion, V, s!, store, accesos, mail, opt, cfg, af, log, ct);
+        }
 
         var usuario = (V("usuario") ?? "").Trim();
         var clave = V("clave") ?? "";
         var codigoTotp = (V("codigo") ?? "").Trim();
         const string generico = "Usuario, clave o codigo incorrectos, o cuenta bloqueada temporalmente. Si es tu primer ingreso, pedile al administrador que configure tu segundo factor.";
-        IResult Reintentar(string mensaje) => Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), Reenviar(V), af.GetAndStoreTokens(ctx).RequestToken!, mensaje, cfg.RequiereTotp));
+        IResult Reintentar(string mensaje) => Pagina(LoginPage.Render(s!.Cliente.Nombre, Host(s.RedirectUri), Reenviar(V), af.GetAndStoreTokens(ctx).RequestToken!, mensaje, cfg.RequiereTotp,
+            PorEmail(cfg, mail) ? LinkModo(Reenviar(V), null) : null));
 
         if (usuario.Length is 0 or > 100 || clave.Length is 0 or > 200 || codigoTotp.Length > 20) { PasswordHasher.IgualarTiempo(clave); return Reintentar(generico); }
 
@@ -211,13 +234,123 @@ public static class OAuthEndpoints
 
         await store.RegistrarLoginAsync(u.Id, true, 0, null, ct);
         var codigo = Secretos.NuevoToken();
-        await store.AddCodigoAsync(new CodigoAuth(Secretos.Hash(codigo), s!.Cliente.ClientId, u.Id, s.RedirectUri, s.CodeChallenge, s.Scope, opt.Resource, ahora.AddSeconds(cfg.CodigoSeg)), ct);
+        await store.AddCodigoAsync(new CodigoAuth(Secretos.Hash(codigo), s!.Cliente.ClientId, u.Id, s.RedirectUri, s.CodeChallenge, s.Scope, opt.Resource, ahora.AddSeconds(cfg.CodigoSeg),
+            string.IsNullOrWhiteSpace(u.Base) ? null : u.Base.Trim(), "pwd"), ct);
         await store.EventoAsync("login_ok", u.Usuario, s.Cliente.ClientId, Ip(ctx), u.TotpSecreto is null ? "sin segundo factor" : "con segundo factor", ct);
         return Redirigir(s.RedirectUri, s.State, opt.Issuer, ("code", codigo));
     }
 
+    // ---- ingreso por mail: codigo de un solo uso enviado al mail registrado en ALFA_CENTRAL ------------------------------
+    private static async Task<IResult> IngresoPorEmailAsync(HttpContext ctx, string accion, Func<string, string?> V, Solicitud s, IAuthStore store,
+        IAccesoStore accesos, IEmailSender mail, AuthOptions opt, McpRuntimeSettings cfg, IAntiforgery af, ILogger log, CancellationToken ct)
+    {
+        var ahora = DateTime.UtcNow;
+        var campos = Reenviar(V);
+        string Af() => af.GetAndStoreTokens(ctx).RequestToken!;
+        var linkClave = LinkModo(campos, "clave");
+        IResult PaginaEmail(string? err) => Pagina(LoginPage.RenderEmail(s.Cliente.Nombre, Host(s.RedirectUri), campos, Af(), err, linkClave));
+        IResult PaginaCodigo(string email, string? aviso, string? err) => Pagina(LoginPage.RenderCodigo(s.Cliente.Nombre, Host(s.RedirectUri), campos, Af(), email, aviso, err, linkClave));
+        const string sinAcceso = "Tu mail no tiene acceso habilitado. Consulta con ALFA NET.";
+
+        if (accion == "elegir-base")
+        {
+            var emailTicket = await accesos.ConsumirTicketAsync(Secretos.Hash(V("ticket") ?? ""), ahora, ct);
+            if (emailTicket is null) return PaginaError("La seleccion vencio. Volve a iniciar la conexion desde la aplicacion.");
+            var elegida = int.TryParse(V("base"), out var idb) ? (await accesos.AccesosAsync(emailTicket, ct)).FirstOrDefault(a => a.IdBase == idb) : null;
+            if (elegida is null) return PaginaError(sinAcceso);
+            return await FinalizarEmailAsync(ctx, emailTicket, elegida, s, store, accesos, mail, opt, cfg, log, ct);
+        }
+
+        var email = EmailNormalizado.Normalizar(V("email"));
+        if (email is null) return PaginaEmail("Escribi un mail valido.");
+
+        if (accion == "enviar-codigo")
+        {
+            var aviso = $"Si {email} tiene acceso habilitado, te enviamos un codigo de 6 digitos. Vence en {cfg.EmailCodigoMin} minutos. Revisa tambien el correo no deseado.";
+            if (await accesos.ContarCodigosEmailAsync(email, ahora.AddMinutes(-15), ct) >= cfg.EmailMaxEnvios)
+            {
+                await store.EventoAsync("email_limite", email, s.Cliente.ClientId, Ip(ctx), null, ct);
+                return PaginaCodigo(email, null, "Ya te enviamos varios codigos. Usa el ultimo que recibiste o espera 15 minutos para pedir otro.");
+            }
+            if ((await accesos.AccesosAsync(email, ct)).Count == 0)
+            {
+                // Misma respuesta que si existiera: la pantalla no revela que mails tienen acceso.
+                await store.EventoAsync("email_sin_acceso", email, s.Cliente.ClientId, Ip(ctx), null, ct);
+                return PaginaCodigo(email, aviso, null);
+            }
+            var codigo = System.Security.Cryptography.RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+            await accesos.GuardarCodigoEmailAsync(email, HashCodigo(email, codigo), ahora.AddMinutes(cfg.EmailCodigoMin), Ip(ctx), ct);
+            try { await mail.EnviarAsync(Mails.Codigo(email, codigo, cfg.EmailCodigoMin, s.Cliente.Nombre), ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogError(ex, "No se pudo enviar el codigo de ingreso por mail.");
+                await store.EventoAsync("email_error_envio", email, s.Cliente.ClientId, Ip(ctx), ex.GetType().Name, ct);
+                return PaginaCodigo(email, null, "No pudimos enviar el mail en este momento. Proba de nuevo en unos minutos.");
+            }
+            await store.EventoAsync("email_codigo_enviado", email, s.Cliente.ClientId, Ip(ctx), null, ct);
+            return PaginaCodigo(email, aviso, null);
+        }
+
+        // verificar-codigo
+        var digitos = new string((V("codigo_email") ?? "").Where(char.IsDigit).ToArray());
+        if (digitos.Length != 6 || !await accesos.ConsumirCodigoEmailAsync(email, HashCodigo(email, digitos), ahora, cfg.MaxIntentosLogin, ct))
+        {
+            await store.EventoAsync("email_codigo_fallido", email, s.Cliente.ClientId, Ip(ctx), null, ct);
+            return PaginaCodigo(email, null, "Codigo incorrecto o vencido. Si pediste varios, vale solo el ultimo. Despues de varios errores hay que pedir uno nuevo.");
+        }
+        var bases = await accesos.AccesosAsync(email, ct);
+        if (bases.Count == 0) return PaginaError(sinAcceso);
+        if (bases.Count == 1) return await FinalizarEmailAsync(ctx, email, bases[0], s, store, accesos, mail, opt, cfg, log, ct);
+
+        // Varias bases: se elige despues de validar el codigo (antes no se muestra ningun nombre de cliente).
+        var ticket = Secretos.NuevoToken();
+        await accesos.GuardarTicketAsync(email, Secretos.Hash(ticket), ahora.AddMinutes(10), ct);
+        return Pagina(LoginPage.RenderBases(s.Cliente.Nombre, Host(s.RedirectUri), campos, Af(), ticket, bases));
+    }
+
+    /// <summary>El hash incluye el mail: el mismo codigo de 6 digitos de otro mail no sirve.</summary>
+    private static string HashCodigo(string email, string codigo) => Secretos.Hash(email + "|" + codigo);
+
+    private static async Task<IResult> FinalizarEmailAsync(HttpContext ctx, string email, AccesoBase acceso, Solicitud s, IAuthStore store,
+        IAccesoStore accesos, IEmailSender mail, AuthOptions opt, McpRuntimeSettings cfg, ILogger log, CancellationToken ct)
+    {
+        var ahora = DateTime.UtcNow;
+        // Registro tecnico del usuario (para los refresh tokens): sin clave utilizable, solo entra por mail.
+        var u = await store.GetUsuarioAsync(email, ct);
+        if (u is null)
+        {
+            try { await store.CrearUsuarioAsync(email, email, "email-otp", null, ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Alta concurrente del usuario por mail; se reintenta la lectura."); }
+            u = await store.GetUsuarioAsync(email, ct);
+        }
+        if (u is not { Activo: true })
+        {
+            await store.EventoAsync("login_rechazado", email, s.Cliente.ClientId, Ip(ctx), "usuario inactivo", ct);
+            return PaginaError("Tu usuario esta dado de baja. Consulta con ALFA NET.");
+        }
+        await store.RegistrarLoginAsync(u.Id, true, 0, null, ct);
+        await accesos.RegistrarIngresoAsync(email, acceso.IdBase, ct);
+        var codigo = Secretos.NuevoToken();
+        await store.AddCodigoAsync(new CodigoAuth(Secretos.Hash(codigo), s.Cliente.ClientId, u.Id, s.RedirectUri, s.CodeChallenge, s.Scope, opt.Resource,
+            ahora.AddSeconds(cfg.CodigoSeg), acceso.IdBase.ToString(System.Globalization.CultureInfo.InvariantCulture), ConexionPorBaseResolver.MetodoEmail), ct);
+        await store.EventoAsync("login_ok", email, s.Cliente.ClientId, Ip(ctx), $"por mail, base {acceso.IdBase}", ct);
+
+        if (cfg.EmailAvisoConexion)
+        {
+            try { await mail.EnviarAsync(Mails.AvisoConexion(email, s.Cliente.Nombre, acceso.NombreBase, HoraArgentina(ahora)), ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "No se pudo enviar el aviso de conexion."); }
+        }
+        return Redirigir(s.RedirectUri, s.State, opt.Issuer, ("code", codigo));
+    }
+
+    private static DateTime HoraArgentina(DateTime utc)
+    {
+        try { return TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.FindSystemTimeZoneById("Argentina Standard Time")); }
+        catch (Exception) { return utc.AddHours(-3); }
+    }
+
     // ---- /oauth/token --------------------------------------------------------------------------------------------------
-    private static async Task<IResult> Token(HttpContext ctx, IAuthStore store, AuthOptions opt, TokenService tokens, IMcpConfigProvider config, ILogger<TokenService> log, CancellationToken ct)
+    private static async Task<IResult> Token(HttpContext ctx, IAuthStore store, IAccesoStore accesos, AuthOptions opt, TokenService tokens, IMcpConfigProvider config, ILogger<TokenService> log, CancellationToken ct)
     {
         ctx.Response.Headers.CacheControl = "no-store";
         ctx.Response.Headers.Pragma = "no-cache";
@@ -255,7 +388,7 @@ public static class OAuthEndpoints
                     }
                     var u = await store.GetUsuarioPorIdAsync(cod.UsuarioId, ct);
                     if (u is not { Activo: true }) return ErrorJson("invalid_grant", "Usuario inactivo.");
-                    return await Emitir(store, tokens, cfg, u, clientId, cod.Scope, cod.Resource, Guid.NewGuid(), null, ahora, ctx, ct);
+                    return await Emitir(store, tokens, cfg, u, clientId, cod.Scope, cod.Resource, Guid.NewGuid(), null, cod.Base, cod.Metodo, ahora, ctx, ct);
                 }
                 case "refresh_token":
                 {
@@ -271,7 +404,15 @@ public static class OAuthEndpoints
                     if (rt.ClientId != clientId || rt.ExpiraUtc <= ahora) return ErrorJson("invalid_grant", "Refresh token invalido o vencido.");
                     var u = await store.GetUsuarioPorIdAsync(rt.UsuarioId, ct);
                     if (u is not { Activo: true }) { await store.RevocarFamiliaAsync(rt.Familia, ct); return ErrorJson("invalid_grant", "Usuario inactivo."); }
-                    return await Emitir(store, tokens, cfg, u, clientId, rt.Scope, rt.Resource, rt.Familia, hash, ahora, ctx, ct);
+                    // Ingreso por mail: el acceso a la base se revalida en cada renovacion (baja en ALFA_CENTRAL => no renueva mas).
+                    if (rt.Metodo == ConexionPorBaseResolver.MetodoEmail
+                        && !(await accesos.AccesosAsync(u.Usuario, ct)).Any(a => a.IdBase.ToString(System.Globalization.CultureInfo.InvariantCulture) == rt.Base))
+                    {
+                        await store.RevocarFamiliaAsync(rt.Familia, ct);
+                        await store.EventoAsync("refresh_sin_acceso", u.Usuario, rt.ClientId, Ip(ctx), $"base {rt.Base}", ct);
+                        return ErrorJson("invalid_grant", "El acceso a esta base fue dado de baja.");
+                    }
+                    return await Emitir(store, tokens, cfg, u, clientId, rt.Scope, rt.Resource, rt.Familia, hash, rt.Base, rt.Metodo, ahora, ctx, ct);
                 }
                 default:
                     return ErrorJson("unsupported_grant_type", "grant_type no soportado.");
@@ -286,10 +427,10 @@ public static class OAuthEndpoints
     }
 
     private static async Task<IResult> Emitir(IAuthStore store, TokenService tokens, McpRuntimeSettings cfg, UsuarioAuth u, string clientId,
-        string scope, string resource, Guid familia, string? hashAnterior, DateTime ahora, HttpContext ctx, CancellationToken ct)
+        string scope, string resource, Guid familia, string? hashAnterior, string? baseId, string metodo, DateTime ahora, HttpContext ctx, CancellationToken ct)
     {
         var refresh = Secretos.NuevoToken();
-        var nuevo = new RefreshAuth(Secretos.Hash(refresh), clientId, u.Id, scope, resource, ahora.AddDays(cfg.RefreshDias), familia);
+        var nuevo = new RefreshAuth(Secretos.Hash(refresh), clientId, u.Id, scope, resource, ahora.AddDays(cfg.RefreshDias), familia, baseId, metodo);
         if (hashAnterior is null) await store.AddRefreshAsync(nuevo, ct);
         else if (!await store.RotarRefreshAsync(hashAnterior, nuevo, ahora, ct))
         {
@@ -301,7 +442,7 @@ public static class OAuthEndpoints
         await store.EventoAsync(hashAnterior is null ? "token_emitido" : "token_renovado", u.Usuario, clientId, Ip(ctx), null, ct);
         return Json(new Dictionary<string, object?>
         {
-            ["access_token"] = tokens.CrearAccessToken(u, clientId, scope, vida, ahora),
+            ["access_token"] = tokens.CrearAccessToken(u, clientId, scope, vida, ahora, baseId, metodo),
             ["token_type"] = "Bearer",
             ["expires_in"] = (int)vida.TotalSeconds,
             ["refresh_token"] = refresh,
@@ -359,28 +500,64 @@ public static class LoginPage
 
     private const string Estilo = "body{font-family:system-ui,sans-serif;background:#f4f5f7;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}" +
         ".c{background:#fff;padding:2rem;border-radius:12px;max-width:380px;width:100%;box-shadow:0 2px 12px #0002}h1{font-size:1.2rem;margin:0 0 .5rem}" +
-        "p{color:#444;font-size:.92rem;line-height:1.4}label{display:block;margin:.8rem 0 .2rem;font-size:.85rem}input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #bbb;border-radius:6px}" +
-        "button{padding:.6rem 1rem;border-radius:6px;border:0;font-size:.95rem;cursor:pointer}.ok{background:#1b5e20;color:#fff}.no{background:#e0e0e0;margin-left:.5rem}.err{color:#b00020;font-size:.88rem;margin-top:.8rem}";
+        "p{color:#444;font-size:.92rem;line-height:1.4}label{display:block;margin:.8rem 0 .2rem;font-size:.85rem}input[type=text],input[type=password],input[type=email]{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #bbb;border-radius:6px}" +
+        "button{padding:.6rem 1rem;border-radius:6px;border:0;font-size:.95rem;cursor:pointer}.ok{background:#1b5e20;color:#fff}.no{background:#e0e0e0;margin-left:.5rem}.err{color:#b00020;font-size:.88rem;margin-top:.8rem}" +
+        ".aviso{color:#1b5e20;font-size:.88rem;margin-top:.8rem}.alt{font-size:.82rem;margin-top:1rem}.alt a{color:#555}.b{display:block;margin:.4rem 0;font-size:.92rem}";
 
-    public static string Render(string cliente, string host, Dictionary<string, string?> campos, string antiforgery, string? error, bool codigoObligatorio)
-    {
-        var ocultos = string.Concat(campos.Select(c => $"<input type=\"hidden\" name=\"{E(c.Key)}\" value=\"{E(c.Value)}\">"));
-        return $"""
-            <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-            <title>Autorizar acceso</title><style>{Estilo}</style></head><body><div class="c">
-            <h1>Autorizar acceso a los datos</h1>
-            <p><b>{E(cliente)}</b> (<span>{E(host)}</span>) pide permiso para <b>consultar en modo solo lectura</b> la informacion de ventas, clientes, cuenta corriente y stock.</p>
-            <form method="post" autocomplete="off">{ocultos}
-            <input type="hidden" name="__RequestVerificationToken" value="{E(antiforgery)}">
-            <label for="u">Usuario</label><input id="u" type="text" name="usuario" required maxlength="100" autofocus>
-            <label for="p">Clave</label><input id="p" type="password" name="clave" required maxlength="200">
-            <label for="c">Codigo de la app autenticadora (6 digitos)</label><input id="c" type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="20" {(codigoObligatorio ? "required" : "")}>
-            {(error is null ? "" : $"<div class=\"err\" role=\"alert\">{E(error)}</div>")}
-            <p style="margin-top:1.2rem"><button class="ok" type="submit" name="accion" value="autorizar">Ingresar y autorizar</button>
-            <button class="no" type="submit" name="accion" value="cancelar" formnovalidate>Cancelar</button></p>
-            </form></div></body></html>
-            """;
-    }
+    private static string Inicio(string cliente, string host, Dictionary<string, string?> campos, string antiforgery) => $"""
+        <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Autorizar acceso</title><style>{Estilo}</style></head><body><div class="c">
+        <h1>Autorizar acceso a los datos</h1>
+        <p><b>{E(cliente)}</b> (<span>{E(host)}</span>) pide permiso para <b>consultar en modo solo lectura</b> la informacion de ventas, compras, clientes, proveedores, cuenta corriente y stock.</p>
+        <form method="post" autocomplete="off">{string.Concat(campos.Select(c => $"<input type=\"hidden\" name=\"{E(c.Key)}\" value=\"{E(c.Value)}\">"))}
+        <input type="hidden" name="__RequestVerificationToken" value="{E(antiforgery)}">
+        """;
+
+    private static string Mensajes(string? aviso, string? error) =>
+        (aviso is null ? "" : $"<div class=\"aviso\" role=\"status\">{E(aviso)}</div>") + (error is null ? "" : $"<div class=\"err\" role=\"alert\">{E(error)}</div>");
+
+    private static string Fin(string boton, string valor, string? linkAlternativo, string textoAlternativo) => $"""
+        <p style="margin-top:1.2rem"><button class="ok" type="submit" name="accion" value="{valor}">{E(boton)}</button>
+        <button class="no" type="submit" name="accion" value="cancelar" formnovalidate>Cancelar</button></p>
+        </form>{(linkAlternativo is null ? "" : $"<p class=\"alt\"><a href=\"{E(linkAlternativo)}\">{E(textoAlternativo)}</a></p>")}</div></body></html>
+        """;
+
+    /// <summary>Ingreso con usuario, clave y (si corresponde) codigo de la app autenticadora. Para el personal de ALFA NET.</summary>
+    public static string Render(string cliente, string host, Dictionary<string, string?> campos, string antiforgery, string? error, bool codigoObligatorio, string? linkEmail = null) =>
+        Inicio(cliente, host, campos, antiforgery) + $"""
+        <label for="u">Usuario</label><input id="u" type="text" name="usuario" required maxlength="100" autofocus>
+        <label for="p">Clave</label><input id="p" type="password" name="clave" required maxlength="200">
+        <label for="c">Codigo de la app autenticadora (6 digitos)</label><input id="c" type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="20" {(codigoObligatorio ? "required" : "")}>
+        {Mensajes(null, error)}
+        """ + Fin("Ingresar y autorizar", "autorizar", linkEmail, "Ingresar con mi mail");
+
+    /// <summary>Paso 1 del ingreso por mail.</summary>
+    public static string RenderEmail(string cliente, string host, Dictionary<string, string?> campos, string antiforgery, string? error, string? linkClave) =>
+        Inicio(cliente, host, campos, antiforgery) + $"""
+        <label for="e">Tu mail</label><input id="e" type="email" name="email" required maxlength="200" autocomplete="email" autofocus>
+        <p style="font-size:.82rem;color:#666">Te enviamos un codigo de 6 digitos a ese mail. Tiene que ser el mail que tenes registrado en ALFA NET.</p>
+        {Mensajes(null, error)}
+        """ + Fin("Enviarme el codigo", "enviar-codigo", linkClave, "Ingresar con usuario y clave (personal de ALFA NET)");
+
+    /// <summary>Paso 2 del ingreso por mail.</summary>
+    public static string RenderCodigo(string cliente, string host, Dictionary<string, string?> campos, string antiforgery, string email, string? aviso, string? error, string? linkClave) =>
+        Inicio(cliente, host, campos, antiforgery) + $"""
+        <input type="hidden" name="email" value="{E(email)}">
+        <p>Mail: <b>{E(email)}</b></p>
+        <label for="k">Codigo recibido por mail (6 digitos)</label><input id="k" type="text" name="codigo_email" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus>
+        {Mensajes(aviso, error)}
+        <p style="margin-top:1.2rem"><button class="ok" type="submit" name="accion" value="verificar-codigo">Ingresar y autorizar</button>
+        <button class="no" type="submit" name="accion" value="enviar-codigo" formnovalidate>Enviarme otro codigo</button></p>
+        </form><p class="alt"><a href="{E(linkClave)}">Ingresar con usuario y clave (personal de ALFA NET)</a></p></div></body></html>
+        """;
+
+    /// <summary>Paso 3 (solo si el mail tiene varias bases): se muestra despues de validar el codigo.</summary>
+    public static string RenderBases(string cliente, string host, Dictionary<string, string?> campos, string antiforgery, string ticket, IReadOnlyList<AccesoBase> bases) =>
+        Inicio(cliente, host, campos, antiforgery) + $"""
+        <input type="hidden" name="ticket" value="{E(ticket)}">
+        <p>Tu mail tiene acceso a varias bases. Elegi cual queres consultar con esta conexion (para cambiar, desconecta y volve a conectar):</p>
+        {string.Concat(bases.Select((b, i) => $"<label class=\"b\"><input type=\"radio\" name=\"base\" value=\"{b.IdBase}\" {(i == 0 ? "checked" : "")}> {E(b.NombreBase)}{(string.IsNullOrWhiteSpace(b.Cliente) ? "" : " - " + E(b.Cliente))}</label>"))}
+        """ + Fin("Conectar", "elegir-base", null, "");
 
     public static string RenderError(string mensaje) =>
         $"<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Error</title><style>{Estilo}</style></head><body><div class=\"c\"><h1>No se pudo continuar</h1><p>{E(mensaje)}</p></div></body></html>";

@@ -73,6 +73,7 @@ public sealed class OAuthApp : WebApplicationFactory<Program>
     public HttpClient Cliente() => CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
 }
 
+[Collection("OAuth-env")]   // las fabricas fijan variables de entorno del proceso: no pueden correr en paralelo
 public class OAuthFlujoTests : IClassFixture<OAuthApp>
 {
     private readonly OAuthApp _app;

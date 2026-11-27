@@ -3,6 +3,10 @@
 #   Set-ExecutionPolicy -Scope Process Bypass -Force
 #   C:\inetpub\AlfaCoreMcp\usuarios_mcp.ps1 crear-usuario fulano "Nombre Apellido" --qr C:\ProgramData\AlfaCoreMcp\fulano.png
 #   C:\inetpub\AlfaCoreMcp\usuarios_mcp.ps1 configurar-totp fulano --qr C:\ProgramData\AlfaCoreMcp\fulano.png
+# Clientes (ingreso por mail, multi-base):
+#   C:\inetpub\AlfaCoreMcp\usuarios_mcp.ps1 habilitar-base 12          (pide la clave de mcp_dir_ro de esa base)
+#   C:\inetpub\AlfaCoreMcp\usuarios_mcp.ps1 invitar fulano@cliente.com 12
+#   C:\inetpub\AlfaCoreMcp\usuarios_mcp.ps1 accesos      |      quitar-acceso fulano@cliente.com
 # Las variables (cadenas de conexion, Issuer, ruta de claves) se cargan solo en este proceso; no se muestran ni se guardan.
 # Sin bloque param(): todos los argumentos van tal cual al programa (si no, "crear-usuario" se tomaria como nombre de sitio).
 $Sitio = "AlfaCoreMcp"

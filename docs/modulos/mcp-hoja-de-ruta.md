@@ -33,11 +33,16 @@ Falta, en orden de valor (todo requiere vistas nuevas en un script `013`, revisa
 
 Cada vista nueva: verificar el tipo real de cada objeto en SQL Server y cuadrar contra el reporte equivalente de Alfa Gestión.
 
-## 3. Permisos por usuario
+## 3. Multi-base y permisos por usuario
 
-- Ocultar costos y márgenes a ciertos usuarios (permiso por área o por herramienta, guardado en `MCP_USUARIO`
-  o tabla hija).
-- Con multi-base: cada usuario ve solo sus bases / unidades fiscales (`IConexionResolver` por usuario).
+**Hecho (27/11/2026):** multi-base con ingreso por mail. La base va atada a cada autorización y la resuelve
+`ConexionPorBaseResolver` desde `ALFA_CENTRAL`. Tablas `MCP_BASE`/`MCP_ACCESO`/`MCP_CODIGO_EMAIL` (script `014`) y comandos
+`habilitar-base`/`invitar`/`quitar-acceso`/`accesos`. Falta:
+- **Pantalla en `/admin` (AlfaCore)**: en Usuarios, botón "MCP" con elección de base e invitación; en Bases, marca "MCP habilitado".
+  La clave de solo lectura de la base la sigue cargando `habilitar-base` en el servidor (la cifra la clave del MCP).
+- Ocultar costos y márgenes a ciertos usuarios (permiso por herramienta en `MCP_ACCESO`).
+- Pendiente de AlfaCore (no del MCP): las contraseñas de `ALFA_CENTRAL.users` están en texto plano, se muestran en `/admin`
+  y en algunos clientes son el CUIT. Guardarlas con hash, no mostrarlas y forzar el cambio de la inicial.
 
 ## 4. Producto (vender a otros clientes de ALFA NET)
 

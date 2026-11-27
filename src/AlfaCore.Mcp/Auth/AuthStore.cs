@@ -6,8 +6,11 @@ namespace AlfaCore.Mcp.Auth;
 public sealed record UsuarioAuth(int Id, string Usuario, string Nombre, string ClaveHash, bool Activo, int Intentos, DateTime? BloqueadoHasta, string? Base,
     string? TotpSecreto = null, long TotpUltimoPaso = 0);
 public sealed record ClienteOAuth(string ClientId, string Nombre, IReadOnlyList<string> RedirectUris, DateTime AltaUtc);
-public sealed record CodigoAuth(string Hash, string ClientId, int UsuarioId, string RedirectUri, string CodeChallenge, string Scope, string Resource, DateTime ExpiraUtc);
-public sealed record RefreshAuth(string Hash, string ClientId, int UsuarioId, string Scope, string Resource, DateTime ExpiraUtc, Guid Familia);
+/// <summary>Base y Metodo viajan con la autorizacion (no con el usuario): un mail puede tener varias bases. Base null = base por defecto.</summary>
+public sealed record CodigoAuth(string Hash, string ClientId, int UsuarioId, string RedirectUri, string CodeChallenge, string Scope, string Resource, DateTime ExpiraUtc,
+    string? Base = null, string Metodo = "pwd");
+public sealed record RefreshAuth(string Hash, string ClientId, int UsuarioId, string Scope, string Resource, DateTime ExpiraUtc, Guid Familia,
+    string? Base = null, string Metodo = "pwd");
 
 /// <summary>
 /// Persistencia del servidor OAuth. Los codigos y refresh tokens se guardan SOLO como hash; ninguna operacion devuelve el valor en claro.
@@ -267,8 +270,8 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
     {
         await using var cn = await AbrirAsync(ct);
         await cn.ExecuteAsync(new CommandDefinition(
-            "INSERT INTO dbo.MCP_CODIGO (CodigoHash, ClientId, UsuarioId, RedirectUri, CodeChallenge, Scope, Resource, Expira) " +
-            "VALUES (@Hash, @ClientId, @UsuarioId, @RedirectUri, @CodeChallenge, @Scope, @Resource, @ExpiraUtc)", c, cancellationToken: ct));
+            "INSERT INTO dbo.MCP_CODIGO (CodigoHash, ClientId, UsuarioId, RedirectUri, CodeChallenge, Scope, Resource, Expira, Base, Metodo) " +
+            "VALUES (@Hash, @ClientId, @UsuarioId, @RedirectUri, @CodeChallenge, @Scope, @Resource, @ExpiraUtc, @Base, @Metodo)", c, cancellationToken: ct));
     }
 
     private sealed class CodigoRow
@@ -276,7 +279,8 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
         public string CodigoHash { get; set; } = ""; public string ClientId { get; set; } = ""; public int UsuarioId { get; set; }
         public string RedirectUri { get; set; } = ""; public string CodeChallenge { get; set; } = ""; public string Scope { get; set; } = "";
         public string Resource { get; set; } = ""; public DateTime Expira { get; set; }
-        public CodigoAuth ToModel() => new(CodigoHash, ClientId, UsuarioId, RedirectUri, CodeChallenge, Scope, Resource, Expira);
+        public string? Base { get; set; } public string? Metodo { get; set; }
+        public CodigoAuth ToModel() => new(CodigoHash, ClientId, UsuarioId, RedirectUri, CodeChallenge, Scope, Resource, Expira, Base, Metodo ?? "pwd");
     }
 
     public async Task<(CodigoAuth? Codigo, bool Reutilizado)> ConsumirCodigoAsync(string hash, DateTime ahoraUtc, CancellationToken ct)
@@ -286,7 +290,7 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
         var filas = await cn.ExecuteAsync(new CommandDefinition(
             "UPDATE dbo.MCP_CODIGO SET Usado = 1 WHERE CodigoHash = @hash AND Usado = 0 AND Expira > @ahoraUtc", new { hash, ahoraUtc }, cancellationToken: ct));
         var row = await cn.QuerySingleOrDefaultAsync<CodigoRow>(new CommandDefinition(
-            "SELECT CodigoHash, ClientId, UsuarioId, RedirectUri, CodeChallenge, Scope, Resource, Expira FROM dbo.MCP_CODIGO WHERE CodigoHash = @hash", new { hash }, cancellationToken: ct));
+            "SELECT CodigoHash, ClientId, UsuarioId, RedirectUri, CodeChallenge, Scope, Resource, Expira, Base, Metodo FROM dbo.MCP_CODIGO WHERE CodigoHash = @hash", new { hash }, cancellationToken: ct));
         if (row is null) return (null, false);
         if (filas == 1) return (row.ToModel(), false);
         return row.Expira <= ahoraUtc ? (null, false) : (row.ToModel(), true); // existe, no se pudo consumir y no vencio => ya estaba usado
@@ -299,21 +303,22 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
     }
 
     private static Task InsertarRefreshAsync(SqlConnection cn, RefreshAuth t, CancellationToken ct) => cn.ExecuteAsync(new CommandDefinition(
-        "INSERT INTO dbo.MCP_REFRESH_TOKEN (TokenHash, ClientId, UsuarioId, Scope, Resource, Expira, Familia) VALUES (@Hash, @ClientId, @UsuarioId, @Scope, @Resource, @ExpiraUtc, @Familia)", t, cancellationToken: ct));
+        "INSERT INTO dbo.MCP_REFRESH_TOKEN (TokenHash, ClientId, UsuarioId, Scope, Resource, Expira, Familia, Base, Metodo) VALUES (@Hash, @ClientId, @UsuarioId, @Scope, @Resource, @ExpiraUtc, @Familia, @Base, @Metodo)", t, cancellationToken: ct));
 
     private sealed class RefreshRow
     {
         public string TokenHash { get; set; } = ""; public string ClientId { get; set; } = ""; public int UsuarioId { get; set; }
         public string Scope { get; set; } = ""; public string Resource { get; set; } = ""; public DateTime Expira { get; set; }
         public Guid Familia { get; set; } public bool Revocado { get; set; } public bool Reemplazado { get; set; }
+        public string? Base { get; set; } public string? Metodo { get; set; }
     }
 
     public async Task<(RefreshAuth? Token, bool Invalido)> GetRefreshAsync(string hash, CancellationToken ct)
     {
         await using var cn = await AbrirAsync(ct);
         var r = await cn.QuerySingleOrDefaultAsync<RefreshRow>(new CommandDefinition(
-            "SELECT TokenHash, ClientId, UsuarioId, Scope, Resource, Expira, Familia, Revocado, Reemplazado FROM dbo.MCP_REFRESH_TOKEN WHERE TokenHash = @hash", new { hash }, cancellationToken: ct));
-        return r is null ? (null, false) : (new RefreshAuth(r.TokenHash, r.ClientId, r.UsuarioId, r.Scope, r.Resource, r.Expira, r.Familia), r.Revocado || r.Reemplazado);
+            "SELECT TokenHash, ClientId, UsuarioId, Scope, Resource, Expira, Familia, Revocado, Reemplazado, Base, Metodo FROM dbo.MCP_REFRESH_TOKEN WHERE TokenHash = @hash", new { hash }, cancellationToken: ct));
+        return r is null ? (null, false) : (new RefreshAuth(r.TokenHash, r.ClientId, r.UsuarioId, r.Scope, r.Resource, r.Expira, r.Familia, r.Base, r.Metodo ?? "pwd"), r.Revocado || r.Reemplazado);
     }
 
     public async Task<bool> RotarRefreshAsync(string hashViejo, RefreshAuth nuevo, DateTime ahoraUtc, CancellationToken ct)
@@ -325,7 +330,7 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
             new { hashViejo, ahoraUtc }, tx, cancellationToken: ct));
         if (filas != 1) { await tx.RollbackAsync(ct); return false; }
         await cn.ExecuteAsync(new CommandDefinition(
-            "INSERT INTO dbo.MCP_REFRESH_TOKEN (TokenHash, ClientId, UsuarioId, Scope, Resource, Expira, Familia) VALUES (@Hash, @ClientId, @UsuarioId, @Scope, @Resource, @ExpiraUtc, @Familia)", nuevo, tx, cancellationToken: ct));
+            "INSERT INTO dbo.MCP_REFRESH_TOKEN (TokenHash, ClientId, UsuarioId, Scope, Resource, Expira, Familia, Base, Metodo) VALUES (@Hash, @ClientId, @UsuarioId, @Scope, @Resource, @ExpiraUtc, @Familia, @Base, @Metodo)", nuevo, tx, cancellationToken: ct));
         await tx.CommitAsync(ct);
         return true;
     }
@@ -347,7 +352,9 @@ public sealed class SqlAuthStore(string connectionString, ILogger<SqlAuthStore> 
         await using var cn = await AbrirAsync(ct);
         await cn.ExecuteAsync(new CommandDefinition(
             "DELETE FROM dbo.MCP_CODIGO WHERE Expira < DATEADD(hour, -1, @ahoraUtc); DELETE FROM dbo.MCP_REFRESH_TOKEN WHERE Expira < @ahoraUtc; " +
-            "DELETE FROM dbo.MCP_EVENTO WHERE Fecha < DATEADD(day, -180, @ahoraUtc)", new { ahoraUtc }, cancellationToken: ct));
+            "DELETE FROM dbo.MCP_EVENTO WHERE Fecha < DATEADD(day, -180, @ahoraUtc); " +
+            "IF OBJECT_ID(N'dbo.MCP_CODIGO_EMAIL', N'U') IS NOT NULL DELETE FROM dbo.MCP_CODIGO_EMAIL WHERE Alta < DATEADD(day, -2, @ahoraUtc)",
+            new { ahoraUtc }, cancellationToken: ct));
     }
 
     public async Task EventoAsync(string evento, string? usuario, string? clientId, string? ip, string? detalle, CancellationToken ct)
