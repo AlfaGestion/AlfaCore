@@ -100,4 +100,35 @@ public class ParametrosYConfigTests
         Assert.Equal(7.5m, c.AdvertirSinCostoPct);
         Assert.False(c.IncluirProformas);
     }
+
+    [Fact]
+    public void Palabras_separa_y_quita_repetidas()
+    {
+        Assert.Equal(["tornillo", "8mm"], Parametros.Palabras("  tornillo   8mm TORNILLO ", "texto"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    [InlineData("a")]                      // demasiado corto: devolveria toda la tabla
+    [InlineData("a b c d e f")]            // mas de 5 palabras
+    public void Palabras_rechaza_busquedas_vacias_o_demasiado_amplias(string? texto) =>
+        Assert.Throws<ToolUserException>(() => Parametros.Palabras(texto, "texto"));
+
+    [Theory]
+    [InlineData("perez", "%perez%")]
+    [InlineData("50%", "%50[%]%")]
+    [InlineData("a_b", "%a[_]b%")]
+    [InlineData("[x]", "%[[]x]%")]
+    public void Contiene_escapa_los_comodines_de_like(string palabra, string esperado) =>
+        Assert.Equal(esperado, Parametros.Contiene(palabra));
+
+    [Fact]
+    public void Codigo_recorta_y_valida()
+    {
+        Assert.Equal("00123", Parametros.Codigo(" 00123 ", "cliente"));
+        Assert.Null(Parametros.CodigoOpcional("  ", "cliente"));
+        Assert.Throws<ToolUserException>(() => Parametros.Codigo(null, "cliente"));
+        Assert.Throws<ToolUserException>(() => Parametros.Codigo(new string('x', 51), "cliente"));
+    }
 }

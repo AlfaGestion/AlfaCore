@@ -114,6 +114,39 @@ public static class Parametros
         return cfg.TopMaximo;
     }
 
+    public const int MaxPalabras = 5;
+
+    /// <summary>
+    /// Separa un texto de busqueda en palabras (todas deben aparecer, en cualquier orden). Max 5 palabras, cada una de 1 a 50 caracteres,
+    /// y al menos una de 2 o mas para no devolver toda la tabla.
+    /// </summary>
+    public static string[] Palabras(string? texto, string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) throw new ToolUserException($"Falta el parámetro '{nombre}' (texto a buscar).");
+        var p = texto.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (p.Length > MaxPalabras) throw new ToolUserException($"'{nombre}' tiene demasiadas palabras (máximo {MaxPalabras}). Usar las más distintivas.");
+        if (p.Any(w => w.Length > 50)) throw new ToolUserException($"'{nombre}' tiene una palabra de más de 50 caracteres.");
+        if (p.All(w => w.Length < 2)) throw new ToolUserException($"'{nombre}' debe tener al menos una palabra de 2 o más caracteres.");
+        return p;
+    }
+
+    /// <summary>Patron LIKE '%palabra%' con los comodines de T-SQL escapados (la palabra se busca literal).</summary>
+    public static string Contiene(string palabra) =>
+        "%" + palabra.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%";
+
+    /// <summary>Codigo exacto de cliente / articulo tal como lo devuelven las busquedas (sin relleno).</summary>
+    public static string Codigo(string? valor, string nombre) =>
+        CodigoOpcional(valor, nombre) ?? throw new ToolUserException($"Falta el parámetro '{nombre}' (código exacto; si no lo sabés, buscarlo primero).");
+
+    public static string? CodigoOpcional(string? valor, string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(valor)) return null;
+        var v = valor.Trim();
+        if (v.Length > 50) throw new ToolUserException($"'{nombre}' no parece un código (más de 50 caracteres). Buscarlo primero con la herramienta de búsqueda.");
+        return v;
+    }
+
     /// <summary>Normaliza una opcion de lista cerrada (sin tildes, minusculas). Devuelve la forma canonica de <paramref name="validas"/>.</summary>
     public static string Opcion(string? valor, string nombre, string[] validas, string defecto)
     {

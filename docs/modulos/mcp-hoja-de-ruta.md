@@ -12,21 +12,25 @@ Publicación: `docs/modulos/mcp-publicacion-iis.md`. Scripts: `docs/base-datos/s
 
 ## 2. Próxima etapa: herramientas puntuales
 
-Hoy hay 6 herramientas de resumen + `consultar_sql`. Faltan herramientas que respondan una pregunta
-concreta sin que la IA tenga que adivinar códigos o armar SQL. En orden de valor:
+**Hecho (27/11/2026), sin scripts SQL nuevos (usan las vistas `dir` existentes):** `buscar_clientes`, `buscar_articulos`,
+`ficha_cliente` (datos, deuda, compras 12 meses y comprobantes abiertos), `ficha_articulo` (precios, stock por depósito, ventas 12 meses),
+filtros `cliente` / `articulo` en `ventas_resumen`, `ranking_articulos` y `clientes_top`, agrupación por artículo y por comprobante,
+y `Title` legible en todas las herramientas.
 
-1. **Búsquedas por texto**: `buscar_clientes`, `buscar_articulos`, `buscar_proveedores` (devuelven código +
-   nombre para que la IA resuelva "Pérez" antes de consultar).
-2. **Cuenta corriente detallada de un cliente** (movimientos + saldo, paginada) y luego la de **proveedores**.
-3. **Compras y proveedores**: vista `dir.vw_Compras` (hoy `dir` es solo ventas).
-4. **Libros de IVA** ventas/compras y comparación mensual (se alinea con el control fiscal del Director IA).
-5. **Cheques**: cartera de terceros y propios emitidos.
-6. **Costo y precio de un artículo a una fecha**, y su historial.
+Trampa hallada: el código **Consumidor Final** junta ventas con el nombre de cada comprador en la factura. `clientes_top` ahora muestra el
+nombre del maestro y avisa cuántos nombres distintos agrupa; `buscar_clientes` busca en el maestro, así que a un particular facturado como
+Consumidor Final no lo encuentra por su nombre.
 
-Cada herramienta nueva requiere su vista `dir.*` (script nuevo en `dir-mcp/`, revisado y corrido por Alberto),
-verificar el tipo real de cada objeto en SQL Server y cuadrar contra el reporte equivalente de Alfa Gestión.
+Falta, en orden de valor (todo requiere vistas nuevas en un script `013`, revisado y corrido por Alberto):
 
-Mejora menor: poner `Title` legible a cada herramienta (Claude/ChatGPT muestran el nombre técnico).
+1. **Compras y proveedores**: `dir.vw_Proveedores`, `dir.vw_Compras` y `buscar_proveedores` / `ficha_proveedor`.
+2. **Cuenta corriente con movimientos** (no solo lo abierto) de clientes y luego de proveedores.
+3. **Libros de IVA** ventas/compras y comparación mensual (se alinea con el control fiscal del Director IA).
+4. **Cheques**: cartera de terceros y propios emitidos.
+5. **Costo y precio de un artículo a una fecha**, y su historial.
+6. Acelerar la cuenta corriente (hoy ~12 s por cliente: `VE_CPTES_SALDOS_VENTAS` calcula todos los saldos antes de filtrar).
+
+Cada vista nueva: verificar el tipo real de cada objeto en SQL Server y cuadrar contra el reporte equivalente de Alfa Gestión.
 
 ## 3. Permisos por usuario
 

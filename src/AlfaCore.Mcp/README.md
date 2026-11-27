@@ -101,10 +101,13 @@ OAuth: `IA_MCP_OAUTH_ACCESS_TOKEN_MIN`, `_REFRESH_DIAS`, `_CODIGO_SEG`, `_MAX_IN
 ## Herramientas
 | Herramienta | Para qué |
 |---|---|
-| `ventas_resumen(desde, hasta, agrupar_por: dia\|mes\|vendedor\|rubro\|cliente)` | ventas netas, costo, margen y comprobantes, con totales del período |
-| `ranking_articulos(desde, hasta, criterio: ganancia\|cantidad\|facturacion, top)` | ranking de artículos |
+| `buscar_clientes(texto, top)` / `buscar_articulos(texto, top)` | código exacto a partir de parte del nombre, código o CUIT (todas las palabras, sin tildes) |
+| `ficha_cliente(cliente)` | datos, deuda de hoy (vencida, +90, límite y disponible), compras 12 meses y comprobantes abiertos (~12 s: la vista de saldos calcula todo) |
+| `ficha_articulo(articulo)` | costo y precios vigentes, punto de pedido, stock por depósito y ventas 12 meses |
+| `ventas_resumen(desde, hasta, agrupar_por: dia\|mes\|vendedor\|rubro\|cliente\|articulo\|comprobante, cliente, articulo)` | ventas netas, costo, margen y comprobantes, con totales del período; opcionalmente de un cliente o artículo |
+| `ranking_articulos(desde, hasta, criterio: ganancia\|cantidad\|facturacion, top, cliente)` | ranking de artículos (opcional: lo que compra un cliente) |
 | `comparar_periodos(desde_a, hasta_a, desde_b, hasta_b)` | A vs B: totales, variación y detalle por rubro |
-| `clientes_top(desde, hasta, top)` | mejores clientes |
+| `clientes_top(desde, hasta, top, articulo)` | mejores clientes (opcional: de un artículo); nombre del maestro y aviso si el código junta varios compradores (Consumidor Final) |
 | `deuda_clientes(minimo, top)` | saldos deudores, vencido y vencido a más de 90 días |
 | `stock_critico(top)` | artículos en o bajo su punto de pedido |
 | `describir_esquema()` | vistas y columnas de `dir` (llamarla antes de `consultar_sql`) |
