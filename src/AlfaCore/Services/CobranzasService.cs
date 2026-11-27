@@ -184,7 +184,8 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
     private static async Task<IReadOnlyList<CobranzaMedio>> Medios(SqlConnection cn,SqlTransaction? tx,CancellationToken ct,bool incluirEfectivo=false)
         => (await cn.QueryAsync<CobranzaMedio>(Cmd("""
             SELECT LTRIM(RTRIM(CODIGO)) Cuenta,LTRIM(RTRIM(DESCRIPCION)) Descripcion,
-                LTRIM(RTRIM(MEDIODEPAGO)) Tipo,LTRIM(RTRIM(MONEDA)) Moneda
+                LTRIM(RTRIM(MEDIODEPAGO)) Tipo,LTRIM(RTRIM(MONEDA)) Moneda,
+                LTRIM(RTRIM(ISNULL(CodigoOpcional,''))) CodigoOpcional
             FROM dbo.MA_CUENTAS WHERE (LTRIM(RTRIM(MEDIODEPAGO)) IN ('DB','RI','RB','RG','RO')
                 OR (@efectivo=1 AND LTRIM(RTRIM(MEDIODEPAGO))='EF'))
                 AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0 ORDER BY DESCRIPCION,CODIGO;

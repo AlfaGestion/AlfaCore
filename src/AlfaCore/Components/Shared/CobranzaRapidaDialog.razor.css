@@ -26,3 +26,50 @@
 @media(max-width:600px) { .cobranza-editor__cabecera,.cobranza-editor__medio { grid-template-columns: minmax(0,1fr); } }
 @media(max-width:600px) { .cobranza-editor__totales { flex-basis: 100%; } }
 @media(max-width:700px) { .cobranza-editor__resumen { position: static; grid-template-columns: minmax(0, 1fr); } .cobranza-editor__ingreso { border-left: 0; border-top: 1px solid var(--alfa-border-default); padding: var(--alfa-space-8) 0 0; } }
+/* Totales del pie más visibles */
+.cobranza-editor__totales { font-size: var(--alfa-font-body, 14px); }
+.cobranza-editor__totales strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.cobranza-editor__total-cb, .cobranza-editor__total-cb strong { font-size: 20px; }
+/* Cobranza directa: cabecera con totales grandes, solapas y carga de medios como en el POS */
+.cobranza-cobro__cabecera { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--alfa-space-12); }
+.cobranza-cobro__cliente { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; padding: var(--alfa-space-12) var(--alfa-space-16); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.cobranza-cobro__cliente > strong { font-size: 16px; }
+.cobranza-cobro__cliente small { color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); }
+.cobranza-cobro__total { display: flex; align-items: center; justify-content: space-between; gap: var(--alfa-space-8); padding: var(--alfa-space-12) var(--alfa-space-16); border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-page, #0d0f13); border: 1px solid var(--alfa-border-default); }
+.cobranza-cobro__total span { font-weight: 600; font-size: var(--alfa-font-body); }
+.cobranza-cobro__total strong { font-size: 24px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cobranza-cobro__total--faltante strong { color: var(--alfa-accent, #4c8dff); }
+.cobranza-cobro__total--acuenta strong { color: var(--alfa-success, #3fb950); }
+.cobranza-cobro__panel { display: grid; gap: var(--alfa-space-12); }
+.cobranza-cobro__panel[hidden] { display: none; }
+.cobranza-cobro__entrada { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(160px, 1.4fr) minmax(120px, 1fr) minmax(140px, 1.2fr) auto; gap: var(--alfa-space-8); align-items: stretch; }
+.cobranza-cobro__entrada input { min-width: 0; height: 52px; padding: 0 var(--alfa-space-12); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font: inherit; font-size: 15px; }
+.cobranza-cobro__entrada input:focus { outline: none; border-color: var(--alfa-accent, #4c8dff); box-shadow: 0 0 0 2px color-mix(in srgb, var(--alfa-accent, #4c8dff) 30%, transparent); }
+.cobranza-cobro__importe { font-size: 18px !important; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.cobranza-cobro__seleccionado { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; padding: 0 var(--alfa-space-12); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.cobranza-cobro__seleccionado span { color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); }
+.cobranza-cobro__seleccionado strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cobranza-cobro__agregar { padding: 0 var(--alfa-space-16); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); font-weight: 600; cursor: pointer; }
+.cobranza-cobro__agregar:hover:not(:disabled) { border-color: var(--alfa-accent, #4c8dff); }
+.cobranza-cobro__columnas { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--alfa-space-12); }
+.cobranza-cobro__columnas > section { display: flex; flex-direction: column; gap: var(--alfa-space-8); min-width: 0; padding: var(--alfa-space-12); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.cobranza-cobro__columnas h4 { margin: 0; font-size: var(--alfa-font-body); }
+.cobranza-cobro__medios { display: grid; gap: 6px; max-height: 30vh; overflow: auto; padding-right: 2px; }
+.cobranza-cobro__medio { display: flex; justify-content: space-between; align-items: center; gap: var(--alfa-space-8); padding: 10px 12px; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); text-align: left; font: inherit; cursor: pointer; }
+.cobranza-cobro__medio span { color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); white-space: nowrap; }
+.cobranza-cobro__medio:hover:not(:disabled) { border-color: color-mix(in srgb, var(--alfa-accent, #4c8dff) 50%, var(--alfa-border-default)); }
+.cobranza-cobro__medio.is-active { border-color: var(--alfa-accent, #4c8dff); background: color-mix(in srgb, var(--alfa-accent, #4c8dff) 12%, var(--alfa-bg-surface)); }
+.cobranza-cobro__vacio { padding: var(--alfa-space-16) 0; text-align: center; color: var(--alfa-text-secondary); }
+.cobranza-cobro__pagos { display: grid; gap: 6px; max-height: 22vh; overflow: auto; }
+.cobranza-cobro__pago { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--alfa-space-8); padding: 8px 10px; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.cobranza-cobro__pago div { display: flex; flex-direction: column; min-width: 0; }
+.cobranza-cobro__pago span { color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cobranza-cobro__pago > strong { font-variant-numeric: tabular-nums; }
+.cobranza-cobro__pago button { border: 0; background: none; color: var(--alfa-text-secondary); cursor: pointer; padding: 4px; }
+.cobranza-cobro__pago button:hover { color: var(--alfa-color-danger, #d64545); }
+.cobranza-cobro__resumen { display: grid; gap: 6px; margin-top: auto; padding-top: var(--alfa-space-8); border-top: 1px solid var(--alfa-border-default); }
+.cobranza-cobro__resumen div { display: flex; justify-content: space-between; gap: var(--alfa-space-8); }
+.cobranza-cobro__resumen strong { font-variant-numeric: tabular-nums; }
+.cobranza-cobro__resumen .is-faltante strong { color: var(--alfa-accent, #4c8dff); font-size: 16px; }
+.cobranza-cobro__resumen .is-acuenta strong { color: var(--alfa-success, #3fb950); font-size: 16px; }
+@media (max-width: 900px) { .cobranza-cobro__cabecera, .cobranza-cobro__columnas { grid-template-columns: minmax(0, 1fr); } .cobranza-cobro__entrada { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }

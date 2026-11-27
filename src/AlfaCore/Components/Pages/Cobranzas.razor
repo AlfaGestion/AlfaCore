@@ -34,19 +34,60 @@
     }
     else if (_docs is not null)
     {
-        var filtrados = Filtrados();
-        var total = filtrados.Count;
-        var paginas = Math.Max(1, (int)Math.Ceiling(total / (double)TamPagina));
-        if (_pagina >= paginas) _pagina = paginas - 1;
-        var visibles = filtrados.Skip(_pagina * TamPagina).Take(TamPagina).ToList();
+        var buscados = Buscados();
+        var filtrados = Filtrados(buscados);
+        var hoy = DateTime.Today;
+        var pendiente = buscados.Sum(d => d.Saldo);
+        var vencidos = buscados.Where(d => CumpleRapido(d, "vencido", hoy)).ToList();
+        var semana = buscados.Where(d => CumpleRapido(d, "semana", hoy)).ToList();
+        var viejos = buscados.Where(d => CumpleRapido(d, "90", hoy)).ToList();
 
-        if (total == 0)
+        @* Tarjetas: las de deuda filtran el listado al hacer clic (otro clic, o «Pendiente de cobro», lo quita). *@
+        <div class="kpi-grid cobranzas-kpis">
+            @Kpi("", "Pendiente de cobro", Dinero(pendiente), $"{buscados.Count:N0} comprobante(s) · {buscados.Select(d => (d.Cliente, d.Unidad)).Distinct().Count():N0} cliente(s)", false)
+            @Kpi("vencido", "Vencido", Dinero(vencidos.Sum(d => d.Saldo)),
+                $"{Porcentaje(vencidos.Sum(d => d.Saldo), pendiente)} del pendiente · {vencidos.Select(d => (d.Cliente, d.Unidad)).Distinct().Count():N0} cliente(s)", vencidos.Count > 0)
+            @Kpi("semana", "Vence en los próximos 7 días", Dinero(semana.Sum(d => d.Saldo)), $"{semana.Count:N0} comprobante(s)", false)
+            @Kpi("90", "Vencido hace más de 90 días", Dinero(viejos.Sum(d => d.Saldo)),
+                $"{Porcentaje(viejos.Sum(d => d.Saldo), pendiente)} del pendiente · {viejos.Count:N0} comprobante(s)", viejos.Count > 0)
+            <article class="kpi-card cobranzas-kpi cobranzas-kpi--info">
+                <p class="kpi-card__label">Cobrado este mes</p>
+                <h3 class="kpi-card__value">@(_indicadores is { } ind ? Dinero(ind.CobradoMes) : "…")</h3>
+                <p class="kpi-card__description">@(_indicadores is { } i2 ? $"{i2.RecibosMes:N0} recibo(s) · Hoy {Dinero(i2.CobradoHoy)}" : "Recibos CB del mes")</p>
+            </article>
+        </div>
+
+        <div class="cobranzas-vistas">
+            <div class="cobranzas-vistas__opciones" role="group" aria-label="Forma de ver el listado">
+                @foreach (var (clave, titulo) in Vistas)
+                {
+                    <button type="button" class="gd-chip @(_vista == clave ? "is-active" : string.Empty)" aria-pressed="@(_vista == clave)"
+                            @onclick="() => CambiarVista(clave)">@titulo</button>
+                }
+            </div>
+            @if (_vista == "agrupado")
+            {
+                <span class="cobranzas-vistas__acciones">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="() => ExpandirTodo(filtrados)">Expandir todo</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="() => _abiertos.Clear()">Contraer todo</AlfaButton>
+                </span>
+            }
+            @if (_rapido.Length > 0)
+            {
+                <button type="button" class="gd-chip is-active" @onclick="() => Rapido(string.Empty)">@TituloRapido(_rapido) <i class="bi bi-x" aria-hidden="true"></i></button>
+            }
+        </div>
+
+        if (filtrados.Count == 0)
         {
             <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes pendientes"
                 Message="No hay facturas, proformas o notas de débito pendientes en pesos para esa búsqueda, dentro de tus unidades de negocio." />
         }
-        else
+        else if (_vista == "detalle")
         {
+            var total = filtrados.Count;
+            var paginas = Paginas(total);
+            var visibles = filtrados.Skip(_pagina * TamPagina).Take(TamPagina).ToList();
             <div class="cobranzas-page__scroll">
                 <table class="cobranzas-page__tabla">
                     <thead>
@@ -66,37 +107,124 @@
                     <tbody>
                         @foreach (var d in visibles)
                         {
-                            var vencido = d.Vencimiento is { } v && v.Date < DateTime.Today;
-                            <tr @key="d.Id" class="@(_seleccion.Contains(d.Id) ? "is-selected" : string.Empty)">
-                                <td class="cobranzas-page__check">
-                                    <AlfaCheckbox Value="@_seleccion.Contains(d.Id)" ValueChanged="v => Tildar(d, v == true)" Disabled="@_busy">@($"Seleccionar {d.Tc} {d.Numero}")</AlfaCheckbox>
-                                </td>
-                                <td><strong>@d.Nombre</strong><small>@d.Cliente</small></td>
-                                <td>@d.Cuit</td>
-                                <td>@NombreUnidad(d.Unidad)</td>
-                                <td>@d.Tc</td>
-                                <td>@d.Numero</td>
-                                <td>@d.Fecha.ToString("dd/MM/yyyy")</td>
-                                <td class="@(vencido ? "cobranzas-page__vencido" : string.Empty)">@(d.Vencimiento?.ToString("dd/MM/yyyy") ?? "—")</td>
-                                <td class="cobranzas-page__importe">@Dinero(d.Saldo)</td>
-                                <td><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => CobrarAsync(d)">Cobrar</AlfaButton></td>
-                            </tr>
+                            @FilaComprobante(d)
                         }
                     </tbody>
                 </table>
             </div>
-            <div class="cobranzas-page__pie">
-                <span>@total comprobante(s) · Pendiente @Dinero(filtrados.Sum(d => d.Saldo))
-                    @if (_seleccion.Count > 0) { <text> · <strong>@_seleccion.Count seleccionado(s): @Dinero(SaldoSeleccionado)</strong></text> }
-                </span>
-                <span class="cobranzas-page__paginas">
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina == 0)" OnClick="() => _pagina--">Anterior</AlfaButton>
-                    <span>Página @(_pagina + 1) de @paginas</span>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina >= paginas - 1)" OnClick="() => _pagina++">Siguiente</AlfaButton>
-                </span>
-            </div>
-            <p class="gd-hint">Solo comprobantes en pesos; medios: banco, efectivo y retenciones. Cheques y tarjetas todavía se registran desde Alfa Gestión.</p>
+            @Pie($"{total:N0} comprobante(s) · Pendiente {Dinero(filtrados.Sum(d => d.Saldo))}", paginas)
         }
+        else
+        {
+            var grupos = Agrupar(filtrados);
+            var paginas = Paginas(grupos.Count);
+            var visibles = grupos.Skip(_pagina * TamPagina).Take(TamPagina).ToList();
+            <div class="cobranzas-page__scroll">
+                @if (_vista == "agrupado")
+                {
+                    <table class="cobranzas-page__tabla">
+                        <thead>
+                            <tr>
+                                <th class="cobranzas-page__check"></th>
+                                @Cabecera("nombre", "Cliente")
+                                @Cabecera("cuit", "CUIT")
+                                @Cabecera("unidad", "Unidad")
+                                @Cabecera("cantidad", "Comprobantes")
+                                @Cabecera("vencimiento", "Vencimiento")
+                                @Cabecera("vencido", "Vencido", true)
+                                @Cabecera("saldo", "Pendiente", true)
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var g in visibles)
+                            {
+                                var abierto = _abiertos.Contains(g.Clave);
+                                var tildados = g.Docs.Count(d => _seleccion.Contains(d.Id));
+                                <tr @key="g.Clave" class="cobranzas-page__grupo @(tildados > 0 ? "is-selected" : string.Empty)">
+                                    <td class="cobranzas-page__check">
+                                        <AlfaCheckbox Value="@(tildados == g.Docs.Count ? true : tildados == 0 ? false : null)" AriaLabel="@($"Seleccionar todos los comprobantes de {g.Nombre}")"
+                                            ValueChanged="v => TildarGrupo(g, v == true)" Disabled="@_busy" />
+                                    </td>
+                                    <td>
+                                        <button type="button" class="cobranzas-page__expandir" aria-expanded="@abierto" @onclick="() => Alternar(g.Clave)">
+                                            <i class="bi @(abierto ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></i>
+                                            <span><strong>@g.Nombre</strong><small>@g.Cliente</small></span>
+                                        </button>
+                                    </td>
+                                    <td>@g.Cuit</td>
+                                    <td>@NombreUnidad(g.Unidad)</td>
+                                    <td>@g.Docs.Count</td>
+                                    <td class="@(g.Vencido > 0 ? "cobranzas-page__vencido" : string.Empty)">@g.MasAntiguo.ToString("dd/MM/yyyy")</td>
+                                    <td class="cobranzas-page__importe @(g.Vencido > 0 ? "cobranzas-page__vencido" : string.Empty)">@(g.Vencido > 0 ? Dinero(g.Vencido) : "—")</td>
+                                    <td class="cobranzas-page__importe"><strong>@Dinero(g.Pendiente)</strong></td>
+                                    <td><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => CobrarGrupoAsync(g)">Cobrar</AlfaButton></td>
+                                </tr>
+                                @if (abierto)
+                                {
+                                    @foreach (var d in g.Docs)
+                                    {
+                                        var vencido = EsVencido(d, hoy);
+                                        <tr @key="d.Id" class="cobranzas-page__detalle @(_seleccion.Contains(d.Id) ? "is-selected" : string.Empty)">
+                                            <td class="cobranzas-page__check">
+                                                <AlfaCheckbox Value="@_seleccion.Contains(d.Id)" AriaLabel="@($"Seleccionar {d.Tc} {d.Numero}")" ValueChanged="v => Tildar(d, v == true)" Disabled="@_busy" />
+                                            </td>
+                                            <td colspan="3" class="cobranzas-page__detalle-cpte">@d.Tc @d.Numero · @d.Fecha.ToString("dd/MM/yyyy")</td>
+                                            <td></td>
+                                            <td class="@(vencido ? "cobranzas-page__vencido" : string.Empty)">@(d.Vencimiento?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                            <td></td>
+                                            <td class="cobranzas-page__importe">@Dinero(d.Saldo)</td>
+                                            <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => CobrarAsync(d)">Cobrar</AlfaButton></td>
+                                        </tr>
+                                    }
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <table class="cobranzas-page__tabla">
+                        <thead>
+                            <tr>
+                                @Cabecera("nombre", "Cliente")
+                                @Cabecera("cuit", "CUIT")
+                                @Cabecera("unidad", "Unidad")
+                                @Cabecera("cantidad", "Comprobantes")
+                                @Cabecera("vencimiento", "Venc. más antiguo")
+                                @Cabecera("vencido", "Vencido", true)
+                                @Cabecera("saldo", "Pendiente", true)
+                                <th class="cobranzas-page__importe">A favor<AlfaInfoTip>Anticipos, cobros a cuenta y notas de crédito sin aplicar: diferencia entre el pendiente de las facturas y el saldo de la cuenta corriente.</AlfaInfoTip></th>
+                                @Cabecera("final", "Saldo final", true)
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var g in visibles)
+                            {
+                                var final = SaldoFinal(g);
+                                var aFavor = final is { } f && g.Pendiente - f > 0.005m ? g.Pendiente - f : 0m;
+                                <tr @key="g.Clave">
+                                    <td><strong>@g.Nombre</strong><small>@g.Cliente</small></td>
+                                    <td>@g.Cuit</td>
+                                    <td>@NombreUnidad(g.Unidad)</td>
+                                    <td>@g.Docs.Count</td>
+                                    <td class="@(g.Vencido > 0 ? "cobranzas-page__vencido" : string.Empty)">@g.MasAntiguo.ToString("dd/MM/yyyy")</td>
+                                    <td class="cobranzas-page__importe @(g.Vencido > 0 ? "cobranzas-page__vencido" : string.Empty)">@(g.Vencido > 0 ? Dinero(g.Vencido) : "—")</td>
+                                    <td class="cobranzas-page__importe">@Dinero(g.Pendiente)</td>
+                                    <td class="cobranzas-page__importe">@(final is null ? "…" : aFavor > 0 ? Dinero(aFavor) : "—")</td>
+                                    <td class="cobranzas-page__importe"><strong>@(final is { } sf ? Dinero(sf) : "…")</strong></td>
+                                    <td><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => CobrarGrupoAsync(g)">Cobrar</AlfaButton></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            @Pie($"{grupos.Count:N0} cliente(s) · {filtrados.Count:N0} comprobante(s) · Pendiente {Dinero(filtrados.Sum(d => d.Saldo))}"
+                + (_vista == "clientes" && _saldos is not null ? $" · Saldo final {Dinero(grupos.Sum(g => SaldoFinal(g) ?? g.Pendiente))}" : string.Empty), paginas)
+        }
+        <p class="gd-hint">Solo comprobantes en pesos; medios: banco, efectivo y retenciones. Cheques y tarjetas todavía se registran desde Alfa Gestión.@(_vista == "clientes" ? " El saldo final es el de la cuenta corriente del cliente en esa unidad: pendiente menos lo que tiene a favor." : string.Empty)</p>
     }
 </div>
 
@@ -156,6 +284,12 @@
     private IReadOnlyList<AlfaSelectOption> OpcionesUnidad
         => [new("", "Todas las unidades"), .. _unidades.Select(u => new AlfaSelectOption(u.Codigo, u.Descripcion.Length > 0 ? $"{u.Codigo} - {u.Descripcion}" : u.Codigo))];
     private decimal SaldoSeleccionado => _docs?.Where(d => _seleccion.Contains(d.Id)).Sum(d => d.Saldo) ?? 0;
+    // Vista (comprobantes, agrupado por cliente, solo clientes), filtro rápido de las tarjetas y datos que se piden aparte.
+    private string _vista = "detalle", _rapido = string.Empty;
+    private readonly HashSet<string> _abiertos = [];
+    private IReadOnlyList<CobranzaSaldoCuenta>? _saldos;
+    private bool _cargandoSaldos;
+    private CobranzaIndicadores? _indicadores;
     // Cobranza nueva sin comprobantes tildados: cliente y unidad elegidos a mano.
     private bool _eligiendoCliente;
     private string _clienteTexto = string.Empty, _clienteCodigo = string.Empty, _unidadCobro = string.Empty, _errorCliente = string.Empty;
@@ -194,13 +328,175 @@
     private IOrderedEnumerable<CobranzaDocumento> Ord<T>(IEnumerable<CobranzaDocumento> docs, Func<CobranzaDocumento, T> clave)
         => _ordenDesc ? docs.OrderByDescending(clave) : docs.OrderBy(clave);
 
-    private List<CobranzaDocumento> Filtrados()
+    // Búsqueda libre: base de las tarjetas. Filtrados: además el filtro rápido de la tarjeta elegida, ordenado.
+    private List<CobranzaDocumento> Buscados()
     {
         var palabras = (_texto ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var origen = _docs ?? [];
-        if (palabras.Length > 0)
-            origen = origen.Where(d => { var pajar = Pajar(d); return palabras.All(p => Contiene(pajar, p)); }).ToList();
-        return Ordenados(origen).ToList();
+        return palabras.Length == 0 ? origen.ToList()
+            : origen.Where(d => { var pajar = Pajar(d); return palabras.All(p => Contiene(pajar, p)); }).ToList();
+    }
+
+    private List<CobranzaDocumento> Filtrados(List<CobranzaDocumento> buscados)
+    {
+        var hoy = DateTime.Today;
+        return Ordenados(_rapido.Length == 0 ? buscados : buscados.Where(d => CumpleRapido(d, _rapido, hoy))).ToList();
+    }
+
+    // ---- Tarjetas y filtros rápidos ----
+    private static DateTime Vence(CobranzaDocumento d) => (d.Vencimiento ?? d.Fecha).Date;
+    private static bool EsVencido(CobranzaDocumento d, DateTime hoy) => Vence(d) < hoy;
+    private static bool CumpleRapido(CobranzaDocumento d, string rapido, DateTime hoy) => rapido switch
+    {
+        "vencido" => Vence(d) < hoy,
+        "semana" => Vence(d) >= hoy && Vence(d) < hoy.AddDays(7),
+        "90" => Vence(d) < hoy.AddDays(-90),
+        _ => true
+    };
+    private static string TituloRapido(string rapido) => rapido switch
+    {
+        "vencido" => "Solo vencido",
+        "semana" => "Vence en 7 días",
+        "90" => "Vencido +90 días",
+        _ => string.Empty
+    };
+    private static string Porcentaje(decimal parte, decimal total) => total <= 0 ? "0 %" : (parte / total).ToString("P0", Ar);
+
+    private void Rapido(string clave) { _rapido = _rapido == clave ? string.Empty : clave; _pagina = 0; }
+
+    private RenderFragment Kpi(string clave, string titulo, string valor, string descripcion, bool alerta) => @<button type="button"
+        class="kpi-card cobranzas-kpi @(alerta ? "cobranzas-kpi--alerta" : string.Empty) @(clave.Length > 0 && _rapido == clave ? "is-active" : string.Empty)"
+        aria-pressed="@(clave.Length > 0 && _rapido == clave)" title="@(clave.Length > 0 ? "Filtrar el listado" : "Ver todo")" @onclick="() => Rapido(clave)">
+        <span class="kpi-card__label">@titulo</span>
+        <span class="kpi-card__value">@valor</span>
+        <span class="kpi-card__description">@descripcion</span>
+    </button>;
+
+    private RenderFragment Pie(string resumen, int paginas) => @<div class="cobranzas-page__pie">
+        <span>@resumen
+            @if (_seleccion.Count > 0) { <text> · <strong>@_seleccion.Count seleccionado(s): @Dinero(SaldoSeleccionado)</strong></text> }
+        </span>
+        <span class="cobranzas-page__paginas">
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina == 0)" OnClick="() => _pagina--">Anterior</AlfaButton>
+            <span>Página @(_pagina + 1) de @paginas</span>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_pagina >= paginas - 1)" OnClick="() => _pagina++">Siguiente</AlfaButton>
+        </span>
+    </div>;
+
+    private int Paginas(int total)
+    {
+        var paginas = Math.Max(1, (int)Math.Ceiling(total / (double)TamPagina));
+        if (_pagina >= paginas) _pagina = paginas - 1;
+        return paginas;
+    }
+
+    private RenderFragment FilaComprobante(CobranzaDocumento d) => @<tr @key="d.Id" class="@(_seleccion.Contains(d.Id) ? "is-selected" : string.Empty)">
+        <td class="cobranzas-page__check">
+            <AlfaCheckbox Value="@_seleccion.Contains(d.Id)" AriaLabel="@($"Seleccionar {d.Tc} {d.Numero}")" ValueChanged="v => Tildar(d, v == true)" Disabled="@_busy" />
+        </td>
+        <td><strong>@d.Nombre</strong><small>@d.Cliente</small></td>
+        <td>@d.Cuit</td>
+        <td>@NombreUnidad(d.Unidad)</td>
+        <td>@d.Tc</td>
+        <td>@d.Numero</td>
+        <td>@d.Fecha.ToString("dd/MM/yyyy")</td>
+        <td class="@(EsVencido(d, DateTime.Today) ? "cobranzas-page__vencido" : string.Empty)">@(d.Vencimiento?.ToString("dd/MM/yyyy") ?? "—")</td>
+        <td class="cobranzas-page__importe">@Dinero(d.Saldo)</td>
+        <td><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => CobrarAsync(d)">Cobrar</AlfaButton></td>
+    </tr>;
+
+    // ---- Vistas por cliente: un grupo por cliente y unidad (un recibo no mezcla unidades) ----
+    private static readonly (string Clave, string Titulo)[] Vistas = [("detalle", "Comprobantes"), ("agrupado", "Agrupado por cliente"), ("clientes", "Solo clientes")];
+
+    private sealed class Grupo(string cliente, string unidad, List<CobranzaDocumento> docs)
+    {
+        public string Clave => Cliente + "|" + Unidad;
+        public string Cliente { get; } = cliente;
+        public string Unidad { get; } = unidad;
+        public List<CobranzaDocumento> Docs { get; } = docs;
+        public string Nombre => Docs[0].Nombre;
+        public string Cuit => Docs[0].Cuit;
+        public decimal Pendiente { get; } = docs.Sum(d => d.Saldo);
+        public decimal Vencido { get; } = docs.Where(d => EsVencido(d, DateTime.Today)).Sum(d => d.Saldo);
+        public DateTime MasAntiguo { get; } = docs.Min(Vence);
+    }
+
+    private List<Grupo> Agrupar(List<CobranzaDocumento> docs)
+    {
+        var grupos = docs.GroupBy(d => (d.Cliente, d.Unidad))
+            .Select(g => new Grupo(g.Key.Cliente, g.Key.Unidad, g.OrderBy(Vence).ThenBy(d => d.Id).ToList()));
+        IOrderedEnumerable<Grupo> o = _ordenCampo switch
+        {
+            "nombre" => OrdG(grupos, g => g.Nombre),
+            "cuit" => OrdG(grupos, g => g.Cuit),
+            "unidad" => OrdG(grupos, g => g.Unidad),
+            "cantidad" => OrdG(grupos, g => g.Docs.Count),
+            "vencimiento" => OrdG(grupos, g => g.MasAntiguo),
+            "vencido" => OrdG(grupos, g => g.Vencido),
+            "final" => OrdG(grupos, g => SaldoFinal(g) ?? g.Pendiente),
+            _ => OrdG(grupos, g => g.Pendiente)
+        };
+        return o.ThenBy(g => g.Nombre).ThenBy(g => g.Clave).ToList();
+    }
+
+    private IOrderedEnumerable<Grupo> OrdG<T>(IEnumerable<Grupo> grupos, Func<Grupo, T> clave)
+        => _ordenDesc ? grupos.OrderByDescending(clave) : grupos.OrderBy(clave);
+
+    private decimal? SaldoFinal(Grupo g)
+        => _saldos is null ? null : _saldos.Where(s => s.Cliente == g.Cliente && s.Unidad == g.Unidad).Sum(s => s.Saldo);
+
+    private async Task CambiarVista(string vista)
+    {
+        if (_vista == vista) return;
+        _vista = vista; _pagina = 0;
+        // En las vistas por cliente se ordena por deuda, de mayor a menor; en comprobantes, por fecha.
+        if (vista == "detalle") { _ordenCampo = "fecha"; _ordenDesc = false; }
+        else if (_ordenCampo is "tc" or "numero" or "fecha") { _ordenCampo = "saldo"; _ordenDesc = true; }
+        if (vista == "clientes") await CargarSaldosAsync();
+    }
+
+    private async Task CargarSaldosAsync()
+    {
+        if (_saldos is not null || _cargandoSaldos) return;
+        _cargandoSaldos = true;
+        try { _saldos = await Servicio.SaldosClientesAsync(_cts.Token); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _cargandoSaldos = false; }
+    }
+
+    private async Task CargarIndicadoresAsync()
+    {
+        try { _indicadores = await Servicio.IndicadoresAsync(_cts.Token); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException) { _indicadores = null; }
+    }
+
+    private void Alternar(string clave) { if (!_abiertos.Remove(clave)) _abiertos.Add(clave); }
+
+    private void ExpandirTodo(List<CobranzaDocumento> docs)
+    {
+        foreach (var g in Agrupar(docs).Skip(_pagina * TamPagina).Take(TamPagina)) _abiertos.Add(g.Clave);
+    }
+
+    private void TildarGrupo(Grupo g, bool marcar)
+    {
+        if (!marcar) { foreach (var d in g.Docs) _seleccion.Remove(d.Id); }
+        else
+        {
+            var primero = _docs?.FirstOrDefault(x => _seleccion.Contains(x.Id));
+            if (primero is not null && (primero.Cliente != g.Cliente || primero.Unidad != g.Unidad)) _seleccion.Clear();
+            foreach (var d in g.Docs) _seleccion.Add(d.Id);
+        }
+        UpdateHeader();
+    }
+
+    // Cobrar desde el cliente: abre el recibo con todos sus pendientes visibles tildados; en la ventana se destildan.
+    private Task CobrarGrupoAsync(Grupo g)
+    {
+        _seleccion.Clear();
+        foreach (var d in g.Docs) _seleccion.Add(d.Id);
+        return AbrirAsync();
     }
 
     // Todo lo que se ve en la fila, para que el texto coincida con cualquier columna (importes con y sin formato).
@@ -234,6 +530,7 @@
         catch (OperationCanceledException) { return; }
         catch (InvalidOperationException ex) { _error = ex.Message; }
         await BuscarAsync();
+        await CargarIndicadoresAsync();
     }
 
     protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
@@ -306,11 +603,13 @@
         {
             _docs = await Servicio.PendientesAsync(filtro, _cts.Token); _aplicado = filtro; _pagina = 0;
             _seleccion.IntersectWith(_docs.Select(d => d.Id));
+            _saldos = null;
         }
         catch (OperationCanceledException) { }
         catch (InvalidOperationException ex) { _error = ex.Message; _docs = null; }
         finally { _busy = false; UpdateHeader(); }
         StateHasChanged();
+        if (_vista == "clientes") { await CargarSaldosAsync(); StateHasChanged(); }
     }
 
     // Con comprobantes tildados abre el cobro de esos; sin ninguno, pide el cliente (cobranza nueva o anticipo).
@@ -372,6 +671,9 @@
             _preparacion = null; _preseleccion = null; _seleccion.Clear();
             // Los saldos cambiaron: se consulta de nuevo con los mismos filtros para no ofrecer comprobantes ya cobrados.
             _docs = await Servicio.PendientesAsync(_aplicado, _cts.Token);
+            _saldos = null;
+            await CargarIndicadoresAsync();
+            if (_vista == "clientes") await CargarSaldosAsync();
         }
         catch (OperationCanceledException) { }
         catch (InvalidOperationException ex) when (_preparacion is not null) { _errorDialogo = ex.Message; }

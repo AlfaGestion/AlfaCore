@@ -8,6 +8,112 @@
         @if (Preparacion is not null)
         {
             <div class="cobranza-editor">
+                @if (Directo)
+                {
+                    @* Cobranza directa: como en el POS y en Alfa Gestión, una solapa con los comprobantes y otra con los
+                       medios de pago, que se cargan tipeando el código (o código opcional) y el importe. *@
+                    <section class="cobranza-cobro__cabecera" aria-label="Cliente y totales de la cobranza">
+                        <div class="cobranza-cobro__cliente">
+                            <strong>@NombreTitular</strong>
+                            <small>Cliente @ClienteTitular · Unidad @UnidadTitular</small>
+                            <small>Saldo actual: <b>@Dinero(Preparacion.SaldosCliente.Where(s=>s.Cliente==ClienteTitular).Sum(s=>s.Saldo))</b>@(Preparacion.SaldoAl is { } corte ? $" al {corte:dd/MM/yyyy}" : string.Empty)</small>
+                        </div>
+                        <div class="cobranza-cobro__total">
+                            <span>Total cobrado</span>
+                            <strong>$ @Dinero(Total)</strong>
+                        </div>
+                        @if (Faltante > 0)
+                        {
+                            <div class="cobranza-cobro__total cobranza-cobro__total--faltante"><span>Faltante</span><strong>$ @Dinero(Faltante)</strong></div>
+                        }
+                        else
+                        {
+                            <div class="cobranza-cobro__total cobranza-cobro__total--acuenta"><span>A cuenta (anticipo)</span><strong>$ @Dinero(ImporteACuenta)</strong></div>
+                        }
+                    </section>
+                    <AlfaTabs Items="@Pestanas" ActiveKey="@_pestana" ActiveKeyChanged="CambiarPestana" AriaLabel="Comprobantes y medios de pago" />
+                    <div class="cobranza-cobro__panel" hidden="@(_pestana != "comprobantes")">
+                        @if (DocumentosUnidad.Count == 0)
+                        {
+                            <p class="cobranza-editor__sugerencia">El cliente no tiene comprobantes pendientes en esta unidad. Lo que cobres queda a cuenta (anticipo) y después se aplica a sus facturas.</p>
+                        }
+                        else
+                        {
+                            <p>Tildá las facturas que cancela este cobro, o ninguna si es un anticipo. Lo que no se aplique queda a cuenta del cliente.</p>
+                        }
+                        @TablaDocumentos()
+                    </div>
+                    <div class="cobranza-cobro__panel" hidden="@(_pestana != "medios")">
+                        @if (DocumentosUnidad.Count == 0)
+                        {
+                            <p class="cobranza-editor__sugerencia">El cliente no tiene comprobantes pendientes en esta unidad: lo que cobres queda a cuenta (anticipo).</p>
+                        }
+                        <div class="cobranza-cobro__entrada">
+                            <input class="cobranza-cobro__codigo" @ref="_refCodigo" @bind="_codigoMedio" @bind:event="oninput"
+                                   @onkeydown="CodigoTecla" @onblur="CodigoSalir" placeholder="Código o descripción"
+                                   aria-label="Código o descripción del medio de pago" autocomplete="off" disabled="@Busy" />
+                            <div class="cobranza-cobro__seleccionado">
+                                <span>Medio seleccionado</span>
+                                <strong>@(MedioSeleccionado?.Descripcion ?? "Sin seleccionar")</strong>
+                            </div>
+                            <input class="cobranza-cobro__importe" @ref="_refImporte" @bind="_importeMedio" @bind:event="oninput"
+                                   @bind:after="() => _importeEditado = true" @onkeydown="ImporteTeclaAsync" inputmode="decimal"
+                                   placeholder="Importe" aria-label="Importe del medio de pago" autocomplete="off" disabled="@Busy" />
+                            <input class="cobranza-cobro__referencia" @bind="_referenciaMedio" @bind:event="oninput" maxlength="50"
+                                   placeholder="Referencia o certificado (opcional)" aria-label="Referencia o certificado" autocomplete="off" disabled="@Busy" />
+                            <button type="button" class="cobranza-cobro__agregar" @onclick="AgregarPagoAsync" disabled="@(Busy || _lineas.Count >= 20)">Agregar</button>
+                        </div>
+                        <div class="cobranza-cobro__columnas">
+                            <section>
+                                <h4>Medios de pago</h4>
+                                <div class="cobranza-cobro__medios">
+                                    @foreach (var m in MediosFiltrados)
+                                    {
+                                        <button type="button" @key="m.Cuenta" class="cobranza-cobro__medio @(m.Cuenta == _medioSeleccionado ? "is-active" : string.Empty)"
+                                                @onclick="() => ElegirMedioAsync(m.Cuenta)" disabled="@Busy">
+                                            <strong>@m.Descripcion</strong>
+                                            <span>@CodigoVisible(m) · @m.Tipo</span>
+                                        </button>
+                                    }
+                                    @if (MediosFiltrados.Count == 0) { <p class="cobranza-editor__sugerencia">Ningún medio coincide con «@_codigoMedio».</p> }
+                                </div>
+                            </section>
+                            <section>
+                                <h4>Pagos aplicados</h4>
+                                @if (_lineas.Count == 0)
+                                {
+                                    <p class="cobranza-cobro__vacio">Todavía no agregaste pagos.</p>
+                                }
+                                else
+                                {
+                                    <div class="cobranza-cobro__pagos">
+                                        @foreach (var linea in _lineas)
+                                        {
+                                            var medio = Preparacion.Medios.FirstOrDefault(x => x.Cuenta == linea.Cuenta);
+                                            <div class="cobranza-cobro__pago" @key="linea">
+                                                <div>
+                                                    <strong>@(medio?.Descripcion ?? linea.Cuenta)</strong>
+                                                    <span>@(medio is null ? linea.Cuenta : CodigoVisible(medio))@(linea.Certificado.Length > 0 ? $" · {linea.Certificado}" : string.Empty)</span>
+                                                </div>
+                                                <strong>@Dinero(ParsearImporte(linea.Importe))</strong>
+                                                <button type="button" aria-label="@($"Quitar {medio?.Descripcion ?? linea.Cuenta}")" disabled="@Busy" @onclick="() => QuitarPago(linea)"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                <div class="cobranza-cobro__resumen">
+                                    <div><span>Facturas seleccionadas</span><strong>@Dinero(SaldoSeleccionado)</strong></div>
+                                    <div><span>Total cobrado</span><strong>@Dinero(Total)</strong></div>
+                                    <div><span>Aplicado a facturas</span><strong>@Dinero(TotalAplicado)</strong></div>
+                                    <div class="@(Faltante > 0 ? "is-faltante" : string.Empty)"><span>Faltante</span><strong>@Dinero(Faltante)</strong></div>
+                                    <div class="@(ImporteACuenta > 0 ? "is-acuenta" : string.Empty)"><span>A cuenta (anticipo)</span><strong>@Dinero(ImporteACuenta)</strong></div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                }
+                else
+                {
                 @if (Preparacion.Documentos.Select(d=>(d.Cliente,d.Unidad)).Distinct().Count()>1)
                 {
                     <AlfaSelect Label="Cliente y unidad de negocio" Value="@_factura" ValueChanged="CambiarFactura"
@@ -56,24 +162,7 @@
                         <p>Seleccioná las facturas. Podés corregir el importe aplicado a cada una.</p>
                     }
                     @if (_seleccionSugerida) { <p class="cobranza-editor__sugerencia">Selección precargada desde la propuesta. Revisala antes de confirmar.</p> }
-                    @if (DocumentosUnidad.Count > 0)
-                    {
-                    <div class="cobranza-editor__documentos"><table>
-                        <thead><tr><th>Seleccionar</th><th>Comprobante</th><th>Pendiente de factura</th><th>Aplicar</th></tr></thead>
-                        <tbody>@foreach(var d in DocumentosUnidad)
-                        {
-                            var importe=AplicacionesActuales.FirstOrDefault(a=>a.FacturaId==d.Id)?.Importe ?? 0;
-                            <tr @key="d.Id">
-                                <td><AlfaCheckbox Value="@_seleccionadas.Contains(d.Id)" ValueChanged="v=>CambiarSeleccion(d,v==true)" Disabled="@Busy">@($"Seleccionar {d.Tc} {d.Comprobante}")</AlfaCheckbox></td>
-                                <td>@d.Tc @d.Numero · @d.Fecha.ToString("dd/MM/yyyy")</td><td class="numero">@Dinero(d.Saldo)</td>
-                                <td><AlfaInput Label="@($"Aplicar a {d.Tc} {d.Comprobante}")" Type="number" Step="0.01"
-                                    Value="@(_importesManuales.TryGetValue(d.Id,out var editado) ? editado : importe.ToString("0.00",Invariante))"
-                                    ValueChanged="v=>_importesManuales[d.Id]=v ?? string.Empty" Disabled="@(Busy || !_seleccionadas.Contains(d.Id))" /></td>
-                            </tr>
-                        }</tbody>
-                    </table></div>
-                    <p>@_seleccionadas.Count factura(s) · Pendiente seleccionado: <strong>@Dinero(SaldoSeleccionado)</strong>.</p>
-                    }
+                    @TablaDocumentos()
                 }
                 <h3>@(Directo ? "2. Medios de pago" : "2. Banco y retenciones")</h3>
                 @foreach (var linea in _lineas)
@@ -123,6 +212,7 @@
                     </div>
                     <p class="cobranza-editor__sugerencia">El ajuste agrega una línea contable al recibo. El importe recibido en el banco se conserva. Revisá cuenta, signo e importe antes de confirmar.</p>
                 }
+                }
                 <details class="cobranza-editor__opciones" open="@(Directo || string.IsNullOrWhiteSpace(_talonario))">
                     <summary>3. Fecha, talonario y concepto del recibo · @FechaResumen</summary>
                     <div class="cobranza-editor__cabecera">
@@ -138,7 +228,7 @@
     </ChildContent>
     <Footer>
         <div class="cobranza-editor__totales">
-            <span>Total CB: <strong>@Dinero(Total)</strong></span>
+            <span class="cobranza-editor__total-cb">Total CB: <strong>$ @Dinero(Total)</strong></span>
             @if (_ajusteActivo){<span>Ajuste incluido: <strong>@Dinero(ParsearImporte(_importeAjuste))</strong></span>}
             @if (Directo)
             {
@@ -239,8 +329,7 @@
         _operacion=Guid.NewGuid(); _detalle=_detalleSugerido="";
         if(Preparacion is null) return;
         _fecha=Preparacion.Fecha.ToString("yyyy-MM-dd");
-        if(Directo) _lineas.Add(new() { Auto=true });
-        else _lineas.Add(new() { Banco=true,Cuenta=Preparacion.CuentaBanco,Importe=Preparacion.ImporteBanco.ToString("0.00",Invariante) });
+        if(!Directo) _lineas.Add(new() { Banco=true,Cuenta=Preparacion.CuentaBanco,Importe=Preparacion.ImporteBanco.ToString("0.00",Invariante) });
         var propuestaId=Preparacion.AplicacionesSugeridas.FirstOrDefault()?.FacturaId;
         var inicial=Preparacion.Documentos.FirstOrDefault(d=>Preseleccion?.Contains(d.Id)==true)
             ?? Preparacion.Documentos.FirstOrDefault(d=>$"{d.Tc}|{d.Comprobante}"==ComprobantePreferido)
@@ -251,7 +340,11 @@
             // Cobranza nueva sin comprobantes tildados en el listado: no se preselecciona ninguno (puede ser un anticipo).
             _seleccionadas.Clear();
             foreach(var id in (Preseleccion ?? []).Where(id=>DocumentosUnidad.Any(d=>d.Id==id))) _seleccionadas.Add(id);
-            ActualizarRetencionSugerida();
+            // Con comprobantes ya elegidos (o sin ninguno para elegir) se abre en los medios de pago, listo para tipear.
+            _codigoMedio=_referenciaMedio="";_medioSeleccionado=MedioPredeterminado()?.Cuenta ?? "";
+            _pestana=_seleccionadas.Count>0||DocumentosUnidad.Count==0 ? "medios" : "comprobantes";
+            _enfocar=_pestana=="medios" ? "codigo" : null;
+            PrecargarImporte();
         }
         if(Preparacion.AplicacionesSugeridas.Count>0 && Preparacion.AplicacionesSugeridas.Any(a=>a.FacturaId==Documento?.Id)
             && Preparacion.AplicacionesSugeridas.All(a=>DocumentosUnidad.Any(d=>d.Id==a.FacturaId)))
@@ -279,13 +372,10 @@
         if(seleccionar) _seleccionadas.Add(documento.Id); else { _seleccionadas.Remove(documento.Id);_importesManuales.Remove(documento.Id); }
         _seleccionSugerida=false;_error=null;ActualizarRetencionSugerida();
     }
-    // En cobranza directa la primera línea acompaña al pendiente seleccionado hasta que el usuario la edita.
+    // En cobranza directa el importe a cargar acompaña al faltante de las facturas tildadas hasta que el usuario lo edita.
     private void AutoCompletarDirecto()
     {
-        if(!Directo||_lineas.FirstOrDefault(l=>l.Auto) is not { } auto) return;
-        var otros=_lineas.Where(l=>l!=auto).Sum(l=>ParsearImporte(l.Importe));
-        var importe=Math.Max(0,SaldoSeleccionado-otros);
-        auto.Importe=importe>0 ? importe.ToString("0.00",Invariante) : "";
+        if(Directo && !_importeEditado) PrecargarImporte();
     }
     private void ActualizarRetencionSugerida()
     {
@@ -339,6 +429,151 @@
         }
         catch(InvalidOperationException ex) { _error=ex.Message; }
     }
+    // ---- Cobranza directa: solapas y carga de medios como en el POS ----
+    private string _pestana = "comprobantes";
+    private string _codigoMedio = "", _importeMedio = "", _referenciaMedio = "", _medioSeleccionado = "";
+    private bool _importeEditado;
+    private string? _enfocar;
+    private ElementReference _refCodigo, _refImporte;
+    private static readonly System.Globalization.CultureInfo Ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private decimal Faltante => Math.Max(0, SaldoSeleccionado - Total);
+    private decimal ImporteACuenta => Math.Max(0, Total - TotalAplicado);
+    private IReadOnlyList<AlfaTabItem> Pestanas =>
+    [
+        new("comprobantes", "1. Comprobantes", Badge: _seleccionadas.Count > 0 ? _seleccionadas.Count.ToString() : null),
+        new("medios", "2. Medios de pago", Badge: _lineas.Count > 0 ? _lineas.Count.ToString() : null)
+    ];
+    private IReadOnlyList<CobranzaMedio> MediosDirecto => Preparacion?.Medios.Where(m => m.Moneda == "1").ToList() ?? [];
+    private IReadOnlyList<CobranzaMedio> MediosFiltrados
+    {
+        get
+        {
+            var texto = _codigoMedio.Trim();
+            return texto.Length == 0 ? MediosDirecto : MediosDirecto.Where(m =>
+                m.CodigoOpcional.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || m.Cuenta.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || m.Descripcion.Contains(texto, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+    }
+    private CobranzaMedio? MedioSeleccionado => MediosDirecto.FirstOrDefault(m => m.Cuenta == _medioSeleccionado);
+    private static string CodigoVisible(CobranzaMedio m) => m.CodigoOpcional.Length > 0 ? m.CodigoOpcional : m.Cuenta;
+
+    private void CambiarPestana(string? clave)
+    {
+        _pestana = clave ?? "comprobantes";
+        if (_pestana == "medios") _enfocar = "codigo";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_enfocar is not { } destino || Preparacion is null) return;
+        _enfocar = null;
+        try { await (destino == "importe" ? _refImporte : _refCodigo).FocusAsync(); } catch { }
+    }
+
+    // Código exacto (código opcional o cuenta) o, si el texto deja un único medio, ese medio. Igual que el POS.
+    private (CobranzaMedio? Medio, int Coincidencias) ResolverMedio()
+    {
+        var texto = _codigoMedio.Trim();
+        var filtrados = MediosFiltrados;
+        var exacto = texto.Length == 0 ? null : filtrados.FirstOrDefault(m =>
+            string.Equals(m.CodigoOpcional, texto, StringComparison.OrdinalIgnoreCase) || string.Equals(m.Cuenta, texto, StringComparison.OrdinalIgnoreCase));
+        return (exacto ?? (filtrados.Count == 1 ? filtrados[0] : null), filtrados.Count);
+    }
+
+    private void SeleccionarMedio(CobranzaMedio medio)
+    {
+        _medioSeleccionado = medio.Cuenta; _error = null;
+        if (!_importeEditado || string.IsNullOrWhiteSpace(_importeMedio)) PrecargarImporte();
+    }
+
+    private void PrecargarImporte() { _importeMedio = Faltante > 0 ? Faltante.ToString("0.00", Ar) : ""; _importeEditado = false; }
+
+    private void CodigoTecla(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter") return;
+        var (medio, coincidencias) = ResolverMedio();
+        if (medio is null)
+        {
+            if (coincidencias == 0 && _codigoMedio.Trim().Length > 0) _error = $"No hay un medio de pago con el código «{_codigoMedio.Trim()}».";
+            return;
+        }
+        SeleccionarMedio(medio);
+        _enfocar = "importe";
+    }
+
+    // Tab o clic afuera: se resuelve igual que con Enter; si el código no identifica un medio, se quita la selección
+    // anterior para no cargar el importe en otro medio.
+    private void CodigoSalir()
+    {
+        if (_codigoMedio.Trim().Length == 0) return;
+        var (medio, coincidencias) = ResolverMedio();
+        if (medio is not null) { SeleccionarMedio(medio); return; }
+        _medioSeleccionado = "";
+        if (coincidencias == 0) _error = $"No hay un medio de pago con el código «{_codigoMedio.Trim()}».";
+    }
+
+    private Task ElegirMedioAsync(string cuenta)
+    {
+        if (MediosDirecto.FirstOrDefault(m => m.Cuenta == cuenta) is { } medio) { SeleccionarMedio(medio); _enfocar = "importe"; }
+        return Task.CompletedTask;
+    }
+
+    private async Task ImporteTeclaAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AgregarPagoAsync();
+    }
+
+    // Acepta 1248 · 1248,50 · 1.248,50 · 1248.50
+    internal static bool TryImporte(string? texto, out decimal importe)
+    {
+        texto = (texto ?? "").Trim().Replace("$", "").Replace(" ", "");
+        var ok = texto.Contains(',')
+            ? decimal.TryParse(texto, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.GetCultureInfo("es-AR"), out importe)
+            : decimal.TryParse(texto, System.Globalization.NumberStyles.AllowDecimalPoint, Invariante, out importe);
+        return ok;
+    }
+
+    private Task AgregarPagoAsync()
+    {
+        _error = null;
+        if (MedioSeleccionado is not { } medio) { _error = "Elegí un medio de pago: escribí su código o hacé clic en la lista."; _enfocar = "codigo"; return Task.CompletedTask; }
+        if (!TryImporte(_importeMedio, out var importe) || importe <= 0 || importe != decimal.Round(importe, 2))
+        { _error = "Ingresá un importe positivo de hasta dos decimales."; _enfocar = "importe"; return Task.CompletedTask; }
+        if (_lineas.Count >= 20) { _error = "Un recibo admite hasta 20 medios de pago."; return Task.CompletedTask; }
+        _lineas.Add(new() { Cuenta = medio.Cuenta, Importe = importe.ToString("0.00", Invariante), Certificado = _referenciaMedio.Trim() });
+        _codigoMedio = _referenciaMedio = "";
+        _medioSeleccionado = MedioPredeterminado()?.Cuenta ?? "";
+        PrecargarImporte();
+        _enfocar = "codigo";
+        return Task.CompletedTask;
+    }
+
+    private void QuitarPago(Linea linea) { _lineas.Remove(linea); if (!_importeEditado) PrecargarImporte(); }
+
+    private CobranzaMedio? MedioPredeterminado() => MediosDirecto.FirstOrDefault(m => m.Tipo == "EF") ?? MediosDirecto.FirstOrDefault();
+
+    private RenderFragment TablaDocumentos() => @<text>
+        @if (DocumentosUnidad.Count > 0)
+        {
+        <div class="cobranza-editor__documentos"><table>
+            <thead><tr><th>Seleccionar</th><th>Comprobante</th><th>Pendiente de factura</th><th>Aplicar</th></tr></thead>
+            <tbody>@foreach(var d in DocumentosUnidad)
+            {
+                var importe=AplicacionesActuales.FirstOrDefault(a=>a.FacturaId==d.Id)?.Importe ?? 0;
+                <tr @key="d.Id">
+                    <td><AlfaCheckbox Value="@_seleccionadas.Contains(d.Id)" ValueChanged="v=>CambiarSeleccion(d,v==true)" AriaLabel="@($"Seleccionar {d.Tc} {d.Comprobante}")" Disabled="@Busy" /></td>
+                    <td>@d.Tc @d.Numero · @d.Fecha.ToString("dd/MM/yyyy")</td><td class="numero">@Dinero(d.Saldo)</td>
+                    <td><AlfaInput Label="@($"Aplicar a {d.Tc} {d.Comprobante}")" Type="number" Step="0.01"
+                        Value="@(_importesManuales.TryGetValue(d.Id,out var editado) ? editado : importe.ToString("0.00",Invariante))"
+                        ValueChanged="v=>_importesManuales[d.Id]=v ?? string.Empty" Disabled="@(Busy || !_seleccionadas.Contains(d.Id))" /></td>
+                </tr>
+            }</tbody>
+        </table></div>
+        <p>@_seleccionadas.Count factura(s) · Pendiente seleccionado: <strong>@Dinero(SaldoSeleccionado)</strong>.</p>
+        }
+    </text>;
+
     private sealed class Linea
     {
         public bool Banco { get; set; }

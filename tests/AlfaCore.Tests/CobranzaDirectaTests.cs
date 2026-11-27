@@ -23,6 +23,19 @@ public sealed class CobranzaDirectaTests
         Assert.Throws<InvalidOperationException>(()=>CobranzasService.ValidarImportes(directa with{Ajuste=new("512",0.5m,"redondeo")}));
     }
 
+    [Theory]
+    [InlineData("1248",1248)]
+    [InlineData("1248,5",1248.5)]
+    [InlineData("1.248,50",1248.5)]
+    [InlineData("1248.50",1248.5)]
+    [InlineData("$ 72.000,00",72000)]
+    public void ElImporteDelMedioAceptaFormatoArgentinoYConPunto(string texto,decimal esperado)
+    {
+        Assert.True(CobranzaRapidaDialog.TryImporte(texto,out var importe));
+        Assert.Equal(esperado,importe);
+        Assert.False(CobranzaRapidaDialog.TryImporte("abc",out _));
+    }
+
     [Fact]
     public void ElPermisoDelModuloEsPropioYNoElDeConciliacion()
     {
@@ -53,9 +66,9 @@ public sealed class CobranzaDirectaTests
         // Con el comprobante tildado en el listado, el medio acompaña su pendiente.
         var html=await Render([1]);
         Assert.Contains("2. Medios de pago",html);
-        Assert.Contains("Agregar medio de pago",html);
+        Assert.Contains("Medio seleccionado",html);
         Assert.Contains("Caja Efectivo Pesos.",html);
-        Assert.Contains("1168200.00",html);
+        Assert.Contains("1168200,00",html);          // importe precargado con el faltante
         Assert.DoesNotContain("Recibido en el banco",html);
         Assert.DoesNotContain("Agregar ajuste de centavos",html);
         Assert.Contains("A cuenta (anticipo)",html);
@@ -63,7 +76,7 @@ public sealed class CobranzaDirectaTests
         var nueva=await Render(null);
         Assert.Contains("o ninguna si es un anticipo",nueva);
         Assert.Contains("0 factura(s)",nueva);
-        Assert.DoesNotContain("1168200.00",nueva);
+        Assert.DoesNotContain("1168200,00",nueva);
     }
 
     [Fact]

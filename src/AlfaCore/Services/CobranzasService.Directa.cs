@@ -103,6 +103,39 @@ public sealed partial class CobranzasService
                 Cliente=cliente,NombreCliente=nombre.Trim(),Unidad=unidad };
         },ct,MenuKey);
 
+    // Tarjeta «Cobrado»: recibos CB vigentes en pesos de hoy y del mes, en las unidades autorizadas.
+    public Task<CobranzaIndicadores> IndicadoresAsync(CancellationToken ct=default)
+        => Ejecutar("Indicadores",async(cn,user,session,token)=>
+        {
+            var hoy=DateTime.Today;
+            var r=await cn.QuerySingleAsync<CobranzaIndicadores>(Cmd("""
+                SELECT CONVERT(decimal(18,2),ISNULL(SUM(IMPORTE),0)) CobradoMes,COUNT(*) RecibosMes,
+                    CONVERT(decimal(18,2),ISNULL(SUM(CASE WHEN FECHA>=@hoy THEN IMPORTE END),0)) CobradoHoy,
+                    ISNULL(SUM(CASE WHEN FECHA>=@hoy THEN 1 ELSE 0 END),0) RecibosHoy
+                FROM dbo.V_MV_CPTE
+                WHERE TC='CB' AND FECHA>=@mes AND FECHA<@manana AND IDCOMPLEMENTO=0 AND ISNULL(ANULADA,0)=0
+                    AND LTRIM(RTRIM(ISNULL(MONEDA,''))) IN ('','1') AND (@admin=1 OR LTRIM(RTRIM(UNEGOCIO))=@unidad);
+                """,new{hoy,mes=new DateTime(hoy.Year,hoy.Month,1),manana=hoy.AddDays(1),admin=user.Admin,unidad=user.Unidad},null,token));
+            VerificarSesion(session);
+            return r;
+        },ct,MenuKey);
+
+    // Saldo final de cada cliente por unidad (cuenta corriente completa: facturas menos cobros, anticipos y notas de
+    // crédito), igual que SaldoClienteAsync. Se pide solo al ver la lista por cliente.
+    public Task<IReadOnlyList<CobranzaSaldoCuenta>> SaldosClientesAsync(CancellationToken ct=default)
+        => Ejecutar<IReadOnlyList<CobranzaSaldoCuenta>>("SaldosClientes",async(cn,user,session,token)=>
+        {
+            var filas=(await cn.QueryAsync<CobranzaSaldoCuenta>(Cmd("""
+                SELECT LTRIM(RTRIM(a.CUENTA)) Cliente,LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) Unidad,
+                    CONVERT(decimal(18,2),SUM(CASE WHEN a.[DEBE-HABER]='D' THEN a.IMPORTE WHEN a.[DEBE-HABER]='H' THEN -a.IMPORTE ELSE 0 END)) Saldo
+                FROM dbo.MV_ASIENTOS a JOIN dbo.MA_CUENTAS c ON c.CODIGO=a.CUENTA AND c.TipoVista IN ('CL','CB','CM')
+                WHERE a.EsResumen=0 AND (@admin=1 OR LTRIM(RTRIM(a.UNEGOCIO))=@unidad)
+                GROUP BY LTRIM(RTRIM(a.CUENTA)),LTRIM(RTRIM(ISNULL(a.UNEGOCIO,'')));
+                """,new{admin=user.Admin,unidad=user.Unidad},null,token))).AsList();
+            VerificarSesion(session);
+            return filas;
+        },ct,MenuKey);
+
     // Buscador de clientes activos para una cobranza nueva (también los que no deben nada: anticipos).
     public Task<IReadOnlyList<CargaViajeLookupOptionDto>> BuscarClientesAsync(string texto,CancellationToken ct=default)
         => Ejecutar<IReadOnlyList<CargaViajeLookupOptionDto>>("BuscarClientesCobro",async(cn,user,session,token)=>

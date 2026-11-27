@@ -19,12 +19,29 @@ public sealed class CobranzaDocumento
     public string Display => $"{Tc} {Comprobante[..4]}-{Comprobante.Substring(4,8)} {Comprobante[^1]} · Saldo {Saldo.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}";
 }
 
+public sealed class CobranzaIndicadores
+{
+    public decimal CobradoHoy { get; set; }
+    public int RecibosHoy { get; set; }
+    public decimal CobradoMes { get; set; }
+    public int RecibosMes { get; set; }
+}
+
+public sealed class CobranzaSaldoCuenta
+{
+    public string Cliente { get; set; } = "";
+    public string Unidad { get; set; } = "";
+    public decimal Saldo { get; set; }
+}
+
 public sealed class CobranzaMedio
 {
     public string Cuenta { get; set; } = "";
     public string Descripcion { get; set; } = "";
     public string Tipo { get; set; } = "";
     public string Moneda { get; set; } = "";
+    // Código corto que se tipea en el cobro (como en el POS y en Alfa Gestión); si falta, se usa la cuenta.
+    public string CodigoOpcional { get; set; } = "";
 }
 
 public sealed class CobranzaTalonario

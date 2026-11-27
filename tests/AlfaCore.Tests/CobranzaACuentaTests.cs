@@ -114,6 +114,32 @@ public sealed class CobranzaACuentaTests
         finally { tx.Rollback(); }
     }
 
+    /// <summary>Solo lectura: tarjeta «Cobrado» y saldo final por cliente (vista «Solo clientes») contra la base de prueba.
+    /// El saldo final de un cliente por unidad coincide con la suma directa de su cuenta corriente.</summary>
+    [ComprobantesSqlFact]
+    public async Task IndicadoresYSaldoFinalPorClienteSeCalculanContraLaBase()
+    {
+        var connection = Environment.GetEnvironmentVariable("COMPROBANTES_TEST_SQL")!;
+        var service = new CobranzasService(new PlanCuentasAbmSqlTests.Sesion(connection),
+            Proxy<IAppUserSessionService>((m, _) => m.Name switch
+            {
+                "get_IsAuthenticated" => true, "IsAuthorizedForSession" => true, "GetCurrentUserName" => "Administrador", _ => null
+            }),
+            Proxy<IPermissionService>((_, _) => Task.FromResult(true)), new PlanCuentasAbmSqlTests.Eventos());
+        var indicadores = await service.IndicadoresAsync();
+        Assert.True(indicadores.CobradoMes >= indicadores.CobradoHoy && indicadores.RecibosMes >= indicadores.RecibosHoy);
+        var saldos = await service.SaldosClientesAsync();
+        Assert.NotEmpty(saldos);
+        Assert.Equal(saldos.Count, saldos.Select(s => (s.Cliente, s.Unidad)).Distinct().Count());
+        var muestra = saldos.OrderByDescending(s => Math.Abs(s.Saldo)).First();
+        await using var cn = new SqlConnection(connection);
+        var directo = await cn.ExecuteScalarAsync<decimal>("""
+            SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE WHEN [DEBE-HABER]='H' THEN -IMPORTE ELSE 0 END) FROM dbo.MV_ASIENTOS
+            WHERE LTRIM(RTRIM(CUENTA))=@Cliente AND LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@Unidad AND EsResumen=0;
+            """, muestra);
+        Assert.Equal(decimal.Round(directo, 2), muestra.Saldo);
+    }
+
     private static Task<decimal> Balance(SqlConnection cn, SqlTransaction tx, CobranzaResultado r)
         => cn.ExecuteScalarAsync<decimal>("""
             SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END) FROM dbo.MV_ASIENTOS

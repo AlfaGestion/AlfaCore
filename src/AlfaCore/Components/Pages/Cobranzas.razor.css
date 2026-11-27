@@ -16,3 +16,21 @@
 .cobranzas-page__pie { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 2px; font-size: 13px; }
 .cobranzas-page__paginas { display: inline-flex; align-items: center; gap: 8px; }
 .cobranzas-nueva { display: grid; gap: 12px; min-height: 280px; align-content: start; }
+/* Tarjetas: las de deuda son botones que filtran el listado. */
+.cobranzas-kpis { margin-bottom: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.cobranzas-kpi { font: inherit; text-align: left; color: inherit; width: 100%; }
+button.cobranzas-kpi { cursor: pointer; transition: border-color .15s, background .15s; }
+button.cobranzas-kpi:hover { border-color: color-mix(in srgb, var(--alfa-accent, #4c8dff) 45%, var(--alfa-border-default, #333640)); }
+button.cobranzas-kpi:focus-visible { outline: 2px solid color-mix(in srgb, var(--alfa-accent, #4c8dff) 45%, transparent); outline-offset: 2px; }
+.cobranzas-kpi.is-active { border-color: var(--alfa-accent, #4c8dff); background: color-mix(in srgb, var(--alfa-accent, #4c8dff) 10%, var(--alfa-bg-surface, #16181d)); }
+.cobranzas-kpi--alerta .kpi-card__value { color: var(--alfa-color-danger, #d64545); }
+.cobranzas-kpi .kpi-card__label, .cobranzas-kpi .kpi-card__value, .cobranzas-kpi .kpi-card__description { display: block; }
+/* Selector de vista */
+.cobranzas-vistas { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.cobranzas-vistas__opciones, .cobranzas-vistas__acciones { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+/* Agrupado por cliente */
+.cobranzas-page__tabla tr.cobranzas-page__grupo td { background: color-mix(in srgb, var(--alfa-bg-surface) 94%, var(--alfa-text-primary, #fff) 6%); }
+.cobranzas-page__expandir { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cobranzas-page__expandir i { font-size: 12px; opacity: .7; }
+.cobranzas-page__tabla tr.cobranzas-page__detalle td { font-size: 12px; }
+.cobranzas-page__detalle-cpte { padding-left: 32px !important; }
