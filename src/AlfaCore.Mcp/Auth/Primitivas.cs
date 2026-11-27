@@ -48,10 +48,16 @@ public sealed record AuthOptions(
                 throw new InvalidOperationException("Mcp:Auth:Issuer debe ser https (http solo en Development sobre localhost).");
         }
 
+        var signingKeyPath = s["SigningKeyPath"];
+        // Produccion: ruta absoluta obligatoria. Con la ruta por defecto (relativa a la carpeta de la app) el comando crear-usuario,
+        // corrido desde otra carpeta o sin la variable, crearia OTRA clave TOTP (*.totp-key) y el sitio no podria leer los secretos.
+        if (enabled && !dev && (string.IsNullOrWhiteSpace(signingKeyPath) || !Path.IsPathRooted(signingKeyPath)))
+            throw new InvalidOperationException(@"Falta Mcp:Auth:SigningKeyPath con ruta absoluta fuera de la carpeta publicada (ej. C:\ProgramData\AlfaCoreMcp\signing-key.pem). El sitio y el comando crear-usuario deben usar la MISMA ruta.");
+
         var endpoint = "/" + (s["EndpointPath"] ?? "/mcp").Trim('/');
         return new AuthOptions(
             enabled, store, issuer, endpoint,
-            s["SigningKeyPath"] ?? "App_Data/mcp-signing-key.pem",
+            string.IsNullOrWhiteSpace(signingKeyPath) ? "App_Data/mcp-signing-key.pem" : signingKeyPath,
             s["DevUser"], s["DevPassword"], s.GetValue("DevTotp", false), s["DevTotpSecret"],
             s.GetValue("LimiteLoginPorMin", 10), s.GetValue("LimiteTokenPorMin", 60), s.GetValue("LimiteRegistroPorMin", 10));
     }
