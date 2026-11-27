@@ -435,7 +435,6 @@
     private bool _importeEditado;
     private string? _enfocar;
     private ElementReference _refCodigo, _refImporte;
-    private static readonly System.Globalization.CultureInfo Ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
     private decimal Faltante => Math.Max(0, SaldoSeleccionado - Total);
     private decimal ImporteACuenta => Math.Max(0, Total - TotalAplicado);
     private IReadOnlyList<AlfaTabItem> Pestanas =>
@@ -445,16 +444,7 @@
     ];
     private IReadOnlyList<CobranzaMedio> MediosDirecto => Preparacion?.Medios.Where(m => m.Moneda == "1").ToList() ?? [];
     private IReadOnlyList<CobranzaMedio> MediosFiltrados
-    {
-        get
-        {
-            var texto = _codigoMedio.Trim();
-            return texto.Length == 0 ? MediosDirecto : MediosDirecto.Where(m =>
-                m.CodigoOpcional.Contains(texto, StringComparison.OrdinalIgnoreCase)
-                || m.Cuenta.Contains(texto, StringComparison.OrdinalIgnoreCase)
-                || m.Descripcion.Contains(texto, StringComparison.OrdinalIgnoreCase)).ToList();
-        }
-    }
+        => MedioPagoBuscador.Filtrar(MediosDirecto, _codigoMedio, m => m.Cuenta, m => m.CodigoOpcional, m => m.Descripcion);
     private CobranzaMedio? MedioSeleccionado => MediosDirecto.FirstOrDefault(m => m.Cuenta == _medioSeleccionado);
     private static string CodigoVisible(CobranzaMedio m) => m.CodigoOpcional.Length > 0 ? m.CodigoOpcional : m.Cuenta;
 
@@ -473,13 +463,7 @@
 
     // Código exacto (código opcional o cuenta) o, si el texto deja un único medio, ese medio. Igual que el POS.
     private (CobranzaMedio? Medio, int Coincidencias) ResolverMedio()
-    {
-        var texto = _codigoMedio.Trim();
-        var filtrados = MediosFiltrados;
-        var exacto = texto.Length == 0 ? null : filtrados.FirstOrDefault(m =>
-            string.Equals(m.CodigoOpcional, texto, StringComparison.OrdinalIgnoreCase) || string.Equals(m.Cuenta, texto, StringComparison.OrdinalIgnoreCase));
-        return (exacto ?? (filtrados.Count == 1 ? filtrados[0] : null), filtrados.Count);
-    }
+        => MedioPagoBuscador.Resolver(MediosDirecto, _codigoMedio, m => m.Cuenta, m => m.CodigoOpcional, m => m.Descripcion);
 
     private void SeleccionarMedio(CobranzaMedio medio)
     {
@@ -487,7 +471,7 @@
         if (!_importeEditado || string.IsNullOrWhiteSpace(_importeMedio)) PrecargarImporte();
     }
 
-    private void PrecargarImporte() { _importeMedio = Faltante > 0 ? Faltante.ToString("0.00", Ar) : ""; _importeEditado = false; }
+    private void PrecargarImporte() { _importeMedio = MedioPagoBuscador.FormatoCarga(Faltante); _importeEditado = false; }
 
     private void CodigoTecla(KeyboardEventArgs e)
     {
@@ -524,15 +508,7 @@
         if (e.Key == "Enter") await AgregarPagoAsync();
     }
 
-    // Acepta 1248 · 1248,50 · 1.248,50 · 1248.50
-    internal static bool TryImporte(string? texto, out decimal importe)
-    {
-        texto = (texto ?? "").Trim().Replace("$", "").Replace(" ", "");
-        var ok = texto.Contains(',')
-            ? decimal.TryParse(texto, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.GetCultureInfo("es-AR"), out importe)
-            : decimal.TryParse(texto, System.Globalization.NumberStyles.AllowDecimalPoint, Invariante, out importe);
-        return ok;
-    }
+    internal static bool TryImporte(string? texto, out decimal importe) => MedioPagoBuscador.TryImporte(texto, out importe);
 
     private Task AgregarPagoAsync()
     {

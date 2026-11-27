@@ -41,8 +41,14 @@
     }
 
     .pv-admin-form-actions {
+        position: sticky;
+        top: 4.7rem;
+        z-index: 3;
         justify-content: flex-end;
         margin-bottom: 1rem;
+        padding: .65rem 0;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-panel-strong);
     }
 
     .pv-admin-page-intro {
@@ -114,6 +120,76 @@
     .pv-admin-catalog-summary { display:flex; flex-wrap:wrap; gap:.45rem .8rem; margin-top:.5rem; color:var(--color-muted); font-size:.82rem; }
     .pv-admin-catalog-summary span { display:inline-flex; align-items:center; gap:.35rem; }
     .pv-admin-catalog-summary i { color:var(--color-primary); }
+    .pv-admin-config-section {
+        margin-top: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--color-panel) 78%, transparent);
+    }
+
+    .pv-admin-config-section > h4 {
+        margin: 0;
+        color: var(--color-text);
+        font-size: 1rem;
+        font-weight: 800;
+    }
+
+    .pv-admin-config-section__description {
+        display: block;
+        margin-top: .25rem;
+        color: var(--color-muted);
+        font-size: .82rem;
+        line-height: 1.4;
+    }
+
+    .pv-admin-catalog-section { margin-top: 1.1rem; }
+    .pv-admin-catalog-section__heading { align-items: flex-start; }
+    .pv-admin-catalog-section__heading h4 { margin: 0; }
+    .pv-admin-catalog-section__summary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .5rem;
+        margin-top: .85rem;
+    }
+
+    .pv-admin-catalog-section__summary span {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        min-height: 2.1rem;
+        padding: .45rem .6rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-surface-subtle);
+        color: var(--color-muted);
+        font-size: .8rem;
+    }
+
+    .pv-admin-catalog-section__rubros {
+        margin-top: .85rem;
+        padding: .75rem;
+        border: 1px solid color-mix(in srgb, var(--color-primary) 26%, var(--color-border));
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+    }
+
+    .pv-admin-catalog-section__rubros-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        margin-bottom: .4rem;
+        color: var(--color-text);
+        font-size: .84rem;
+        font-weight: 800;
+    }
+
+    .pv-admin-catalog-section__rubros-title small { color: var(--color-muted); font-weight: 500; }
+
+    @@media (max-width: 650px) {
+        .pv-admin-catalog-section__summary { grid-template-columns: 1fr; }
+    }
     .pv-admin-catalog-modal__card { width: min(900px, calc(100vw - 2rem)); }
 
     .pv-admin-catalog-modal__top {
@@ -234,7 +310,7 @@
     .pv-admin-quick-modal {
         position: fixed;
         inset: 0;
-        z-index: 1200;
+        z-index: 30000 !important;
         display: grid;
         place-items: center;
         padding: 1rem;
@@ -265,6 +341,182 @@
     .pv-admin-quick-modal__quantities { display: flex; flex-wrap: wrap; gap: .45rem; margin: 1rem 0; }
     .pv-admin-quick-modal__quantity { padding: .35rem .6rem; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-muted); font-size: .82rem; }
     .pv-admin-quick-modal__actions { justify-content: flex-end; margin-top: 1rem; }
+
+    .pv-admin-pv-modal__card {
+        width: min(980px, calc(100vw - 2rem));
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+        padding: 1.25rem;
+        border: 1px solid var(--color-border);
+        border-radius: 18px;
+        background: var(--color-panel-strong);
+        color: var(--color-text);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+    }
+
+    .pv-admin-pv-modal__header {
+        position: sticky;
+        top: -1.25rem;
+        z-index: 4;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin: -1.25rem -1.25rem 1rem;
+        padding: 1.1rem 1.25rem .9rem;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-panel-strong);
+    }
+
+    .pv-admin-pv-modal__header h3 { margin: 0; }
+    .pv-admin-pv-modal__header small { color: var(--color-muted); }
+    .pv-admin-pv-modal__close {
+        display: inline-grid;
+        place-items: center;
+        width: 2.25rem;
+        height: 2.25rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 1.35rem;
+        cursor: pointer;
+    }
+
+    .pv-admin-pv-modal__close:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+    .pv-admin-salon-layout {
+        display: grid;
+        grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+        align-items: start;
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .pv-admin-salon-sectors,
+    .pv-admin-salon-mesas { min-width: 0; }
+
+    /* Sectores y mesas se administran desde sus modales; no duplicar las tablas debajo del formulario. */
+    .pv-admin-inline-salon-view { display: none; }
+
+    @@media (max-width: 900px) {
+        .pv-admin-salon-layout { grid-template-columns: 1fr; }
+    }
+
+    .pv-admin-pv-modal__identity {
+        display: grid;
+        grid-template-columns: minmax(7rem, .35fr) minmax(14rem, 1fr) auto;
+        align-items: end;
+        gap: .75rem;
+        margin-bottom: 1rem;
+        padding: .85rem;
+        border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+    }
+
+    .pv-admin-pv-modal__topbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: end;
+        gap: .75rem;
+        margin-bottom: 1rem;
+        padding: .75rem;
+        border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
+        border-radius: 12px;
+        background: var(--color-panel-strong);
+    }
+
+    .pv-admin-pv-modal__topbar .pv-admin-pv-modal__identity {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+    }
+
+    .pv-admin-pv-modal__topbar .pv-admin-form-actions {
+        position: sticky;
+        top: 4.7rem;
+        z-index: 3;
+        margin: 0;
+        padding: 0;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-panel-strong);
+        padding: .45rem;
+        white-space: nowrap;
+    }
+
+    .pv-admin-sectors-modal__card {
+        width: min(760px, calc(100vw - 2rem));
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+    }
+    .pv-admin-sectors-modal__table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    .pv-admin-sectors-modal__table th,
+    .pv-admin-sectors-modal__table td { padding: .6rem .55rem; border-bottom: 1px solid var(--color-border); text-align: left; }
+    .pv-admin-sectors-modal__table th { color: var(--color-muted); font-size: .78rem; text-transform: uppercase; }
+    .pv-admin-sectors-modal__empty { padding: 1.2rem 0; color: var(--color-muted); text-align: center; }
+    .pv-admin-sectors-modal__actions { display: inline-flex; gap: .35rem; }
+    .pv-admin-mesas-modal__toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: .55rem;
+        margin-top: 1rem;
+        padding: .7rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-surface-subtle);
+    }
+    .pv-admin-mesas-modal__toolbar label { display: grid; gap: .3rem; color: var(--color-muted); font-size: .76rem; font-weight: 700; }
+    .pv-admin-mesas-modal__toolbar input[type="number"] {
+        width: 6.2rem;
+        min-height: 2.35rem;
+        padding: .4rem .55rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        outline: none;
+        background: var(--color-input);
+        color: var(--color-text);
+        font: inherit;
+        font-size: .9rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .pv-admin-mesas-modal__toolbar input[type="number"]:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+    }
+    .pv-admin-mesas-modal__toolbar .pv-mesas-cantidad__check {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        min-height: 2.35rem;
+        padding: 0 .55rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-input);
+        color: var(--color-text);
+        cursor: pointer;
+    }
+    .pv-admin-mesas-modal__toolbar .pv-mesas-cantidad__check input { accent-color: var(--color-primary); }
+
+    .pv-admin-pv-modal__identity .field { min-width: 0; margin: 0; }
+    .pv-admin-pv-modal__identity input { max-width: 100%; min-width: 0; }
+    .pv-admin-pv-modal__identity .carga-viajes-check { margin: 0 0 .15rem; white-space: nowrap; }
+
+    @@media (max-width: 1000px) {
+        .pv-admin-pv-modal__card { width: calc(100vw - 2rem); }
+        .pv-admin-pv-modal__topbar { grid-template-columns: 1fr; align-items: stretch; }
+        .pv-admin-pv-modal__identity { grid-template-columns: 1fr 1fr; }
+        .pv-admin-pv-modal__identity .carga-viajes-check { grid-column: 1 / -1; }
+        .pv-admin-pv-modal__topbar .pv-admin-form-actions { justify-content: flex-start; flex-wrap: wrap; }
+    }
+
+    @@media (max-width: 560px) {
+        .pv-admin-pv-modal__identity { grid-template-columns: 1fr; }
+        .pv-admin-pv-modal__identity .carga-viajes-check { grid-column: auto; }
+    }
 
     .pv-admin-receipt-preview {
         display: grid;
@@ -363,8 +615,38 @@
 
             @if (_showPuntoVentaForm)
             {
-                <DetailCard Titulo="@(_puntoVentaForm.Id.HasValue ? "Editar punto de venta" : "Nuevo punto de venta")" Subtitulo="Código, nombre y modo de operación.">
+                <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="punto-venta-form-title">
+                    <section class="pv-admin-pv-modal__card">
+                        <header class="pv-admin-pv-modal__header">
+                            <div>
+                                <h3 id="punto-venta-form-title">@(_puntoVentaForm.Id.HasValue ? "Editar punto de venta" : "Nuevo punto de venta")</h3>
+                                <small>Configurá el modo de operación, catálogo, ingreso rápido y recibos.</small>
+                            </div>
+                            <button type="button" class="pv-admin-pv-modal__close" @onclick="CancelarPuntoVentaForm" aria-label="Cerrar">×</button>
+                        </header>
+                        <div class="pv-admin-pv-modal__topbar">
+                        <div class="pv-admin-pv-modal__identity">
+                            <div class="field">
+                                <label>Código</label>
+                                <input maxlength="4" @bind="_puntoVentaForm.Codigo" placeholder="Ej: 001" />
+                            </div>
+                            <div class="field">
+                                <label>Nombre</label>
+                                <input @bind="_puntoVentaForm.Nombre" placeholder="Ej: Salón principal" />
+                            </div>
+                            <label class="carga-viajes-check">
+                                <input class="carga-viajes-check__input" type="checkbox" checked="@_puntoVentaForm.Activo" @onchange="args => _puntoVentaForm.Activo = args.Value is bool flag && flag" />
+                                <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                                <span class="carga-viajes-check__text">Punto de venta activo</span>
+                            </label>
+                        </div>
                     <div class="actions pv-admin-form-actions">
+                        @if (string.Equals(_puntoVentaForm.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirSectoresModalAsync">
+                                <i class="bi bi-grid-3x3-gap"></i> Sectores
+                            </button>
+                        }
                         <button type="button" class="btn btn--primary btn--sm" @onclick="GuardarPuntoVentaAsync">Guardar</button>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelarPuntoVentaForm">Cancelar</button>
                         @if (_puntoVentaForm.Id is > 0)
@@ -372,14 +654,7 @@
                             <button type="button" class="btn btn--danger btn--sm" @onclick="() => _confirmarBorrarPuntoVenta = true">Borrar</button>
                         }
                     </div>
-                    <div class="field">
-                        <label>Código</label>
-                        <input maxlength="4" @bind="_puntoVentaForm.Codigo" placeholder="Ej: 001" />
-                    </div>
-                    <div class="field">
-                        <label>Nombre</label>
-                        <input @bind="_puntoVentaForm.Nombre" placeholder="Ej: Salón principal" />
-                    </div>
+                        </div>
                     <div class="field">
                         <label>Modo</label>
                         <select @bind="_puntoVentaForm.Modo">
@@ -451,66 +726,73 @@
                             }
                         </select>
                     </div>
-                    <div class="field">
-                        <div class="pv-admin-field-heading">
-                            <label>Catálogo de artículos</label>
+                    <section class="field pv-admin-config-section pv-admin-catalog-section">
+                        <div class="pv-admin-field-heading pv-admin-catalog-section__heading">
+                            <div>
+                                <h4>Catálogo de artículos</h4>
+                                <small class="pv-admin-config-section__description">Definí qué artículos y rubros se muestran en el facturador gráfico de este punto de venta.</small>
+                            </div>
                             <button type="button" class="pv-admin-inline-edit" @onclick="AbrirEditorCatalogo">
                                 <i class="bi bi-pencil-square"></i> Editar
                             </button>
                         </div>
-                        <small>Configurá el catálogo gráfico como en Alfa Gestión. La lista Top usa la configuración legacy <code>GOUR_TOPVTAS</code>.</small>
-                        <div class="pv-admin-catalog-summary">
+                        <div class="pv-admin-catalog-section__summary">
                             <span><i class="bi bi-star-fill"></i> Artículos destacados: lista Top</span>
                             <span>Rubros por punto de venta: @(_puntoVentaForm.Rubros.Count == 0 ? "todos" : $"{_puntoVentaForm.Rubros.Count} configurados")</span>
                         </div>
-                        <label class="pv-admin-subfield-label">Rubros que vende</label>
-                        @if (_catalogos.Rubros.Count == 0)
-                        {
-                            <small>No hay rubros cargados: se venden todos los artículos.</small>
-                        }
-                        else
-                        {
-                            <div class="pv-admin-rubros">
-                                <label class="pv-admin-rubro">
-                                    <input type="checkbox" checked="@(_puntoVentaForm.Rubros.Count == 0)"
-                                           @onchange="_ => _puntoVentaForm.Rubros.Clear()" />
-                                    Todos
-                                </label>
-                                @foreach (var rubro in RubrosVisibles)
-                                {
-                                    var id = rubro.Valor;
-                                    <label class="pv-admin-rubro">
-                                        <input type="checkbox" checked="@_puntoVentaForm.Rubros.Contains(id, StringComparer.OrdinalIgnoreCase)"
-                                               @onchange="_ => ToggleRubro(id)" />
-                                        @rubro.Descripcion
-                                    </label>
-                                }
+                        <div class="pv-admin-catalog-section__rubros">
+                            <div class="pv-admin-catalog-section__rubros-title">
+                                <span>Rubros que vende</span>
+                                <small>Sin marcar = todos</small>
                             </div>
-                            @if (_catalogos.Rubros.Count > 15)
+                            @if (_catalogos.Rubros.Count == 0)
                             {
-                                <button type="button" class="pv-admin-rubros__more" @onclick="() => _mostrarTodosRubros = !_mostrarTodosRubros">
-                                    @(_mostrarTodosRubros ? "Ver menos" : $"Ver todos ({_catalogos.Rubros.Count})")
-                                </button>
+                                <small class="pv-admin-config-section__description">No hay rubros cargados: se venden todos los artículos.</small>
                             }
-                            <small>Sin marcar ningún rubro = todos los artículos.</small>
-                        }
-                    </div>
-                    <section class="field">
-                        <h4>Ingreso rápido</h4>
+                            else
+                            {
+                                <div class="pv-admin-rubros">
+                                    <label class="pv-admin-rubro">
+                                        <input type="checkbox" checked="@(_puntoVentaForm.Rubros.Count == 0)"
+                                               @onchange="_ => _puntoVentaForm.Rubros.Clear()" />
+                                        Todos
+                                    </label>
+                                    @foreach (var rubro in RubrosVisibles)
+                                    {
+                                        var id = rubro.Valor;
+                                        <label class="pv-admin-rubro">
+                                            <input type="checkbox" checked="@_puntoVentaForm.Rubros.Contains(id, StringComparer.OrdinalIgnoreCase)"
+                                                   @onchange="_ => ToggleRubro(id)" />
+                                            @rubro.Descripcion
+                                        </label>
+                                    }
+                                </div>
+                                @if (_catalogos.Rubros.Count > 15)
+                                {
+                                    <button type="button" class="pv-admin-rubros__more" @onclick="() => _mostrarTodosRubros = !_mostrarTodosRubros">
+                                        @(_mostrarTodosRubros ? "Ver menos" : $"Ver todos ({_catalogos.Rubros.Count})")
+                                    </button>
+                                }
+                            }
+                        </div>
+                    </section>
+                    <section class="field pv-admin-config-section">
+                        <h4>Panel de ingreso rápido</h4>
+                        <small class="pv-admin-config-section__description">Permite cargar importes o cantidades desde un teclado táctil dentro del punto de venta.</small>
                         <label class="pv-admin-switch @(_puntoVentaForm.CargaRapidaGrafica ? "is-on" : string.Empty)">
                             <input class="pv-admin-switch__input" type="checkbox" checked="@_puntoVentaForm.CargaRapidaGrafica" @onchange="OnIngresoRapidoEnabledChanged" />
                             <span class="pv-admin-switch__track" aria-hidden="true"></span>
-                            <span class="pv-admin-switch__text">Habilitar panel de ingreso rápido</span>
+                            <span class="pv-admin-switch__text">Activar panel en este punto de venta</span>
                         </label>
-                        <small>Permite ingresar importes y cantidades mediante un teclado numérico táctil.</small>
                         <label class="field pv-admin-quick-mode">
-                            <span>Modalidad</span>
+                            <span>Presentación del panel</span>
                             <select @bind="_puntoVentaForm.ModoIngresoRapido">
-                                <option value="DESHABILITADO">Deshabilitado</option>
-                                <option value="COMPACTO">Compacto</option>
-                                <option value="COMPLETO">Completo</option>
+                                <option value="DESHABILITADO">No mostrar</option>
+                                <option value="COMPACTO">Compacto: muestra valores rápidos y despliega el teclado</option>
+                                <option value="COMPLETO">Completo: muestra siempre el teclado numérico</option>
                             </select>
                         </label>
+                        <small class="pv-admin-config-section__description">Compacto ocupa menos espacio. Completo deja todos los botones visibles durante la venta.</small>
                         @if (_puntoVentaForm.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado)
                         {
                             <button type="button" class="pv-admin-quick-edit" @onclick="AbrirEditorIngresoRapido">
@@ -518,19 +800,22 @@
                             </button>
                         }
                     </section>
-                    <section class="field">
+                    @if (string.Equals(_puntoVentaForm.Modo, PuntoVentaModoKeys.MostradorProduccion, StringComparison.OrdinalIgnoreCase))
+                    {
+                    <section class="field pv-admin-config-section">
                         <h4>Recibo de anticipo</h4>
-                        <small>Configuración exclusiva de este punto de venta para las señas de Notas de Pedido.</small>
+                        <small class="pv-admin-config-section__description">Define qué hacer con el comprobante que se entrega al cliente cuando una Nota de Pedido recibe una seña.</small>
                         <label class="field pv-admin-quick-mode">
-                            <span>Impresión del recibo</span>
+                            <span>Cuándo imprimir</span>
                             <select @bind="_puntoVentaForm.ModalidadReciboAnticipo">
-                                <option value="NO">No imprimir</option>
-                                <option value="PREGUNTAR">Preguntar al vendedor</option>
-                                <option value="AUTOMATICO">Imprimir automáticamente</option>
+                                <option value="NO">No imprimir recibo</option>
+                                <option value="PREGUNTAR">Preguntar antes de imprimir</option>
+                                <option value="AUTOMATICO">Imprimir automáticamente al registrar la seña</option>
                             </select>
                         </label>
+                        <small class="pv-admin-config-section__description">La impresión se realiza únicamente después de registrar correctamente el anticipo.</small>
                         <label class="field pv-admin-quick-mode">
-                            <span>Formato</span>
+                            <span>Formato del recibo</span>
                             <select @bind="_puntoVentaForm.FormatoReciboAnticipo">
                                 <option value="TICKET80">Ticket térmico 80 mm</option>
                                 <option value="A4">A4</option>
@@ -549,13 +834,9 @@
                             <label class="pv-admin-rubro"><input type="checkbox" @bind="_puntoVentaForm.ReciboAnticipoMuestraUsuario" /> Usuario</label>
                         </div>
                     </section>
-                    <label class="carga-viajes-check">
-                        <input class="carga-viajes-check__input" type="checkbox" checked="@_puntoVentaForm.Activo" @onchange="args => _puntoVentaForm.Activo = args.Value is bool flag && flag" />
-                        <span class="carga-viajes-check__box" aria-hidden="true"></span>
-                        <span class="carga-viajes-check__text">Activo</span>
-                    </label>
-
-                </DetailCard>
+                    }
+                    </section>
+                </div>
             }
         </div>
     }
@@ -729,9 +1010,112 @@
         </div>
     }
 
+    @if (_showSectoresModal && _selectedPuntoVenta is not null)
+    {
+        <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="sectores-modal-title">
+            <section class="pv-admin-quick-modal__card pv-admin-sectors-modal__card">
+                <header class="pv-admin-quick-modal__header">
+                    <div>
+                        <h3 id="sectores-modal-title">Sectores de @_selectedPuntoVenta.Nombre</h3>
+                        <small>Administrá los sectores del salón sin salir de la edición del punto de venta.</small>
+                    </div>
+                    <button type="button" class="pv-admin-quick-modal__close" @onclick="CerrarSectoresModal" aria-label="Cerrar">×</button>
+                </header>
+
+                <div class="actions" style="justify-content:flex-end;">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoSectorAsync">+ Nuevo sector</button>
+                </div>
+                @if (_sectores.Count == 0)
+                {
+                    <div class="pv-admin-sectors-modal__empty">Este punto de venta todavía no tiene sectores.</div>
+                }
+                else
+                {
+                    <table class="pv-admin-sectors-modal__table">
+                        <thead><tr><th>Código</th><th>Nombre</th><th>Orden</th><th>Estado</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var sector in _sectores)
+                            {
+                                <tr>
+                                    <td>@sector.Codigo</td>
+                                    <td>@sector.Nombre</td>
+                                    <td>@sector.Orden</td>
+                                    <td>@(sector.Activo ? "Activo" : "Inactivo")</td>
+                                    <td>
+                                        <div class="pv-admin-sectors-modal__actions">
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirMesasModalAsync(sector)">
+                                                <i class="bi bi-grid-3x3"></i> Mesas
+                                            </button>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarSectorAsync(sector)">Editar</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                <footer class="pv-admin-quick-modal__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarSectoresModal">Cerrar</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (_showMesasModal && _selectedSector is not null)
+    {
+        <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="mesas-modal-title">
+            <section class="pv-admin-quick-modal__card pv-admin-sectors-modal__card">
+                <header class="pv-admin-quick-modal__header">
+                    <div>
+                        <h3 id="mesas-modal-title">Mesas de @_selectedSector.Nombre</h3>
+                        <small>Consultá y administrá las mesas de este sector del salón.</small>
+                    </div>
+                    <button type="button" class="pv-admin-quick-modal__close" @onclick="CerrarMesasModal" aria-label="Cerrar">×</button>
+                </header>
+
+                <div class="pv-admin-mesas-modal__toolbar" title="Dejá el sector con esta cantidad de mesas y repartilas en el plano.">
+                    <label>Cantidad de mesas<input type="number" min="0" max="200" @bind="_cantidadMesas" /></label>
+                    <label>Capacidad<input type="number" min="1" max="99" @bind="_capacidadMesas" /></label>
+                    <label class="pv-mesas-cantidad__check"><span>Repartir en el plano</span><input type="checkbox" @bind="_redistribuirMesas" /></label>
+                    <button type="button" class="btn btn--ghost btn--sm" disabled="@_ajustandoMesas" @onclick="AjustarCantidadMesasAsync">@(_ajustandoMesas ? "Aplicando..." : "Aplicar")</button>
+                </div>
+                <div class="actions" style="justify-content:flex-end;">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaMesaAsync">+ Nueva mesa</button>
+                </div>
+                @if (_mesas.Count == 0)
+                {
+                    <div class="pv-admin-sectors-modal__empty">Este sector todavía no tiene mesas.</div>
+                }
+                else
+                {
+                    <table class="pv-admin-sectors-modal__table">
+                        <thead><tr><th>Código</th><th>Nombre</th><th>Capacidad</th><th>Estado</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var mesa in _mesas)
+                            {
+                                <tr>
+                                    <td>@mesa.Codigo</td>
+                                    <td>@mesa.Nombre</td>
+                                    <td>@(mesa.Capacidad?.ToString() ?? "-")</td>
+                                    <td>@(mesa.Activo ? "Activa" : "Inactiva")</td>
+                                    <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarMesaAsync(mesa)">Editar</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                <footer class="pv-admin-quick-modal__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarMesasModal">Cerrar</button>
+                </footer>
+            </section>
+        </div>
+    }
+
     @if (_selectedPuntoVenta is not null && string.Equals(_selectedPuntoVenta.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
     {
-        <div class="split-grid">
+        <div class="pv-admin-salon-layout">
+            <div class="pv-admin-salon-sectors">
+            <div class="pv-admin-inline-salon-view">
             <DataTable Titulo="@($"Sectores de {_selectedPuntoVenta.Nombre}")" Subtitulo="Ej: Terraza, Planta baja, Planta alta.">
                 <Toolbar>
                     <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoSectorAsync">+ Nuevo sector</button>
@@ -762,10 +1146,19 @@
                     }
                 </Rows>
             </DataTable>
+            </div>
 
             @if (_showSectorForm)
             {
-                <DetailCard Titulo="@(_sectorForm.Id.HasValue ? "Editar sector" : "Nuevo sector")" Subtitulo="Terraza, planta baja, planta alta, etc.">
+                <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="sector-form-title">
+                    <section class="pv-admin-pv-modal__card pv-admin-sector-modal__card">
+                        <header class="pv-admin-pv-modal__header">
+                            <div>
+                                <h3 id="sector-form-title">@(_sectorForm.Id.HasValue ? "Editar sector" : "Nuevo sector")</h3>
+                                <small>Configurá el sector del salón y su disponibilidad.</small>
+                            </div>
+                            <button type="button" class="pv-admin-pv-modal__close" @onclick="CancelarSectorForm" aria-label="Cerrar">×</button>
+                        </header>
                     <div class="field">
                         <label>Código</label>
                         <input maxlength="4" @bind="_sectorForm.Codigo" placeholder="Ej: TERR" />
@@ -796,13 +1189,16 @@
                         <button type="button" class="btn btn--primary" @onclick="GuardarSectorAsync">Guardar</button>
                         <button type="button" class="btn btn--ghost" @onclick="CancelarSectorForm">Cancelar</button>
                     </div>
-                </DetailCard>
+                    </section>
+                </div>
             }
-        </div>
+            </div>
 
+            <div class="pv-admin-salon-mesas">
         @if (_selectedSector is not null)
         {
             <div class="split-grid">
+                <div class="pv-admin-inline-salon-view">
                 <DataTable Titulo="@($"Mesas de {_selectedSector.Nombre}")" Subtitulo="Ubicación, capacidad e ícono de cada mesa.">
                     <Toolbar>
                         <div class="pv-mesas-cantidad" title="Deja el sector con esta cantidad de mesas (sin contar la barra) y las reparte en el plano.">
@@ -847,10 +1243,19 @@
                         }
                     </Rows>
                 </DataTable>
+                </div>
 
                 @if (_showMesaForm)
                 {
-                    <DetailCard Titulo="@(_mesaForm.Id.HasValue ? "Editar mesa" : "Nueva mesa")" Subtitulo="Datos de la mesa dentro del sector.">
+                    <div class="pv-admin-quick-modal" role="dialog" aria-modal="true" aria-labelledby="mesa-form-title">
+                        <section class="pv-admin-pv-modal__card pv-admin-sector-modal__card">
+                            <header class="pv-admin-pv-modal__header">
+                                <div>
+                                    <h3 id="mesa-form-title">@(_mesaForm.Id.HasValue ? "Editar mesa" : "Nueva mesa")</h3>
+                                    <small>Configurá la mesa dentro de @_selectedSector?.Nombre.</small>
+                                </div>
+                                <button type="button" class="pv-admin-pv-modal__close" @onclick="CerrarEditorMesa" aria-label="Cerrar">×</button>
+                            </header>
                         <div class="field">
                             <label>Código</label>
                             <input maxlength="4" @bind="_mesaForm.Codigo" placeholder="Ej: M01" />
@@ -904,12 +1309,15 @@
 
                         <div class="actions">
                             <button type="button" class="btn btn--primary" @onclick="GuardarMesaAsync">Guardar</button>
-                            <button type="button" class="btn btn--ghost" @onclick="CancelarMesaForm">Cancelar</button>
+                            <button type="button" class="btn btn--ghost" @onclick="CerrarEditorMesa">Cancelar</button>
                         </div>
-                    </DetailCard>
+                        </section>
+                    </div>
                 }
             </div>
         }
+            </div>
+        </div>
     }
 </section>
 
@@ -936,6 +1344,8 @@
     private bool _showPuntoVentaForm;
     private bool _showIngresoRapidoModal;
     private bool _showCatalogoModal;
+    private bool _showSectoresModal;
+    private bool _showMesasModal;
     private bool _showReciboAnticipoPreview;
     private bool _detectandoTop;
     private bool _guardandoTop;
@@ -1024,11 +1434,33 @@
 
     private Task NuevoPuntoVentaAsync()
     {
-        _puntoVentaForm = new PuntoVentaEntidadSaveRequest { Activo = true, Modo = PuntoVentaModoKeys.Mostrador };
+        _puntoVentaForm = new PuntoVentaEntidadSaveRequest
+        {
+            Codigo = ProponerCodigo(_puntosVenta.Select(x => x.Codigo)),
+            Activo = true,
+            Modo = PuntoVentaModoKeys.Mostrador
+        };
         _mostrarTodosRubros = false;
         _showIngresoRapidoModal = false;
+        _showSectoresModal = false;
+        _showMesasModal = false;
         _showPuntoVentaForm = true;
         return Task.CompletedTask;
+    }
+
+    private static string ProponerCodigo(IEnumerable<string?> codigos)
+    {
+        var numericos = codigos
+            .Select(codigo => (Texto: (codigo ?? string.Empty).Trim(), EsNumero: int.TryParse((codigo ?? string.Empty).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var numero), Numero: numero))
+            .Where(x => x.EsNumero && x.Numero >= 0)
+            .ToList();
+
+        if (numericos.Count == 0)
+            return "1";
+
+        var siguiente = numericos.Max(x => x.Numero) + 1;
+        var ancho = Math.Min(4, Math.Max(1, numericos.Max(x => x.Texto.Length)));
+        return siguiente.ToString($"D{ancho}", CultureInfo.InvariantCulture);
     }
 
     private async Task SeleccionarPuntoVentaAsync(PuntoVentaEntidadDto pv)
@@ -1039,6 +1471,8 @@
         _mesas = [];
         _showSectorForm = false;
         _showMesaForm = false;
+        _showSectoresModal = false;
+        _showMesasModal = false;
 
         _puntoVentaForm = new PuntoVentaEntidadSaveRequest
         {
@@ -1110,6 +1544,32 @@
 
     private void CerrarEditorCatalogo() => _showCatalogoModal = false;
 
+    private async Task AbrirSectoresModalAsync()
+    {
+        if (_selectedPuntoVenta is null || !string.Equals(_puntoVentaForm.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await LoadSectoresAsync(_selectedPuntoVenta.Id);
+        _showSectoresModal = true;
+    }
+
+    private void CerrarSectoresModal() => _showSectoresModal = false;
+
+    private async Task AbrirMesasModalAsync(PuntoVentaSectorDto sector)
+    {
+        _selectedSector = sector;
+        _showSectoresModal = false;
+        await LoadMesasAsync(sector.Id);
+        _showMesasModal = true;
+    }
+
+    private void CerrarMesasModal()
+    {
+        _showMesasModal = false;
+        if (_selectedPuntoVenta is not null && string.Equals(_selectedPuntoVenta.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
+            _showSectoresModal = true;
+    }
+
     private void AbrirVistaPreviaRecibo() => _showReciboAnticipoPreview = true;
 
     private void CerrarVistaPreviaRecibo() => _showReciboAnticipoPreview = false;
@@ -1169,6 +1629,8 @@
         _showPuntoVentaForm = false;
         _mostrarTodosRubros = false;
         _showIngresoRapidoModal = false;
+        _showSectoresModal = false;
+        _showMesasModal = false;
         _puntoVentaForm = new PuntoVentaEntidadSaveRequest();
     }
 
@@ -1193,12 +1655,12 @@
 
     private void AplicarEditorIngresoRapido()
     {
-        _puntoVentaForm.ImporteRapido1 = LeerConfiguracion(_quickDraft1, 5m);
-        _puntoVentaForm.ImporteRapido2 = LeerConfiguracion(_quickDraft2, 10m);
-        _puntoVentaForm.ImporteRapido3 = LeerConfiguracion(_quickDraft3, 25m);
-        _puntoVentaForm.ImporteRapido4 = LeerConfiguracion(_quickDraft4, 50m);
-        _puntoVentaForm.ImporteRapido5 = LeerConfiguracion(_quickDraft5, 100m);
-        _puntoVentaForm.ImporteRapido6 = LeerConfiguracion(_quickDraft6, 200m);
+        _puntoVentaForm.ImporteRapido1 = LeerConfiguracion(_quickDraft1, 1000m);
+        _puntoVentaForm.ImporteRapido2 = LeerConfiguracion(_quickDraft2, 2000m);
+        _puntoVentaForm.ImporteRapido3 = LeerConfiguracion(_quickDraft3, 5000m);
+        _puntoVentaForm.ImporteRapido4 = LeerConfiguracion(_quickDraft4, 10000m);
+        _puntoVentaForm.ImporteRapido5 = LeerConfiguracion(_quickDraft5, 20000m);
+        _puntoVentaForm.ImporteRapido6 = LeerConfiguracion(_quickDraft6, 50000m);
         _puntoVentaForm.CantidadRapida1 = LeerConfiguracion(_quickQuantityDraft1, 0.1m);
         _puntoVentaForm.CantidadRapida2 = LeerConfiguracion(_quickQuantityDraft2, 0.25m);
         _puntoVentaForm.CantidadRapida3 = LeerConfiguracion(_quickQuantityDraft3, 0.5m);
@@ -1266,6 +1728,8 @@
 
         _feedback = AppUiMessage.Success("Guardado", "El punto de venta se guardó correctamente.");
         _showPuntoVentaForm = false;
+        _showSectoresModal = false;
+        _showMesasModal = false;
         await LoadPuntosVentaAsync();
 
         // Salón: se muestra el salón (el servicio arma sector, barra y mesas si todavía no tenía sectores).
@@ -1301,7 +1765,13 @@
         if (_selectedPuntoVenta is null)
             return Task.CompletedTask;
 
-        _sectorForm = new PuntoVentaSectorSaveRequest { IdPuntoVenta = _selectedPuntoVenta.Id, Activo = true, Orden = _sectores.Count };
+        _sectorForm = new PuntoVentaSectorSaveRequest
+        {
+            Codigo = ProponerCodigo(_sectores.Select(x => x.Codigo)),
+            IdPuntoVenta = _selectedPuntoVenta.Id,
+            Activo = true,
+            Orden = _sectores.Count
+        };
         _showSectorForm = true;
         return Task.CompletedTask;
     }
@@ -1425,7 +1895,13 @@
         if (_selectedSector is null)
             return Task.CompletedTask;
 
-        _mesaForm = new PuntoVentaMesaSaveRequest { IdSector = _selectedSector.Id, Activo = true };
+        _mesaForm = new PuntoVentaMesaSaveRequest
+        {
+            Codigo = ProponerCodigo(_mesas.Select(x => x.Codigo)),
+            IdSector = _selectedSector.Id,
+            Activo = true
+        };
+        _showMesasModal = true;
         _showMesaForm = true;
         return Task.CompletedTask;
     }
@@ -1448,6 +1924,7 @@
             Imagen = mesa.Imagen,
             Activo = mesa.Activo
         };
+        _showMesasModal = true;
         _showMesaForm = true;
         return Task.CompletedTask;
     }
@@ -1456,7 +1933,14 @@
     {
         _showMesaForm = false;
         _mesaForm = new PuntoVentaMesaSaveRequest();
+        if (_selectedSector is not null)
+        {
+            _showSectoresModal = false;
+            _showMesasModal = true;
+        }
     }
+
+    private void CerrarEditorMesa() => CancelarMesaForm();
 
     private async Task GuardarMesaAsync()
     {

@@ -202,7 +202,7 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
             var comprobantes = await DocumentosAsync(cn, "CO_CPTES_IMPAGOS", prov.Codigo, filtraUnidad ? unidad : "", false, null, token);
             var creditos = await DocumentosAsync(cn, "CO_CPTES_CREDITOS_PENDIENTES", prov.Codigo, filtraUnidad ? unidad : "", true, null, token);
             var medios = (await cn.QueryAsync<OrdenPagoMedio>(Cmd("""
-                SELECT LTRIM(RTRIM(CODIGO)) Cuenta,LTRIM(RTRIM(DESCRIPCION)) Descripcion,LTRIM(RTRIM(MedioDePago)) Tipo
+                SELECT LTRIM(RTRIM(CODIGO)) Cuenta,LTRIM(RTRIM(DESCRIPCION)) Descripcion,LTRIM(RTRIM(MedioDePago)) Tipo,LTRIM(RTRIM(ISNULL(CodigoOpcional,''))) CodigoOpcional
                 FROM dbo.MA_CUENTAS WHERE ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0 AND LTRIM(RTRIM(MONEDA))='1'
                     AND (LTRIM(RTRIM(MedioDePago)) IN ('EF','DB') OR (LTRIM(RTRIM(MedioDePago))='CH' AND LTRIM(RTRIM(TipoVista))='BC'))
                 ORDER BY MedioDePago,DESCRIPCION,CODIGO;
@@ -249,7 +249,7 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
         var filas = (await cn.QueryAsync<OrdenPagoDocumento>(Cmd($"""
             SELECT LTRIM(RTRIM(v.TC)) Tc,v.SUCURSAL Sucursal,v.NUMERO Numero,v.LETRA Letra,MIN(v.FECHA) Fecha,MIN(v.VENCIMIENTO) Vencimiento,
                 CONVERT(decimal(18,2),SUM(v.SALDO)) Saldo,LTRIM(RTRIM(MAX(v.UNEGOCIO))) Unidad,LTRIM(RTRIM(MAX(v.MONEDA))) Moneda,{bloqueo} Bloqueado
-            FROM dbo.{vista} v
+            FROM {(vista == "CO_CPTES_IMPAGOS" ? "(" + ImpagosProveedoresSql + ")" : "dbo." + vista)} v
             WHERE LTRIM(RTRIM(v.CUENTA))=@proveedor AND (@unidad='' OR LTRIM(RTRIM(v.UNEGOCIO))=@unidad)
                 AND NOT EXISTS(SELECT 1 FROM dbo.V_MV_CPTE c WHERE c.TC=v.TC AND c.SUCURSAL=v.SUCURSAL AND c.NUMERO=v.NUMERO AND c.LETRA=v.LETRA
                     AND c.IDCOMPLEMENTO=0 AND ISNULL(c.ANULADA,0)=1)

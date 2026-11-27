@@ -3650,6 +3650,22 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     overflow: visible;
 }
 
+.carga-viajes-viaje__tarifas-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: .35rem;
+    margin-top: .35rem;
+    color: var(--alfa-text-secondary, #94a3b8);
+    font-size: .76rem;
+    line-height: 1.35;
+}
+
+.carga-viajes-viaje__tarifas-notice i {
+    flex: 0 0 auto;
+    color: var(--alfa-accent, #38bdf8);
+    margin-top: .08rem;
+}
+
 .carga-viajes-viaje__tarifas-anchor {
     position: relative;
     display: inline-block;
@@ -3729,37 +3745,53 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     margin: 0;
 }
 
-.carga-viajes-viaje-tarifas__zero-toggle {
+.carga-viajes-viaje-tarifas__general-toggle {
     display: inline-flex;
     align-items: center;
-    gap: .4rem;
-    padding: .18rem .4rem;
+    gap: .3rem;
+    margin-bottom: .35rem;
+    padding: .22rem .45rem;
     border: 1px solid var(--alfa-border-default);
     border-radius: 999px;
-    background: var(--alfa-bg-surface);
-    color: var(--color-text-muted);
-    font-size: .7rem;
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-secondary);
+    font-size: .72rem;
+    font-weight: 650;
     cursor: pointer;
     user-select: none;
+    transition: border-color .16s ease, background .16s ease, color .16s ease;
 }
 
-.carga-viajes-viaje-tarifas__zero-toggle input {
+.carga-viajes-viaje-tarifas__general-toggle input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.carga-viajes-viaje-tarifas__general-toggle-indicator {
+    display: inline-grid;
+    place-items: center;
     width: .95rem;
     height: .95rem;
-    margin: 0;
-    accent-color: var(--alfa-accent);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: 50%;
+    color: transparent;
+    font-size: .58rem;
+    transition: border-color .16s ease, background .16s ease, color .16s ease;
 }
 
-.carga-viajes-viaje-tarifas__zero-filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .35rem;
-    margin-top: .35rem;
+.carga-viajes-viaje-tarifas__general-toggle--active {
+    border-color: color-mix(in srgb, var(--alfa-accent) 68%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, var(--alfa-bg-surface-raised));
+    color: var(--alfa-text-primary);
 }
 
-.carga-viajes-viaje-tarifas__zero-toggle input {
-    width: .85rem;
-    height: .85rem;
+.carga-viajes-viaje-tarifas__general-toggle--active .carga-viajes-viaje-tarifas__general-toggle-indicator {
+    border-color: var(--alfa-accent);
+    background: var(--alfa-accent);
+    color: var(--alfa-text-primary);
 }
 
 .carga-viajes-viaje-tarifas__meta {
@@ -4679,4 +4711,30 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     .tarifa-aumento-config-v2__preview-grid {
         grid-template-columns: 1fr;
     }
+}
+.carga-viajes-viaje__choferes-adicionales-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    margin-top: .35rem;
+}
+
+.carga-viajes-viaje__chofer-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .25rem .45rem;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: 999px;
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-secondary);
+    font-size: .75rem;
+}
+
+.carga-viajes-viaje__chofer-chip button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
 }

@@ -19,6 +19,14 @@ Criterio aplicado:
 - Datos que usa: `V_MV_CPTE`, `MV_ASIENTOS`, `MV_APLICACION`, `VE_CPTES_SALDOS_VENTAS`, `MA_CUENTAS`, `V_TA_CPTE`, `MA_SUBDIARIOS`, `MA_SUBDIARIOSCOMPROBANTES`, `MV_EJERCICIOS`, `TA_USUARIOS`, `TA_CONFIGURACION`, `ALFACORE_COBRANZA_OPERACION` y tablas `BK_` de conciliación.
 - Observaciones: sesión y permisos por unidad, transacción Serializable, numeración bloqueada, hash/idempotencia y control único por movimiento. Medios en pesos DB/RI/RB/RG/RO, certificado en TJ_AUTORIZO. Sugiere la última retención confirmada del cliente/unidad desde MV_ASIENTOS, con diferencia editable y memoria en el propio recibo. Ver `docs/modulos/cobranzas.md`.
 
+### MedioPagoBuscador
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/MedioPagoBuscador.cs`
+- Propósito: carga de medios de pago tipeando el código, como en el POS: filtra por código opcional, cuenta o descripción, resuelve el medio con Enter o al salir del campo (Tab) y lee importes en formato argentino (`1.248,50`) o con punto.
+- Datos que usa: ninguno (trabaja sobre la lista de medios que recibe; el código opcional sale de `MA_CUENTAS.CodigoOpcional`).
+- Observaciones: la usan la ventana de cobro directa (`CobranzaRapidaDialog`, módulo Cobranzas) y la Orden de Pago. Tests en `OrdenPagoListadoTests` y `CobranzaDirectaTests`.
+
 ### ConciliacionBancariaService
 
 - Tipo: Service

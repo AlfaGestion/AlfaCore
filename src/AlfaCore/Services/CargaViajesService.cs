@@ -374,6 +374,8 @@ public sealed partial class CargaViajesService(
             if (item is null)
                 return null;
 
+            item.Choferes = await LoadChoferesPorViajeAsync(cn, item.Id, item.ChoferCodigo, item.ChoferNombre, token);
+
             if (string.IsNullOrWhiteSpace(item.Lista))
                 item.Lista = (await GetListaRMTRFAsync(cn, item.ClienteCodigo, token)).ListaCodigo;
 
@@ -385,6 +387,49 @@ public sealed partial class CargaViajesService(
 
             return item;
         }, "No se pudo cargar el viaje seleccionado.", ct);
+
+    private static async Task<List<CargaViajeChoferAsignadoDto>> LoadChoferesPorViajeAsync(
+        SqlConnection cn,
+        int idViaje,
+        string choferPrincipal,
+        string nombrePrincipal,
+        CancellationToken ct)
+    {
+        var result = new List<CargaViajeChoferAsignadoDto>();
+        var tableExists = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(1) FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.MV_VIAJES_CARGA_CHOFERES') AND type = 'U';",
+            cancellationToken: ct));
+        if (tableExists > 0)
+        {
+            var rows = await cn.QueryAsync<CargaViajeChoferAsignadoDto>(new CommandDefinition("""
+                SELECT
+                    v.ID,
+                    LTRIM(RTRIM(v.IDCHOFER)) AS Codigo,
+                    LTRIM(RTRIM(ISNULL(c.NOMBRES, ''))) AS Nombre,
+                    v.ORDEN AS Orden,
+                    ISNULL(v.IMPORTE_FLETE, 0) AS ImporteFlete
+                FROM dbo.MV_VIAJES_CARGA_CHOFERES v
+                LEFT JOIN dbo.TA_CHOFERES c
+                  ON UPPER(LTRIM(RTRIM(ISNULL(c.CODIGO, '')))) = UPPER(LTRIM(RTRIM(v.IDCHOFER)))
+                WHERE v.IDVIAJE = @IdViaje
+                ORDER BY v.ORDEN, v.ID;
+                """, new { IdViaje = idViaje }, cancellationToken: ct));
+            result.AddRange(rows);
+        }
+
+        if (!result.Any(row => string.Equals(row.Codigo.Trim(), choferPrincipal.Trim(), StringComparison.OrdinalIgnoreCase))
+            && !string.IsNullOrWhiteSpace(choferPrincipal))
+        {
+            result.Insert(0, new CargaViajeChoferAsignadoDto
+            {
+                Codigo = choferPrincipal.Trim(),
+                Nombre = (nombrePrincipal ?? string.Empty).Trim(),
+                Orden = 1
+            });
+        }
+
+        return result;
+    }
 
     public Task<CargaViajePreviewDto?> GetViajePreviewAsync(int id, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetViajePreview", async token =>
@@ -3965,6 +4010,10 @@ public sealed partial class CargaViajesService(
         var config = BuildConfiguracion(await LoadConfiguracionAsync(cn, ct));
         var totals = CalculateTotals(request, config);
         var totalAdicionalesFijos = CalculateTotalAdicionalesFijos(request);
+        var tarifaColumns = await TableExistsAsync(cn, "TA_TARIFA", ct)
+            ? await LoadColumnsAsync(cn, "TA_TARIFA", ct)
+            : null;
+        var hasChoferesPorViaje = await TableExistsAsync(cn, "MV_VIAJES_CARGA_CHOFERES", ct);
         logger.LogInformation(
             "SaveViaje before insert Tc={Tc} IdComprobante={IdComprobante} IdCliente={IdCliente} IdDestino={IdDestino} IdTipoVehiculo={IdTipoVehiculo} IdChofer={IdChofer} IdLista={IdLista} TotalImporte={TotalImporte} TotalFlete={TotalFlete} TotalPeaje={TotalPeaje} TotalViajes={TotalViajes}",
             tc,
@@ -4161,6 +4210,8 @@ public sealed partial class CargaViajesService(
         await using var tx = await cn.BeginTransactionAsync(ct);
         try
         {
+            await EnsureTarifaFleteroGeneralAsync(cn, (SqlTransaction)tx, tarifaColumns, request, ct);
+
             var affectedId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
             {
                 request.Id,
@@ -4220,6 +4271,17 @@ public sealed partial class CargaViajesService(
             if (isNew && affectedId <= 0)
                 throw new InvalidOperationException("No se pudo obtener el ID generado del viaje.");
 
+            var viajeId = isNew ? affectedId : request.Id!.Value;
+            await SyncChoferesPorViajeAsync(
+                cn,
+                (SqlTransaction)tx,
+                hasChoferesPorViaje,
+                viajeId,
+                request.Chofer,
+                request.ChoferesAdicionales,
+                request.ImporteFletero,
+                ct);
+
             await tx.CommitAsync(ct);
             logger.LogInformation("SaveViaje {Operacion} OK Id={Id} IdComprobante={IdComprobante} InsertedId={InsertedId} Rows=1", isNew ? "insert" : "update", request.Id, nextIdComp, affectedId);
             return isNew ? affectedId : request.Id!.Value;
@@ -4237,6 +4299,189 @@ public sealed partial class CargaViajesService(
 
             throw;
         }
+    }
+
+    private static async Task SyncChoferesPorViajeAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        bool tableExists,
+        int idViaje,
+        string choferPrincipal,
+        IReadOnlyCollection<CargaViajeChoferAsignadoDto>? adicionales,
+        decimal importeFlete,
+        CancellationToken ct)
+    {
+        if (!tableExists || idViaje <= 0)
+            return;
+
+        await cn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM dbo.MV_VIAJES_CARGA_CHOFERES WHERE IDVIAJE = @IdViaje;",
+            new { IdViaje = idViaje },
+            transaction: tx,
+            cancellationToken: ct));
+
+        var choferes = new List<string> { (choferPrincipal ?? string.Empty).Trim() };
+        choferes.AddRange((adicionales ?? Array.Empty<CargaViajeChoferAsignadoDto>())
+            .Select(item => (item.Codigo ?? string.Empty).Trim()));
+
+        var orden = 0;
+        foreach (var codigo in choferes
+                     .Where(codigo => !string.IsNullOrWhiteSpace(codigo))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            orden++;
+            await cn.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO dbo.MV_VIAJES_CARGA_CHOFERES
+                    (IDVIAJE, IDCHOFER, ORDEN, IMPORTE_FLETE, FECHAHORA_ALTA, FECHAHORA_MODIFICACION)
+                VALUES
+                    (@IdViaje, @Codigo, @Orden, @ImporteFlete, GETDATE(), GETDATE());
+                """, new
+            {
+                IdViaje = idViaje,
+                Codigo = codigo,
+                Orden = orden,
+                ImporteFlete = orden == 1 ? Math.Max(0m, importeFlete) : 0m
+            }, transaction: tx, cancellationToken: ct));
+        }
+    }
+
+    private async Task EnsureTarifaFleteroGeneralAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        HashSet<string>? columns,
+        CargaViajeSaveRequest viaje,
+        CancellationToken ct)
+    {
+        if (columns is null || columns.Count == 0
+            || string.IsNullOrWhiteSpace(viaje.Chofer)
+            || string.IsNullOrWhiteSpace(viaje.Destino)
+            || string.IsNullOrWhiteSpace(viaje.TipoVehiculo))
+            return;
+
+        var clienteColumn = FirstExistingColumn(columns, "IDCLIENTE", "CLIENTE");
+        var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
+        var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
+        var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+        var idListaColumn = FirstExistingColumn(columns, "IDLISTA", "ID_LISTA");
+
+        var exists = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+            SELECT COUNT(1)
+            FROM dbo.TA_TARIFA WITH (UPDLOCK, HOLDLOCK)
+            WHERE ISNULL(TarifaFletero, 0) = 1
+              AND ISNULL(Activo, 1) = 1
+              AND UPPER(LTRIM(RTRIM(ISNULL({destinoColumn}, '')))) = @Destino
+              AND UPPER(LTRIM(RTRIM(ISNULL({tipoVehiculoColumn}, '')))) = @TipoVehiculo
+              AND (
+                    UPPER(LTRIM(RTRIM(ISNULL({choferColumn}, '')))) = @Chofer
+                 OR LTRIM(RTRIM(ISNULL({choferColumn}, ''))) = ''
+              );
+            """, new
+        {
+            Chofer = TrimUpper(viaje.Chofer),
+            Destino = TrimUpper(viaje.Destino),
+            TipoVehiculo = TrimUpper(viaje.TipoVehiculo)
+        }, transaction: tx, cancellationToken: ct));
+
+        if (exists > 0)
+        {
+            var generalExists = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+                SELECT COUNT(1)
+                FROM dbo.TA_TARIFA WITH (UPDLOCK, HOLDLOCK)
+                WHERE ISNULL(TarifaFletero, 0) = 1
+                  AND ISNULL(Activo, 1) = 1
+                  AND UPPER(LTRIM(RTRIM(ISNULL({destinoColumn}, '')))) = @Destino
+                  AND UPPER(LTRIM(RTRIM(ISNULL({tipoVehiculoColumn}, '')))) = @TipoVehiculo
+                  AND LTRIM(RTRIM(ISNULL({choferColumn}, ''))) = '';
+                """, new
+            {
+                Destino = TrimUpper(viaje.Destino),
+                TipoVehiculo = TrimUpper(viaje.TipoVehiculo)
+            }, transaction: tx, cancellationToken: ct));
+
+            if (generalExists > 0)
+            {
+                var updates = new List<string>();
+                if (columns.Contains("nombre"))
+                    updates.Add("Nombre = @Nombre");
+                if (columns.Contains("importe"))
+                    updates.Add("Importe = CASE WHEN ISNULL(Importe, 0) = 0 AND @Importe > 0 THEN @Importe ELSE Importe END");
+
+                if (updates.Count > 0)
+                    await cn.ExecuteAsync(new CommandDefinition($"UPDATE dbo.TA_TARIFA SET {string.Join(", ", updates)} WHERE ISNULL(TarifaFletero, 0) = 1 AND ISNULL(Activo, 1) = 1 AND UPPER(LTRIM(RTRIM(ISNULL({destinoColumn}, '')))) = @Destino AND UPPER(LTRIM(RTRIM(ISNULL({tipoVehiculoColumn}, '')))) = @TipoVehiculo AND LTRIM(RTRIM(ISNULL({choferColumn}, ''))) = '';", new
+                    {
+                        Nombre = "General",
+                        Importe = Math.Max(0m, viaje.ImporteFletero),
+                        Destino = TrimUpper(viaje.Destino),
+                        TipoVehiculo = TrimUpper(viaje.TipoVehiculo)
+                    }, transaction: tx, cancellationToken: ct));
+            }
+
+            return;
+        }
+
+        var idLista = string.Empty;
+        foreach (var candidate in new[] { "FGEN" }.Concat(BuildTarifaListaAlternatives("FGEN")))
+        {
+            var candidateExists = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+                SELECT COUNT(1)
+                FROM dbo.TA_TARIFA
+                WHERE UPPER(LTRIM(RTRIM(ISNULL({idListaColumn}, '')))) = @IdLista;
+                """, new { IdLista = candidate }, transaction: tx, cancellationToken: ct));
+            if (candidateExists == 0)
+            {
+                idLista = candidate;
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(idLista))
+            throw new InvalidOperationException("No se pudo generar un código para la tarifa general de fletero.");
+
+        var destino = (viaje.Destino ?? string.Empty).Trim();
+        var tipoVehiculo = (viaje.TipoVehiculo ?? string.Empty).Trim();
+        // La tarifa es general: destino y tipo de vehículo se guardan en sus
+        // columnas propias, no en el nombre de la lista.
+        var nombre = "General";
+
+        var insertColumns = new List<string>();
+        var insertValues = new List<string>();
+        AddColumnPair(insertColumns, insertValues, idListaColumn, "@IdLista");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("nombre") ? "Nombre" : null, "@Nombre");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("importe") ? "Importe" : null, "@Importe");
+        AddColumnPair(insertColumns, insertValues, clienteColumn, "@Cliente");
+        AddColumnPair(insertColumns, insertValues, choferColumn, "@Chofer");
+        AddColumnPair(insertColumns, insertValues, destinoColumn, "@Destino");
+        AddColumnPair(insertColumns, insertValues, tipoVehiculoColumn, "@TipoVehiculo");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("tarifafletero") ? "TarifaFletero" : null, "@TarifaFletero");
+        AddColumnPair(insertColumns, insertValues, columns.Contains("activo") ? "Activo" : null, "@Activo");
+
+        foreach (var porcentajeColumn in new[] { "porcentaje_adic", "porcentaje_adic1", "porcentaje_adic2", "porcentaje_adic3", "porcentaje_adic4" })
+            AddColumnPair(insertColumns, insertValues, columns.Contains(porcentajeColumn) ? porcentajeColumn : null, "@Cero");
+
+        var sql = $"""
+            INSERT INTO dbo.TA_TARIFA ({string.Join(", ", insertColumns)})
+            VALUES ({string.Join(", ", insertValues)});
+            """;
+        await cn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            IdLista = idLista,
+            Nombre = nombre,
+            Importe = Math.Max(0m, viaje.ImporteFletero),
+            Cliente = (string?)null,
+            Chofer = (string?)null,
+            Destino = destino,
+            TipoVehiculo = tipoVehiculo,
+            TarifaFletero = true,
+            Activo = true,
+            Cero = 0m
+        }, transaction: tx, cancellationToken: ct));
+
+        logger.LogInformation(
+            "SaveViaje creó tarifa fletero general IdLista={IdLista} Destino={Destino} TipoVehiculo={TipoVehiculo} Importe={Importe}",
+            idLista,
+            destino,
+            tipoVehiculo,
+            viaje.ImporteFletero);
     }
 
     private async Task<(string ListaCodigo, string ListaTexto)> GetListaRMTRFAsync(SqlConnection cn, string clienteCodigo, CancellationToken ct)
@@ -4939,7 +5184,7 @@ public sealed partial class CargaViajesService(
     {
         var value = (codigo ?? string.Empty).Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
+            return esFletero ? string.Empty : "GEN";
 
         if (esFletero)
         {

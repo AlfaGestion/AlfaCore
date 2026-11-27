@@ -10,7 +10,7 @@ namespace AlfaCore.Mcp.Tools;
 [McpServerToolType]
 public sealed class SqlTools(ToolRunner runner, SqlExecutor ejecutor)
 {
-    [McpServerTool(Name = "describir_esquema", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "describir_esquema", Title = "Describir vistas", ReadOnly = true, Idempotent = true)]
     [Description("Lista las vistas analíticas del esquema dir con sus columnas y tipos. Llamarla ANTES de consultar_sql para conocer los nombres exactos.")]
     public Task<ToolResponse> DescribirEsquema(CancellationToken ct = default)
         => runner.RunAsync("describir_esquema", null, async cfg =>
@@ -35,7 +35,7 @@ public sealed class SqlTools(ToolRunner runner, SqlExecutor ejecutor)
             return r;
         }, ct);
 
-    [McpServerTool(Name = "consultar_sql", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "consultar_sql", Title = "Consulta SQL de solo lectura", ReadOnly = true, Idempotent = true)]
     [Description("Ejecuta una consulta SELECT de T-SQL propia SOLO sobre las vistas del esquema dir (dir.vw_Ventas, dir.vw_Articulos, dir.vw_Clientes, dir.vw_CuentaCorriente, dir.vw_Stock). " +
                  "Usarla únicamente cuando ninguna otra herramienta responda la pregunta. Una sola sentencia, sin variables, sin funciones de tabla; CTEs permitidas. " +
                  "Compatible con SQL Server 2008: sin LAG/LEAD, IIF, CONCAT, FORMAT ni OFFSET/FETCH. Los literales de fecha se interpretan como AAAA-MM-DD. " +

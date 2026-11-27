@@ -14,7 +14,7 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
 {
     private const string FiltroVentas = "Fecha >= @Desde AND Fecha < @Hasta AND (@IncluirProformas = 1 OR EsProforma = 0)";
 
-    private static string[] AgruparPor => ["dia", "mes", "vendedor", "rubro", "cliente"];
+    private static string[] AgruparPor => ["dia", "mes", "vendedor", "rubro", "cliente", "articulo", "comprobante"];
     private static string[] CriteriosRanking => ["ganancia", "cantidad", "facturacion"];
 
     private static string Criterio(McpRuntimeSettings cfg) =>
@@ -22,24 +22,50 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
         (cfg.IncluirProformas ? "Incluye ventas proforma (no fiscales). " : "Solo comprobantes del libro de IVA (sin proformas). ") +
         "Costo = costo registrado en cada línea al momento de la venta; Margen = neto - costo.";
 
-    private static Dictionary<string, object?> ParamsVentas(DateTime desde, DateTime hastaExclusivo, McpRuntimeSettings cfg) => new()
+    private static Dictionary<string, object?> ParamsVentas(DateTime desde, DateTime hastaExclusivo, McpRuntimeSettings cfg,
+        string? cliente = null, string? articulo = null)
     {
-        ["Desde"] = desde,
-        ["Hasta"] = hastaExclusivo,
-        ["IncluirProformas"] = cfg.IncluirProformas ? 1 : 0
-    };
+        var p = new Dictionary<string, object?>
+        {
+            ["Desde"] = desde,
+            ["Hasta"] = hastaExclusivo,
+            ["IncluirProformas"] = cfg.IncluirProformas ? 1 : 0
+        };
+        if (Parametros.CodigoOpcional(cliente, "cliente") is { } c) p["Cliente"] = c;
+        if (Parametros.CodigoOpcional(articulo, "articulo") is { } a) p["Articulo"] = a;
+        return p;
+    }
+
+    /// <summary>Filtro de ventas + los filtros opcionales presentes en los parametros (texto fijo; los valores van parametrizados).</summary>
+    private static string Filtro(Dictionary<string, object?> p) =>
+        FiltroVentas
+        + (p.ContainsKey("Cliente") ? " AND ClienteCodigo = @Cliente" : "")
+        + (p.ContainsKey("Articulo") ? " AND ArticuloCodigo = @Articulo" : "");
+
+    /// <summary>Aclara en el criterio a que cliente / articulo se limito la consulta.</summary>
+    private static string CriterioFiltrado(McpRuntimeSettings cfg, Dictionary<string, object?> p) =>
+        Criterio(cfg)
+        + (p.TryGetValue("Cliente", out var c) ? $" Solo ventas al cliente {c}." : "")
+        + (p.TryGetValue("Articulo", out var a) ? $" Solo el artículo {a}." : "");
+
+    private const string DescCliente = "Opcional: código exacto de UN cliente para limitar a sus compras (obtenerlo con buscar_clientes).";
+    private const string DescArticulo = "Opcional: código exacto de UN artículo para limitar a sus ventas (obtenerlo con buscar_articulos).";
 
     // ------------------------------------------------------------------------------------------------------------------
-    [McpServerTool(Name = "ventas_resumen", ReadOnly = true, Idempotent = true)]
-    [Description("Resumen de ventas (neto sin IVA), costo, margen y cantidad de comprobantes de un período, agrupado por día, mes, vendedor, rubro o cliente. " +
+    [McpServerTool(Name = "ventas_resumen", Title = "Resumen de ventas", ReadOnly = true, Idempotent = true)]
+    [Description("Resumen de ventas (neto sin IVA), costo, margen y cantidad de comprobantes de un período, agrupado por día, mes, vendedor, rubro, cliente, artículo o comprobante. " +
                  "Usarla para preguntas como 'ventas del mes', 'ventas por vendedor' o 'ventas por rubro'. Las notas de crédito restan. " +
+                 "Con 'cliente' o 'articulo' se limita a un cliente o artículo: '¿qué le vendí a X este año por mes?', '¿qué facturas le hice a X en octubre?' " +
+                 "(agrupar_por=comprobante), '¿cómo vendió el artículo Y por mes?'. " +
                  "Devuelve también los totales del período completo (aunque la lista se recorte).")]
     public Task<ToolResponse> VentasResumen(
         [Description("Fecha inicial inclusive, formato AAAA-MM-DD (ej. 2026-10-01).")] string desde,
         [Description("Fecha final inclusive, formato AAAA-MM-DD (ej. 2026-10-31).")] string hasta,
-        [Description("Cómo agrupar: dia, mes, vendedor, rubro o cliente. Por defecto: mes.")] string? agrupar_por = null,
+        [Description("Cómo agrupar: dia, mes, vendedor, rubro, cliente, articulo o comprobante. Por defecto: mes.")] string? agrupar_por = null,
+        [Description(DescCliente)] string? cliente = null,
+        [Description(DescArticulo)] string? articulo = null,
         CancellationToken ct = default)
-        => runner.RunAsync("ventas_resumen", new { desde, hasta, agrupar_por }, async cfg =>
+        => runner.RunAsync("ventas_resumen", new { desde, hasta, agrupar_por, cliente, articulo }, async cfg =>
         {
             var (d, h) = Parametros.Rango(desde, hasta);
             var grupo = Parametros.Opcion(agrupar_por, "agrupar_por", AgruparPor, "mes");
@@ -50,10 +76,12 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
                 "mes" => ("AnioMes", "Grupo ASC"),
                 "vendedor" => ("VendedorNombre", "Ventas DESC"),
                 "rubro" => ("RubroNombre", "Ventas DESC"),
-                _ => ("ClienteNombre", "Ventas DESC")
+                "articulo" => ("ArticuloCodigo + N' - ' + ISNULL(ArticuloDescripcion, N'')", "Ventas DESC"),
+                "comprobante" => ("CONVERT(char(10), Fecha, 120) + N' ' + Tc + N' ' + Comprobante", "Grupo ASC"),
+                _ => ("ClienteCodigo + N' - ' + ISNULL(ClienteNombre, N'')", "Ventas DESC")
             };
-            var r = new ToolResponse { Criterio = Criterio(cfg) };
-            var p = ParamsVentas(d, h, cfg);
+            var p = ParamsVentas(d, h, cfg, cliente, articulo);
+            var r = new ToolResponse { Criterio = CriterioFiltrado(cfg, p) };
             var res = await sql.QueryAsync(cfg, $"""
                 SELECT {expr} AS Grupo,
                        CAST(SUM(NetoSinIva) AS decimal(18,2)) AS Ventas,
@@ -62,7 +90,7 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
                        CAST(CASE WHEN SUM(NetoSinIva) = 0 THEN NULL ELSE 100.0 * SUM(Margen) / SUM(NetoSinIva) END AS decimal(9,2)) AS MargenPct,
                        COUNT(DISTINCT Tc + N'|' + Comprobante) AS Comprobantes
                 FROM dir.vw_Ventas
-                WHERE {FiltroVentas}
+                WHERE {Filtro(p)}
                 GROUP BY {expr}
                 ORDER BY {orden}
                 """, p, ct);
@@ -74,24 +102,25 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
         }, ct);
 
     // ------------------------------------------------------------------------------------------------------------------
-    [McpServerTool(Name = "ranking_articulos", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "ranking_articulos", Title = "Ranking de artículos", ReadOnly = true, Idempotent = true)]
     [Description("Ranking de artículos más vendidos en un período, por ganancia (margen en pesos), cantidad vendida o facturación (neto sin IVA). " +
                  "Usarla para '¿qué artículo me dejó más ganancia?' o '¿cuáles son los 10 más vendidos?'. " +
-                 "La ganancia usa el costo registrado en cada venta (histórico), no el costo de hoy.")]
+                 "Con 'cliente', los artículos que más compra ese cliente. La ganancia usa el costo registrado en cada venta (histórico), no el costo de hoy.")]
     public Task<ToolResponse> RankingArticulos(
         [Description("Fecha inicial inclusive, AAAA-MM-DD.")] string desde,
         [Description("Fecha final inclusive, AAAA-MM-DD.")] string hasta,
         [Description("Criterio de orden: ganancia, cantidad o facturacion. Por defecto: ganancia.")] string? criterio = null,
         [Description("Cuántos artículos devolver (por defecto 10; máximo según configuración).")] int? top = null,
+        [Description(DescCliente)] string? cliente = null,
         CancellationToken ct = default)
-        => runner.RunAsync("ranking_articulos", new { desde, hasta, criterio, top }, async cfg =>
+        => runner.RunAsync("ranking_articulos", new { desde, hasta, criterio, top, cliente }, async cfg =>
         {
             var (d, h) = Parametros.Rango(desde, hasta);
             var crit = Parametros.Opcion(criterio, "criterio", CriteriosRanking, "ganancia");
-            var r = new ToolResponse { Criterio = Criterio(cfg) };
+            var p = ParamsVentas(d, h, cfg, cliente);
+            var r = new ToolResponse { Criterio = CriterioFiltrado(cfg, p) };
             var t = Parametros.Top(top, cfg, r);
             var orden = crit switch { "cantidad" => "SUM(Cantidad)", "facturacion" => "SUM(NetoSinIva)", _ => "SUM(Margen)" };
-            var p = ParamsVentas(d, h, cfg);
             p["Top"] = t;
             var res = await sql.QueryAsync(cfg, $"""
                 SELECT TOP (@Top) ArticuloCodigo,
@@ -103,7 +132,7 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
                        CAST(SUM(Margen) AS decimal(18,2)) AS Ganancia,
                        CAST(CASE WHEN SUM(NetoSinIva) = 0 THEN NULL ELSE 100.0 * SUM(Margen) / SUM(NetoSinIva) END AS decimal(9,2)) AS MargenPct
                 FROM dir.vw_Ventas
-                WHERE {FiltroVentas}
+                WHERE {Filtro(p)}
                 GROUP BY ArticuloCodigo
                 ORDER BY {orden} DESC, ArticuloCodigo
                 """, p, ct);
@@ -113,7 +142,7 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
         }, ct);
 
     // ------------------------------------------------------------------------------------------------------------------
-    [McpServerTool(Name = "comparar_periodos", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "comparar_periodos", Title = "Comparar períodos", ReadOnly = true, Idempotent = true)]
     [Description("Compara dos períodos (A contra B): ventas netas, costo, margen y comprobantes, con variación absoluta y porcentual de B respecto de A, " +
                  "y el detalle por rubro. Usarla para 'comparar este mes con el anterior' (A = mes anterior, B = mes actual) o 'este año contra el pasado'.")]
     public Task<ToolResponse> CompararPeriodos(
@@ -193,41 +222,53 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
         }, ct);
 
     // ------------------------------------------------------------------------------------------------------------------
-    [McpServerTool(Name = "clientes_top", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "clientes_top", Title = "Mejores clientes", ReadOnly = true, Idempotent = true)]
     [Description("Los clientes que más compraron en un período (neto sin IVA), con su margen, cantidad de comprobantes y fecha de última compra. " +
-                 "Usarla para '¿quiénes son mis mejores clientes?'.")]
+                 "Usarla para '¿quiénes son mis mejores clientes?'. Con 'articulo', quiénes compran más ese artículo.")]
     public Task<ToolResponse> ClientesTop(
         [Description("Fecha inicial inclusive, AAAA-MM-DD.")] string desde,
         [Description("Fecha final inclusive, AAAA-MM-DD.")] string hasta,
         [Description("Cuántos clientes devolver (por defecto 10).")] int? top = null,
+        [Description(DescArticulo)] string? articulo = null,
         CancellationToken ct = default)
-        => runner.RunAsync("clientes_top", new { desde, hasta, top }, async cfg =>
+        => runner.RunAsync("clientes_top", new { desde, hasta, top, articulo }, async cfg =>
         {
             var (d, h) = Parametros.Rango(desde, hasta);
-            var r = new ToolResponse { Criterio = Criterio(cfg) };
+            var p = ParamsVentas(d, h, cfg, articulo: articulo);
+            var r = new ToolResponse { Criterio = CriterioFiltrado(cfg, p) };
             var t = Parametros.Top(top, cfg, r);
-            var p = ParamsVentas(d, h, cfg);
             p["Top"] = t;
+            // El nombre sale del maestro: en un codigo generico (Consumidor Final) cada factura lleva el nombre del comprador,
+            // y MAX(nombre de factura) mostraria a una persona cualquiera como si fuera el cliente.
             var res = await sql.QueryAsync(cfg, $"""
-                SELECT TOP (@Top) ClienteCodigo,
-                       MAX(ClienteNombre) AS Cliente,
-                       CAST(SUM(NetoSinIva) AS decimal(18,2)) AS Ventas,
-                       CAST(SUM(Margen) AS decimal(18,2)) AS Margen,
-                       CAST(CASE WHEN SUM(NetoSinIva) = 0 THEN NULL ELSE 100.0 * SUM(Margen) / SUM(NetoSinIva) END AS decimal(9,2)) AS MargenPct,
-                       COUNT(DISTINCT Tc + N'|' + Comprobante) AS Comprobantes,
-                       MAX(Fecha) AS UltimaCompra
-                FROM dir.vw_Ventas
-                WHERE {FiltroVentas}
-                GROUP BY ClienteCodigo
-                ORDER BY SUM(NetoSinIva) DESC, ClienteCodigo
+                SELECT x.ClienteCodigo,
+                       ISNULL(c.RazonSocial, x.NombreEnFactura) AS Cliente,
+                       x.Ventas, x.Margen, x.MargenPct, x.Comprobantes, x.UltimaCompra, x.NombresEnFacturas
+                FROM (SELECT TOP (@Top) ClienteCodigo,
+                             MAX(ClienteNombre) AS NombreEnFactura,
+                             COUNT(DISTINCT ClienteNombre) AS NombresEnFacturas,
+                             CAST(SUM(NetoSinIva) AS decimal(18,2)) AS Ventas,
+                             CAST(SUM(Margen) AS decimal(18,2)) AS Margen,
+                             CAST(CASE WHEN SUM(NetoSinIva) = 0 THEN NULL ELSE 100.0 * SUM(Margen) / SUM(NetoSinIva) END AS decimal(9,2)) AS MargenPct,
+                             COUNT(DISTINCT Tc + N'|' + Comprobante) AS Comprobantes,
+                             MAX(Fecha) AS UltimaCompra
+                      FROM dir.vw_Ventas
+                      WHERE {Filtro(p)}
+                      GROUP BY ClienteCodigo
+                      ORDER BY SUM(NetoSinIva) DESC, ClienteCodigo) x
+                LEFT JOIN dir.vw_Clientes c ON c.ClienteCodigo = x.ClienteCodigo
+                ORDER BY x.Ventas DESC, x.ClienteCodigo
                 """, p, ct);
+            foreach (var f in res.Filas.Where(f => Convert.ToInt32(f["NombresEnFacturas"]) > 1))
+                r.Advertencias.Add($"El cliente {f["ClienteCodigo"]} ({f["Cliente"]}) junta ventas facturadas a {f["NombresEnFacturas"]} nombres distintos " +
+                                   "(típico de Consumidor Final o una cuenta genérica): no es un solo comprador.");
             r.Filas = res.Filas;
             r.Totales = await TotalesAsync(cfg, p, r, ct);
             return r;
         }, ct);
 
     // ------------------------------------------------------------------------------------------------------------------
-    [McpServerTool(Name = "deuda_clientes", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "deuda_clientes", Title = "Deudores", ReadOnly = true, Idempotent = true)]
     [Description("Clientes con saldo deudor en cuenta corriente, de mayor a menor: deuda total, parte vencida, vencida a más de 90 días y comprobantes abiertos. " +
                  "Usarla para '¿quién me debe más?' o 'deudores de más de X pesos'. Es el saldo de HOY (los créditos pendientes ya restan).")]
     public Task<ToolResponse> DeudaClientes(
@@ -265,7 +306,7 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
         }, ct);
 
     // ------------------------------------------------------------------------------------------------------------------
-    [McpServerTool(Name = "stock_critico", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "stock_critico", Title = "Stock crítico", ReadOnly = true, Idempotent = true)]
     [Description("Artículos con stock en o por debajo de su punto de pedido (stock total de todos los depósitos), ordenados por faltante. " +
                  "Usarla para '¿qué tengo que reponer?'. Solo considera artículos activos que tienen punto de pedido cargado.")]
     public Task<ToolResponse> StockCritico(
@@ -312,10 +353,13 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
                    COUNT(*) AS Lineas,
                    ISNULL(SUM(SinCosto), 0) AS LineasSinCosto
             FROM dir.vw_Ventas
-            WHERE {FiltroVentas}
+            WHERE {Filtro(p)}
             """, p, ct)).Filas.Single();
         AdvertirSinCosto(cfg, Convert.ToInt64(t["Lineas"]), Convert.ToInt64(t["LineasSinCosto"]), r);
-        if (Convert.ToInt64(t["Lineas"]) == 0) r.Advertencias.Add("No hay ventas en el período indicado.");
+        if (Convert.ToInt64(t["Lineas"]) == 0)
+            r.Advertencias.Add(p.ContainsKey("Cliente") || p.ContainsKey("Articulo")
+                ? "No hay ventas en el período para ese cliente / artículo. Si no es lo esperado, verificar el código con buscar_clientes / buscar_articulos."
+                : "No hay ventas en el período indicado.");
         return t;
     }
 

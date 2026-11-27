@@ -177,3 +177,15 @@ Un egreso del extracto se paga con la misma orden de pago (OPG, o PGFP con el in
 - **Anulación:** anular la OPG desde «Ver órdenes de pago» devuelve el movimiento a `Revisado` (log `PAGO_ANULADO`) y se puede volver a pagar.
 - **Base:** update `2026-11-10-001__conciliacion_pago_proveedor.sql` (columna `MovimientoId` en `ALFACORE_PAGO_OPERACION`).
 - **Pruebas:** `OrdenPagoConciliacionTests` (reglas puras). El grabado contra SQL con rollback **no se probó**: falta ejecutar un ensayo con `ORDENPAGO_TEST_SQL`. Tampoco se vio la pantalla en navegador.
+
+## Listado de pagos a proveedores y carga de medios como el POS (27/11/2026)
+
+Pedido de Alberto: que pagos a proveedores funcione como el módulo Cobranzas, respetando las particularidades de proveedores.
+
+- **Listado al entrar** (sin proveedor elegido): pendientes de pago de todos los proveedores (`OrdenPagoService.PendientesAsync`, archivo `OrdenPagoService.Listado.cs`), con las mismas reglas que la orden: unidad del usuario si `CHEQUESXUNEGOCIO`, proformas solo si el usuario las ve, anuladas afuera, bloqueados y moneda extranjera visibles pero no seleccionables.
+- **Tarjetas:** Pendiente de pago, Vencido, Vence en los próximos 7 días, Vencido hace más de 90 días (filtran el listado con un clic) y Pagado este mes (OPG + PGFP del mes y de hoy, `IndicadoresAsync`).
+- **Vistas:** Comprobantes, Agrupado por proveedor (se despliega) y Solo proveedores con «A favor» y «Saldo final» de la cuenta corriente (`SaldosProveedoresAsync`, haber − debe, se pide al elegir esa vista). Búsqueda libre sobre cualquier columna.
+- **Selección:** un pago es de un solo proveedor y no mezcla proformas con comprobantes comunes (tildar otro proveedor u otro modo reinicia la selección). «Pagar seleccionados» o «Pagar» en la fila abre la orden del proveedor con esos comprobantes marcados, en la solapa de medios. Para un anticipo sin comprobantes se elige el proveedor arriba («Nueva orden de pago»). «Volver al listado» en la barra.
+- **Orden:** totales grandes (Total a pagar, Medios cargados, Faltante o Anticipo) y dos solapas: **1. Comprobantes** (comprobantes, créditos y la retención de Ganancias, como antes) y **2. Medios de pago**: código opcional + Enter, importe (precargado con el faltante ya descontada la retención) + Enter; con cheque propio aparecen serie, número, fecha de pago y clearing. Tab resuelve el código igual que Enter. Cheques de terceros: la tabla de cartera sigue en la solapa de medios y los elegidos se ven en «Pagos aplicados». Lógica compartida con Cobranzas en `MedioPagoBuscador`.
+- **Velocidad:** `OrdenPagoService.ImpagosProveedoresSql` replica `CO_CPTES_IMPAGOS` calculando aplicaciones solo de cuentas de proveedores (la vista suma las de toda la base): en LANUEVA ~1,7 s contra ~7 s, mismo resultado (`OrdenPagoListadoTests` compara con la vista, para todos y para un proveedor). La orden de un proveedor también la usa. Las vistas del legacy no se tocan.
+- Pendiente: probar en navegador; los ensayos que graban (`ORDENPAGO_TEST_SQL`, ALFANET_DEMO) no se corrieron en esta sesión.

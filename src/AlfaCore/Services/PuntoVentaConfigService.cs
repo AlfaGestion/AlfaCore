@@ -345,12 +345,12 @@ public sealed class PuntoVentaConfigService(
                     CLASEPRECIO AS ClasePrecio,
                     ISNULL(CARGARAPIDAGRAFICA, 0) AS CargaRapidaGrafica,
                     ISNULL(MODO_INGRESO_RAPIDO, CASE WHEN ISNULL(CARGARAPIDAGRAFICA, 0) = 1 THEN 'COMPLETO' ELSE 'DESHABILITADO' END) AS ModoIngresoRapido,
-                    ISNULL(GOUR_IMPORTE1, 5) AS ImporteRapido1,
-                    ISNULL(GOUR_IMPORTE2, 10) AS ImporteRapido2,
-                    ISNULL(GOUR_IMPORTE3, 25) AS ImporteRapido3,
-                    ISNULL(GOUR_IMPORTE4, 50) AS ImporteRapido4,
-                    ISNULL(GOUR_IMPORTE5, 100) AS ImporteRapido5,
-                    ISNULL(GOUR_IMPORTE6, 200) AS ImporteRapido6,
+                    ISNULL(GOUR_IMPORTE1, 1000) AS ImporteRapido1,
+                    ISNULL(GOUR_IMPORTE2, 2000) AS ImporteRapido2,
+                    ISNULL(GOUR_IMPORTE3, 5000) AS ImporteRapido3,
+                    ISNULL(GOUR_IMPORTE4, 10000) AS ImporteRapido4,
+                    ISNULL(GOUR_IMPORTE5, 20000) AS ImporteRapido5,
+                    ISNULL(GOUR_IMPORTE6, 50000) AS ImporteRapido6,
                     ISNULL(GOUR_CANTIDAD1, 0.1) AS CantidadRapida1,
                     ISNULL(GOUR_CANTIDAD2, 0.25) AS CantidadRapida2,
                     ISNULL(GOUR_CANTIDAD3, 0.5) AS CantidadRapida3,
@@ -375,6 +375,8 @@ public sealed class PuntoVentaConfigService(
                 """;
 
             var rows = (await cn.QueryAsync<PuntoVentaEntidadDto>(new CommandDefinition(sql, cancellationToken: token))).ToList();
+            foreach (var row in rows)
+                AplicarImportesRapidosSugeridosSiLegacy(row);
             var rubros = await GetRubrosPorPuntoVentaAsync(cn, null, token);
             foreach (var row in rows)
                 row.Rubros = rubros.TryGetValue(row.Id, out var lista) ? lista : [];
@@ -400,12 +402,12 @@ public sealed class PuntoVentaConfigService(
                     CLASEPRECIO AS ClasePrecio,
                     ISNULL(CARGARAPIDAGRAFICA, 0) AS CargaRapidaGrafica,
                     ISNULL(MODO_INGRESO_RAPIDO, CASE WHEN ISNULL(CARGARAPIDAGRAFICA, 0) = 1 THEN 'COMPLETO' ELSE 'DESHABILITADO' END) AS ModoIngresoRapido,
-                    ISNULL(GOUR_IMPORTE1, 5) AS ImporteRapido1,
-                    ISNULL(GOUR_IMPORTE2, 10) AS ImporteRapido2,
-                    ISNULL(GOUR_IMPORTE3, 25) AS ImporteRapido3,
-                    ISNULL(GOUR_IMPORTE4, 50) AS ImporteRapido4,
-                    ISNULL(GOUR_IMPORTE5, 100) AS ImporteRapido5,
-                    ISNULL(GOUR_IMPORTE6, 200) AS ImporteRapido6,
+                    ISNULL(GOUR_IMPORTE1, 1000) AS ImporteRapido1,
+                    ISNULL(GOUR_IMPORTE2, 2000) AS ImporteRapido2,
+                    ISNULL(GOUR_IMPORTE3, 5000) AS ImporteRapido3,
+                    ISNULL(GOUR_IMPORTE4, 10000) AS ImporteRapido4,
+                    ISNULL(GOUR_IMPORTE5, 20000) AS ImporteRapido5,
+                    ISNULL(GOUR_IMPORTE6, 50000) AS ImporteRapido6,
                     ISNULL(GOUR_CANTIDAD1, 0.1) AS CantidadRapida1,
                     ISNULL(GOUR_CANTIDAD2, 0.25) AS CantidadRapida2,
                     ISNULL(GOUR_CANTIDAD3, 0.5) AS CantidadRapida3,
@@ -430,7 +432,10 @@ public sealed class PuntoVentaConfigService(
 
             var pv = await cn.QuerySingleOrDefaultAsync<PuntoVentaEntidadDto>(new CommandDefinition(sql, new { Id = id }, cancellationToken: token));
             if (pv is not null)
+            {
+                AplicarImportesRapidosSugeridosSiLegacy(pv);
                 pv.Rubros = (await GetRubrosPorPuntoVentaAsync(cn, id, token)).TryGetValue(id, out var lista) ? lista : [];
+            }
             return pv;
         }, "No se pudo cargar el punto de venta seleccionado.", ct);
 
@@ -473,12 +478,12 @@ public sealed class PuntoVentaConfigService(
             if (request.ModoIngresoRapido is not (PuntoVentaIngresoRapidoModoKeys.Deshabilitado or PuntoVentaIngresoRapidoModoKeys.Compacto or PuntoVentaIngresoRapidoModoKeys.Completo))
                 request.ModoIngresoRapido = request.CargaRapidaGrafica ? PuntoVentaIngresoRapidoModoKeys.Completo : PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
             request.CargaRapidaGrafica = request.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado;
-            request.ImporteRapido1 = NormalizarImporteRapido(request.ImporteRapido1, 5m);
-            request.ImporteRapido2 = NormalizarImporteRapido(request.ImporteRapido2, 10m);
-            request.ImporteRapido3 = NormalizarImporteRapido(request.ImporteRapido3, 25m);
-            request.ImporteRapido4 = NormalizarImporteRapido(request.ImporteRapido4, 50m);
-            request.ImporteRapido5 = NormalizarImporteRapido(request.ImporteRapido5, 100m);
-            request.ImporteRapido6 = NormalizarImporteRapido(request.ImporteRapido6, 200m);
+            request.ImporteRapido1 = NormalizarImporteRapido(request.ImporteRapido1, 1000m);
+            request.ImporteRapido2 = NormalizarImporteRapido(request.ImporteRapido2, 2000m);
+            request.ImporteRapido3 = NormalizarImporteRapido(request.ImporteRapido3, 5000m);
+            request.ImporteRapido4 = NormalizarImporteRapido(request.ImporteRapido4, 10000m);
+            request.ImporteRapido5 = NormalizarImporteRapido(request.ImporteRapido5, 20000m);
+            request.ImporteRapido6 = NormalizarImporteRapido(request.ImporteRapido6, 50000m);
             request.CantidadRapida1 = NormalizarImporteRapido(request.CantidadRapida1, 0.1m);
             request.CantidadRapida2 = NormalizarImporteRapido(request.CantidadRapida2, 0.25m);
             request.CantidadRapida3 = NormalizarImporteRapido(request.CantidadRapida3, 0.5m);
@@ -950,6 +955,22 @@ public sealed class PuntoVentaConfigService(
                 $"Borró la mesa {mesa.Codigo} (sin movimientos).", new { id, mesa.Codigo }, CancellationToken.None);
             return true;
         }, "No se pudo borrar la mesa.", ct);
+
+    private static void AplicarImportesRapidosSugeridosSiLegacy(PuntoVentaEntidadDto puntoVenta)
+    {
+        // Las primeras versiones de AlfaCore dejaron los seis valores VB6 (5, 10, 25, 50, 100, 200).
+        // Solo se reemplaza esa combinación completa; cualquier configuración personalizada se conserva.
+        if (puntoVenta.ImporteRapido1 != 5m || puntoVenta.ImporteRapido2 != 10m || puntoVenta.ImporteRapido3 != 25m
+            || puntoVenta.ImporteRapido4 != 50m || puntoVenta.ImporteRapido5 != 100m || puntoVenta.ImporteRapido6 != 200m)
+            return;
+
+        puntoVenta.ImporteRapido1 = 1000m;
+        puntoVenta.ImporteRapido2 = 2000m;
+        puntoVenta.ImporteRapido3 = 5000m;
+        puntoVenta.ImporteRapido4 = 10000m;
+        puntoVenta.ImporteRapido5 = 20000m;
+        puntoVenta.ImporteRapido6 = 50000m;
+    }
 
     private static decimal NormalizarImporteRapido(decimal value, decimal defaultValue)
         => value > 0m && value <= 999999999999m ? decimal.Round(value, 4, MidpointRounding.AwayFromZero) : defaultValue;

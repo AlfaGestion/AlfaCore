@@ -67,11 +67,17 @@ public static class AuthCommands
         var baseId = p.Count > 2 ? p[2].Trim() : null;
         if (usuario.Length is < 3 or > 100 || usuario.Any(char.IsWhiteSpace)) { Console.Error.WriteLine("El usuario debe tener entre 3 y 100 caracteres y no llevar espacios."); return 2; }
 
+        var store = sp.GetRequiredService<IAuthStore>();
+        if (await store.GetUsuarioAsync(usuario, CancellationToken.None) is not null)
+        {
+            Console.Error.WriteLine($"El usuario '{usuario}' ya existe. Para un QR nuevo (telefono nuevo o perdido): configurar-totp {usuario} --qr archivo.png");
+            return 1;
+        }
+
         var clave = Pedir("Clave (minimo " + PasswordHasher.LargoMinimo + " caracteres): ");
         if (clave.Length < PasswordHasher.LargoMinimo) { Console.Error.WriteLine($"La clave debe tener al menos {PasswordHasher.LargoMinimo} caracteres."); return 2; }
         if (Pedir("Repetir clave: ") != clave) { Console.Error.WriteLine("Las claves no coinciden."); return 2; }
 
-        var store = sp.GetRequiredService<IAuthStore>();
         var id = await store.CrearUsuarioAsync(usuario, nombre, PasswordHasher.Hash(clave), baseId, CancellationToken.None);
         Console.WriteLine($"Usuario '{usuario}' creado (id {id}).");
         if (sinTotp) Console.WriteLine("ATENCION: sin segundo factor. Si IA_MCP_OAUTH_REQUIERE_TOTP=SI no va a poder iniciar sesion.");

@@ -96,6 +96,7 @@ public sealed class CargaViajesDetailDto : CargaViajesGridItemDto
     public decimal TotalTarifadoFlete { get; set; }
     public decimal ImporteCliente { get; set; }
     public decimal ImporteFletero { get; set; }
+    public List<CargaViajeChoferAsignadoDto> Choferes { get; set; } = [];
 }
 
 public sealed class CargaViajeSaveRequest
@@ -116,6 +117,7 @@ public sealed class CargaViajeSaveRequest
     public string ListaDisplay { get; set; } = string.Empty;
     public decimal ImporteCliente { get; set; }
     public decimal ImporteFletero { get; set; }
+    public List<CargaViajeChoferAsignadoDto> ChoferesAdicionales { get; set; } = [];
     public decimal Peaje { get; set; }
     public int CantidadViajes { get; set; } = 1;
     public decimal PorcentajeAdic { get; set; }
@@ -146,6 +148,15 @@ public sealed class CargaViajeSaveRequest
     public string Observaciones { get; set; } = string.Empty;
     public string Estado { get; set; } = CargaViajeEstadoKeys.Pendiente;
     public string? UsuarioAccion { get; set; }
+}
+
+public sealed class CargaViajeChoferAsignadoDto
+{
+    public int Id { get; set; }
+    public string Codigo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public int Orden { get; set; }
+    public decimal ImporteFlete { get; set; }
 }
 
 public sealed class CargaViajeLookupOptionDto

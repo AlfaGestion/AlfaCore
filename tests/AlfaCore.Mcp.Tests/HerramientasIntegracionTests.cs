@@ -163,4 +163,62 @@ public class HerramientasIntegracionTests
         Assert.Contains("AAAA-MM-DD", ex.Message);
         await Assert.ThrowsAsync<McpException>(() => n.VentasResumen("2026-10-01", "2026-10-31", "mes; DROP TABLE x"));
     }
+
+    private static FichaTools CrearFichas()
+    {
+        var cs = Environment.GetEnvironmentVariable(FactIntegracionAttribute.Variable)!;
+        var cfg = new McpRuntimeSettings(true, 500, 100, 120, true, true, true, 5m);
+        var runner = new ToolRunner(new ConfigFija(cfg), new AuditoriaMemoria(), new UsuarioFijoContext("test"), NullLogger<ToolRunner>.Instance);
+        return new FichaTools(runner, new SqlExecutor(new ConexionUnicaResolver(cs)));
+    }
+
+    [FactIntegracion]
+    public async Task busqueda_y_ficha_de_cliente_cuadran_con_las_ventas_filtradas()
+    {
+        var (n, _, _) = Crear();
+        var f = CrearFichas();
+        // El mejor cliente de octubre: se lo busca por una palabra de su nombre (del maestro) y se abre su ficha.
+        var top = await n.ClientesTop("2026-10-01", "2026-10-31", 1);
+        var codigo = (string)top.Filas[0]["ClienteCodigo"]!;
+        var nombre = (string)top.Filas[0]["Cliente"]!;
+        var palabra = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries).OrderByDescending(w => w.Length).First();
+
+        var busqueda = await f.BuscarClientes(palabra, 50);
+        Assert.Contains(busqueda.Filas, x => (string)x["ClienteCodigo"]! == codigo);
+        var exacto = await f.BuscarClientes(codigo);
+        Assert.Equal(codigo, exacto.Filas[0]["ClienteCodigo"]);   // el codigo exacto sale primero
+
+        var ficha = await f.FichaCliente(codigo);
+        Assert.Equal(codigo, ficha.Totales!["ClienteCodigo"]);
+        if (!ficha.Truncado)
+            Assert.Equal(Num(ficha.Totales["Deuda"]), ficha.Filas.Sum(x => Num(x["Saldo"])));
+
+        // ventas_resumen filtrado por ese cliente = su fila en clientes_top.
+        var suyo = await n.VentasResumen("2026-10-01", "2026-10-31", "comprobante", cliente: codigo);
+        Assert.Equal(Num(top.Filas[0]["Ventas"]), Num(suyo.Totales!["Ventas"]));
+        Assert.Contains(codigo, suyo.Criterio);
+
+        await Assert.ThrowsAsync<McpException>(() => f.FichaCliente("NO-EXISTE-XYZ"));
+    }
+
+    [FactIntegracion]
+    public async Task busqueda_y_ficha_de_articulo_cuadran_con_el_ranking()
+    {
+        var (n, _, _) = Crear();
+        var f = CrearFichas();
+        var rk = await n.RankingArticulos("2026-10-01", "2026-10-31", "facturacion", 1);
+        var codigo = (string)rk.Filas[0]["ArticuloCodigo"]!;
+
+        var exacto = await f.BuscarArticulos(codigo);
+        Assert.Equal(codigo, exacto.Filas[0]["ArticuloCodigo"]);
+
+        var ficha = await f.FichaArticulo(codigo);
+        Assert.Equal(codigo, ficha.Totales!["ArticuloCodigo"]);
+        Assert.Equal(Num(ficha.Totales["StockTotal"]), ficha.Filas.Sum(x => Num(x["Stock"])));
+
+        var quien = await n.ClientesTop("2026-10-01", "2026-10-31", 100, articulo: codigo);
+        Assert.Equal(Num(rk.Filas[0]["Facturacion"]), Num(quien.Totales!["Ventas"]));
+
+        await Assert.ThrowsAsync<McpException>(() => f.BuscarArticulos("x"));
+    }
 }

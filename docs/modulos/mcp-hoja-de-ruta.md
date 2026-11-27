@@ -3,30 +3,34 @@
 Estado y próximos pasos del servidor MCP (`src/AlfaCore.Mcp`, esquema SQL `dir`).
 Publicación: `docs/modulos/mcp-publicacion-iis.md`. Scripts: `docs/base-datos/sql-referencia/dir-mcp/`.
 
-## 1. Terminar lo encaminado (en curso)
+## 1. Publicación (hecho el 27/11/2026)
 
-1. Correr `004_config_ia_mcp.sql` (clave `IA_MCP_LECTURA_SIN_BLOQUEOS`) y `012_config_oauth.sql` en la base de datos.
-2. Probar el login local con usuario + clave + código TOTP (README de `src/AlfaCore.Mcp`, sección 3).
-3. Correr `010` y `011`, crear usuarios con `crear-usuario --qr` y publicar en el IIS de ALFACENTRAL.
-4. Conectar claude.ai y ChatGPT; confirmar la redirect URI real de ChatGPT.
+1. ~~Scripts `004`, `010`, `011`, `012`~~, ~~login local con TOTP~~, ~~sitio IIS en `https://alfacore-mcp.ddns.net/mcp`~~, ~~claude.ai conectado~~.
+2. Pendiente: conectar **ChatGPT** y confirmar su redirect URI real (paso 6 de la guía).
+3. Pendiente: pasar de la base de **pruebas** a la real cuando se valide con datos conocidos (volver a correr `instalar_mcp_iis.ps1`).
+4. Pendiente: correr `SqlAuthStoreIntegracionTests` contra el almacén real (variable `ALFACORE_MCP_TEST_AUTH_CONNECTION`).
 
 ## 2. Próxima etapa: herramientas puntuales
 
-Hoy hay 6 herramientas de resumen + `consultar_sql`. Faltan herramientas que respondan una pregunta
-concreta sin que la IA tenga que adivinar códigos o armar SQL. En orden de valor:
+**Hecho (27/11/2026), sin scripts SQL nuevos (usan las vistas `dir` existentes):** `buscar_clientes`, `buscar_articulos`,
+`ficha_cliente` (datos, deuda, compras 12 meses y comprobantes abiertos), `ficha_articulo` (precios, stock por depósito, ventas 12 meses),
+filtros `cliente` / `articulo` en `ventas_resumen`, `ranking_articulos` y `clientes_top`, agrupación por artículo y por comprobante,
+y `Title` legible en todas las herramientas.
 
-1. **Búsquedas por texto**: `buscar_clientes`, `buscar_articulos`, `buscar_proveedores` (devuelven código +
-   nombre para que la IA resuelva "Pérez" antes de consultar).
-2. **Cuenta corriente detallada de un cliente** (movimientos + saldo, paginada) y luego la de **proveedores**.
-3. **Compras y proveedores**: vista `dir.vw_Compras` (hoy `dir` es solo ventas).
-4. **Libros de IVA** ventas/compras y comparación mensual (se alinea con el control fiscal del Director IA).
-5. **Cheques**: cartera de terceros y propios emitidos.
-6. **Costo y precio de un artículo a una fecha**, y su historial.
+Trampa hallada: el código **Consumidor Final** junta ventas con el nombre de cada comprador en la factura. `clientes_top` ahora muestra el
+nombre del maestro y avisa cuántos nombres distintos agrupa; `buscar_clientes` busca en el maestro, así que a un particular facturado como
+Consumidor Final no lo encuentra por su nombre.
 
-Cada herramienta nueva requiere su vista `dir.*` (script nuevo en `dir-mcp/`, revisado y corrido por Alberto),
-verificar el tipo real de cada objeto en SQL Server y cuadrar contra el reporte equivalente de Alfa Gestión.
+Falta, en orden de valor (todo requiere vistas nuevas en un script `013`, revisado y corrido por Alberto):
 
-Mejora menor: poner `Title` legible a cada herramienta (Claude/ChatGPT muestran el nombre técnico).
+1. **Compras y proveedores**: `dir.vw_Proveedores`, `dir.vw_Compras` y `buscar_proveedores` / `ficha_proveedor`.
+2. **Cuenta corriente con movimientos** (no solo lo abierto) de clientes y luego de proveedores.
+3. **Libros de IVA** ventas/compras y comparación mensual (se alinea con el control fiscal del Director IA).
+4. **Cheques**: cartera de terceros y propios emitidos.
+5. **Costo y precio de un artículo a una fecha**, y su historial.
+6. Acelerar la cuenta corriente (hoy ~12 s por cliente: `VE_CPTES_SALDOS_VENTAS` calcula todos los saldos antes de filtrar).
+
+Cada vista nueva: verificar el tipo real de cada objeto en SQL Server y cuadrar contra el reporte equivalente de Alfa Gestión.
 
 ## 3. Permisos por usuario
 
