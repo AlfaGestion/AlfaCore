@@ -23,6 +23,10 @@ function Leer-Clave([string]$texto) {
     $b = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
     try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($b) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b) }
 }
+function Leer-Obligatorio([string]$texto) {
+    do { $v = (Read-Host $texto).Trim(); if (-not $v) { Write-Host "  (obligatorio: escribirlo, no solo Enter)" -ForegroundColor Yellow } } while (-not $v)
+    $v
+}
 function Probar-Sql([string]$cs, [string]$sql) {
     $cn = New-Object System.Data.SqlClient.SqlConnection $cs
     try { $cn.Open(); $cmd = $cn.CreateCommand(); $cmd.CommandText = $sql; $cmd.CommandTimeout = 30; return $cmd.ExecuteScalar() }
@@ -32,8 +36,8 @@ function Probar-Sql([string]$cs, [string]$sql) {
 if (-not (Test-Path (Join-Path $Carpeta "AlfaCore.Mcp.dll"))) { throw "No esta $Carpeta\AlfaCore.Mcp.dll: copiar primero la carpeta publicada." }
 
 Write-Host "`n=== 1. Datos de conexion (las claves no se muestran) ===" -ForegroundColor Cyan
-$sqlDatos  = Read-Host "Servidor SQL de DATOS (ej. 10.8.0.20\ALFANET)"
-$baseDatos = Read-Host "Base de DATOS (la que tiene el esquema dir)"
+$sqlDatos  = Leer-Obligatorio "Servidor SQL de DATOS, con la instancia (ej. 10.8.0.20\ALFANET)"
+$baseDatos = Leer-Obligatorio "Base de DATOS (la que tiene el esquema dir)"
 $claveDatos = Leer-Clave "Clave del login mcp_dir_ro"
 $sqlAuth   = Read-Host "Servidor SQL del almacen OAuth (Enter = 10.8.0.31)"; if (-not $sqlAuth) { $sqlAuth = "10.8.0.31" }
 $baseAuth  = Read-Host "Base del almacen OAuth (Enter = ALFA_CENTRAL)";       if (-not $baseAuth) { $baseAuth = "ALFA_CENTRAL" }
@@ -44,9 +48,9 @@ $csAuth  = "Server=$sqlAuth;Database=$baseAuth;User Id=mcp_auth_rw;Password=$cla
 
 Write-Host "`n=== 2. Probando conexiones ===" -ForegroundColor Cyan
 try { $n = Probar-Sql $csDatos "SELECT COUNT(*) FROM dir.vw_Config"; Write-Host "  DATOS ok ($n claves en dir.vw_Config)" -ForegroundColor Green }
-catch { throw "  DATOS fallo: $($_.Exception.Message)" }
+catch { throw "  DATOS fallo (servidor $sqlDatos, base $baseDatos, login mcp_dir_ro): $($_.Exception.Message)" }
 try { $n = Probar-Sql $csAuth "SELECT COUNT(*) FROM dbo.MCP_USUARIO"; Write-Host "  ALMACEN OAuth ok ($n usuarios)" -ForegroundColor Green }
-catch { throw "  ALMACEN OAuth fallo: $($_.Exception.Message)" }
+catch { throw "  ALMACEN OAuth fallo (servidor $sqlAuth, base $baseAuth, login mcp_auth_rw): $($_.Exception.Message)" }
 
 Write-Host "`n=== 3. Certificado (el mismo del puerto $PuertoCertificado) ===" -ForegroundColor Cyan
 $b443 = Get-ChildItem IIS:\SslBindings | Where-Object { $_.Port -eq $PuertoCertificado -and $_.Host -eq $HostPublico } | Select-Object -First 1
