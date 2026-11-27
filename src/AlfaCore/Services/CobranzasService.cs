@@ -281,8 +281,13 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
     {
         if(solicitud.Detalle?.Trim().Length>100)
             throw new InvalidOperationException("El detalle de la cobranza admite hasta 100 caracteres.");
-        if(solicitud.Operacion==Guid.Empty||solicitud.FacturaId<=0||solicitud.Fecha.TimeOfDay!=TimeSpan.Zero)
+        if(solicitud.Operacion==Guid.Empty||solicitud.FacturaId<0||(solicitud.FacturaId==0&&solicitud.ACuenta is null)
+            ||solicitud.Fecha.TimeOfDay!=TimeSpan.Zero)
             throw new InvalidOperationException("Revisá el comprobante y la fecha de la cobranza.");
+        if(solicitud.ACuenta is {} aCuenta&&(solicitud.MovimientoId is not null||solicitud.Ajuste is not null
+            ||string.IsNullOrWhiteSpace(aCuenta.Cliente)||aCuenta.Cliente.Trim().Length>15
+            ||string.IsNullOrWhiteSpace(aCuenta.Unidad)||aCuenta.Unidad.Trim().Length>4))
+            throw new InvalidOperationException("Para cobrar a cuenta elegí el cliente y la unidad de negocio.");
         if(solicitud.Pagos.Count is <1 or >20||solicitud.Pagos.Any(p=>string.IsNullOrWhiteSpace(p.Cuenta)||p.Cuenta.Length>15||
             p.Importe<=0||p.Importe!=decimal.Round(p.Importe,2)||p.Certificado.Length>50))
             throw new InvalidOperationException("Informá medios de pago con importes positivos de hasta dos decimales y referencias de hasta 50 caracteres.");
@@ -301,6 +306,22 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
 
     internal static IReadOnlyList<CobranzaAplicacion> ResolverAplicaciones(CobranzaSolicitud solicitud,decimal total)
     {
+        // A cuenta (anticipo): se aplica a lo sumo el total y el resto queda como crédito del cliente; sin facturas es un
+        // anticipo puro (FacturaId 0). Fuera de ese caso, lo aplicado tiene que coincidir con el total, como siempre.
+        if(solicitud.ACuenta is not null)
+        {
+            var parciales=solicitud.Aplicaciones ?? (solicitud.FacturaId>0 ? [new(solicitud.FacturaId,total)] : []);
+            if(parciales.Count==0)
+            {
+                if(solicitud.FacturaId!=0) throw new InvalidOperationException("Revisá los comprobantes de la cobranza.");
+                return parciales;
+            }
+            if(parciales.Count>50 || parciales.Any(a=>a.FacturaId<=0 || a.Importe<=0 || a.Importe!=decimal.Round(a.Importe,2))
+                || parciales.Select(a=>a.FacturaId).Distinct().Count()!=parciales.Count
+                || !parciales.Any(a=>a.FacturaId==solicitud.FacturaId) || parciales.Sum(a=>a.Importe)>total)
+                throw new InvalidOperationException("Seleccioná comprobantes distintos con importes positivos de dos decimales. Lo aplicado no puede superar el total cobrado.");
+            return parciales;
+        }
         var aplicaciones=solicitud.Aplicaciones ?? [new(solicitud.FacturaId,total)];
         if(aplicaciones.Count is <1 or >50 || aplicaciones.Any(a=>a.FacturaId<=0 || a.Importe<=0 || a.Importe!=decimal.Round(a.Importe,2))
             || aplicaciones.Select(a=>a.FacturaId).Distinct().Count()!=aplicaciones.Count
@@ -358,7 +379,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             if(await cn.ExecuteScalarAsync<int>(Q("SELECT COUNT(*) FROM dbo.ALFACORE_COBRANZA_OPERACION WHERE MovimientoId=@movimiento;",new{movimiento}))>0)
                 throw new InvalidOperationException("El movimiento ya fue cobrado. Actualizá la revisión.");
         }
-        var facturas=(await cn.QueryAsync<Factura>(Q("""
+        var facturas=aplicaciones.Count==0 ? [] : (await cn.QueryAsync<Factura>(Q("""
             SELECT f.ID,f.TC,f.IDCOMPROBANTE Comprobante,LTRIM(RTRIM(f.CUENTA)) Cliente,LTRIM(RTRIM(f.UNEGOCIO)) Unidad,
                 LTRIM(RTRIM(f.MONEDA)) Moneda,CONVERT(bit,ISNULL(f.ANULADA,0)) Anulada,f.NOMBRE Nombre,
                 COALESCE(NULLIF(LTRIM(RTRIM(f.IdVendedor)),''),NULLIF(LTRIM(RTRIM(c.IdVendedor)),'')) Vendedor
@@ -367,7 +388,26 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             WHERE f.ID IN @ids AND f.IDCOMPLEMENTO=0;
             """,new { ids=aplicaciones.Select(a=>a.FacturaId).ToArray() }))).AsList();
         if(facturas.Count!=aplicaciones.Count) throw new InvalidOperationException("Uno de los comprobantes ya no está disponible.");
-        var factura=facturas.Single(f=>f.Id==solicitud.FacturaId);
+        // Titular del recibo: el de la factura principal o, a cuenta sin facturas, el cliente elegido.
+        var factura=solicitud.FacturaId>0 ? facturas.Single(f=>f.Id==solicitud.FacturaId) : null;
+        if(solicitud.ACuenta is {} aCuenta)
+        {
+            var titular=await cn.QuerySingleOrDefaultAsync<Factura>(Q("""
+                SELECT LTRIM(RTRIM(CODIGO)) Cliente,ISNULL(RAZON_SOCIAL,'') Nombre,NULLIF(LTRIM(RTRIM(IdVendedor)),'') Vendedor
+                FROM dbo.VT_CLIENTES WITH(UPDLOCK,HOLDLOCK)
+                WHERE LTRIM(RTRIM(CODIGO))=@cliente AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0;
+                """,new { cliente=aCuenta.Cliente.Trim() }))
+                ?? throw new InvalidOperationException("El cliente no existe o está dado de baja.");
+            titular.Unidad=aCuenta.Unidad.Trim();
+            ValidarUnidad(user,titular.Unidad);
+            if(await cn.ExecuteScalarAsync<int>(Q("SELECT COUNT(*) FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(Codigo))=@unidad;",
+                new { unidad=titular.Unidad }))==0)
+                throw new InvalidOperationException("La unidad de negocio no existe.");
+            if(factura is not null&&(factura.Cliente!=titular.Cliente||factura.Unidad!=titular.Unidad))
+                throw new InvalidOperationException("Los comprobantes no son del cliente y la unidad de negocio elegidos.");
+            factura??=titular;
+        }
+        if(factura is null) throw new InvalidOperationException("Revisá el comprobante de la cobranza.");
         foreach(var elegida in facturas)
         {
         ValidarUnidad(user,elegida.Unidad);
@@ -386,7 +426,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             WHERE LTRIM(RTRIM(CUENTA))=@cliente AND TCO_ORIGEN=@tc AND IDCOMPROBANTE_ORIGEN=@comprobante;
             """,new { cliente=elegida.Cliente,tc=elegida.Tc,comprobante=elegida.Comprobante }));
         }
-        var docs=await Documentos(cn,factura.Cliente,tx,ct);
+        var docs=aplicaciones.Count==0 ? [] : await Documentos(cn,factura.Cliente,tx,ct);
         foreach(var aplicada in aplicaciones)
         {
         var doc=docs.SingleOrDefault(d=>d.Id==aplicada.FacturaId);
@@ -451,7 +491,9 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
             Asiento=asiento,Sub=CodigoPk.Format(sub,4),Caja=CodigoPk.Format(string.IsNullOrWhiteSpace(user.Caja)?"1":user.Caja,4),
             Vendedor=string.IsNullOrWhiteSpace(factura.Vendedor)?null:CodigoPk.Format(factura.Vendedor,4),
             Suc=suc,Numero=numero.ToString("D8"),Detalle=string.IsNullOrWhiteSpace(solicitud.Detalle)?$"Cob. {factura.Nombre.Trim()}":solicitud.Detalle.Trim() };
-        var id=await cn.ExecuteScalarAsync<int>(Q("""
+        // Con factura, la cabecera copia sus datos; a cuenta sin factura los toma de la ficha del cliente, como los CB
+        // sin aplicar que graba Alfa Gestión.
+        var id=await cn.ExecuteScalarAsync<int>(Q(solicitud.FacturaId>0 ? """
             INSERT INTO dbo.V_MV_CPTE(TC,IDCOMPROBANTE,IDCOMPLEMENTO,FECHA,FECHAESTFIN,FECHAESTINICIO,CUENTA,NOMBRE,
                 DOMICILIO,TELEFONO,LOCALIDAD,IDPROVINCIA,CODIGOPOSTAL,DOCUMENTOTIPO,DOCUMENTONUMERO,CONDICIONIVA,
                 IDCOND_CPRA_VTA,IMPORTE,IMPORTE_S_IVA,MONEDA,IDVENDEDOR,CLASEPRECIO,UNEGOCIO,UNEGOCIO_DESTINO,
@@ -460,6 +502,16 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
                 CODIGOPOSTAL,DOCUMENTOTIPO,DOCUMENTONUMERO,CONDICIONIVA,IDCOND_CPRA_VTA,@Total,0,@Moneda,@Vendedor,
                 CLASEPRECIO,@Unidad,@Unidad,IdLista,IDMOTIVOCPRAVTA,IDDEPOSITO,@Usuario,GETDATE(),@Detalle
             FROM dbo.V_MV_CPTE WHERE ID=@FacturaId;
+            SELECT CONVERT(int,SCOPE_IDENTITY());
+            """ : """
+            INSERT INTO dbo.V_MV_CPTE(TC,IDCOMPROBANTE,IDCOMPLEMENTO,FECHA,FECHAESTFIN,FECHAESTINICIO,CUENTA,NOMBRE,
+                DOMICILIO,TELEFONO,LOCALIDAD,IDPROVINCIA,CODIGOPOSTAL,DOCUMENTOTIPO,DOCUMENTONUMERO,CONDICIONIVA,
+                IMPORTE,IMPORTE_S_IVA,MONEDA,IDVENDEDOR,CLASEPRECIO,UNEGOCIO,UNEGOCIO_DESTINO,USUARIO,FechaHora_Grabacion,COMENTARIOS)
+            SELECT TOP(1) @Tc,@Comprobante,0,@Fecha,@Fecha,@Fecha,@Cliente,ISNULL(c.RAZON_SOCIAL,''),
+                NULLIF(LTRIM(RTRIM(LEFT(LTRIM(RTRIM(ISNULL(c.CALLE,'')))+' '+LTRIM(RTRIM(ISNULL(c.NUMERO,''))),50))),''),
+                c.TELEFONO,c.LOCALIDAD,c.PROVINCIA,c.CPOSTAL,c.DOCUMENTO_TIPO,LEFT(c.NUMERO_DOCUMENTO,13),c.IVA,
+                @Total,0,@Moneda,@Vendedor,0,@Unidad,@Unidad,@Usuario,GETDATE(),@Detalle
+            FROM dbo.VT_CLIENTES c WHERE LTRIM(RTRIM(c.CODIGO))=@Cliente;
             SELECT CONVERT(int,SCOPE_IDENTITY());
             """,p));
         var sec=1;
@@ -473,8 +525,7 @@ public sealed partial class CobranzasService(ISessionService sessions, IAppUserS
                     [DEBE-HABER],IMPORTE,MONEDA,COTIZACION,PERIODO,CABIMPORTE,TIPO_REG,CONTABILIZADO,FechaHora_Grabacion,
                     FechaSubdiario,USUARIO_LOGEADO,IDCAJAS,UNEGOCIO,CABCUENTA,CABNOMBRE,VENCIMIENTO,TJ_AUTORIZO,NroComprobanteBancario,IdVendedor)
                 SELECT @Cuenta,@Sec,@Mes,@Asiento,@Fecha,@Detalle,@Tc,@Suc,@Numero,'X',@Sentido,@Importe,@Moneda,1,@Periodo,
-                    @Total,@Sub,0,GETDATE(),@Fecha,@Usuario,@Caja,@Unidad,NULL,NULL,@Fecha,@Certificado,@Referencia,@Vendedor
-                FROM dbo.V_MV_CPTE WHERE ID=@FacturaId;
+                    @Total,@Sub,0,GETDATE(),@Fecha,@Usuario,@Caja,@Unidad,NULL,NULL,@Fecha,@Certificado,@Referencia,@Vendedor;
                 """,args));
         }
         await Linea(factura.Cliente,total,"H","","");

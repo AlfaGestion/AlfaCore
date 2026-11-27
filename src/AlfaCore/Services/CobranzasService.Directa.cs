@@ -1,3 +1,4 @@
+using AlfaCore.ConciliacionBancaria.Application.Services;
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -85,14 +86,41 @@ public sealed partial class CobranzasService
         {
             cliente=(cliente??"").Trim(); unidad=(unidad??"").Trim();
             if(cliente.Length==0||unidad.Length==0) throw new InvalidOperationException("Seleccioná el cliente y la unidad de negocio.");
+            if(!user.Admin&&unidad!=user.Unidad) throw new InvalidOperationException("La unidad de negocio no está autorizada para el usuario.");
+            // Sin comprobantes pendientes igual se puede cobrar: el importe queda a cuenta (anticipo).
+            var nombre=await cn.QuerySingleOrDefaultAsync<string>(Cmd("""
+                SELECT ISNULL(RAZON_SOCIAL,'') FROM dbo.VT_CLIENTES
+                WHERE LTRIM(RTRIM(CODIGO))=@cliente AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0;
+                """,new{cliente},null,token)) ?? throw new InvalidOperationException("El cliente no existe o está dado de baja.");
             var docs=(await Documentos(cn,cliente,null,token,user)).Where(d=>d.Moneda=="1"&&d.Unidad==unidad).ToList();
-            if(docs.Count==0) throw new InvalidOperationException("El cliente no tiene comprobantes pendientes en pesos para esa unidad de negocio.");
             var talonarios=await Talonarios(cn,unidad,null,token);
             if(talonarios.Count==0) throw new InvalidOperationException("No hay talonario de recibos CB habilitado para la unidad de negocio.");
             var medios=await Medios(cn,null,token,incluirEfectivo:true);
             var hoy=DateTime.Today;
             var saldos=await SaldoClienteAsync(cn,cliente,hoy,user,null,token);
             VerificarSesion(session);
-            return new CobranzaPreparacion { Fecha=hoy,SaldoAl=hoy,SaldosCliente=saldos,Documentos=docs,Medios=medios,Talonarios=talonarios };
+            return new CobranzaPreparacion { Fecha=hoy,SaldoAl=hoy,SaldosCliente=saldos,Documentos=docs,Medios=medios,Talonarios=talonarios,
+                Cliente=cliente,NombreCliente=nombre.Trim(),Unidad=unidad };
+        },ct,MenuKey);
+
+    // Buscador de clientes activos para una cobranza nueva (también los que no deben nada: anticipos).
+    public Task<IReadOnlyList<CargaViajeLookupOptionDto>> BuscarClientesAsync(string texto,CancellationToken ct=default)
+        => Ejecutar<IReadOnlyList<CargaViajeLookupOptionDto>>("BuscarClientesCobro",async(cn,user,session,token)=>
+        {
+            texto=(texto??"").Trim();
+            if(texto.Length<2) return [];
+            if(texto.Length>100) throw new InvalidOperationException("La búsqueda admite hasta 100 caracteres.");
+            var buscar="%"+texto.Replace("[","[[]").Replace("%","[%]").Replace("_","[_]")+"%";
+            var documento=ContraparteBancaria.NormalizarCuit(texto);
+            var filas=(await cn.QueryAsync<CargaViajeLookupOptionDto>(Cmd("""
+                SELECT TOP(30) LTRIM(RTRIM(CODIGO)) Codigo,ISNULL(RAZON_SOCIAL,'') Titulo,
+                    LTRIM(RTRIM(CODIGO))+ISNULL(' · CUIT '+NULLIF(LTRIM(RTRIM(NUMERO_DOCUMENTO)),''),'') Subtitulo
+                FROM dbo.VT_CLIENTES WHERE ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0
+                    AND (CODIGO LIKE @buscar OR RAZON_SOCIAL LIKE @buscar
+                        OR (LEN(@documento)>=4 AND NUMERO_DOCUMENTO LIKE @patron))
+                ORDER BY RAZON_SOCIAL,CODIGO;
+                """,new{buscar,documento,patron=ContraparteBancaria.PatronCuit(documento)},null,token))).AsList();
+            VerificarSesion(session);
+            return filas;
         },ct,MenuKey);
 }

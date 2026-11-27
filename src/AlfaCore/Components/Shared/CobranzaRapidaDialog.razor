@@ -14,20 +14,20 @@
                         Options="@OpcionesDocumentos" Disabled="@Busy" />
                     <p>Seleccioná comprobantes del mismo cliente y unidad para emitir un único recibo.</p>
                 }
-                @if (Documento is { } doc)
+                @if (TieneTitular)
                 {
                     <section class="cobranza-editor__resumen" aria-label="Cliente, saldo actual e ingreso bancario">
                         <div class="cobranza-editor__cliente">
-                            <strong>@doc.Nombre</strong>
-                            <small>Cliente @doc.Cliente · Unidad @doc.Unidad</small>
+                            <strong>@NombreTitular</strong>
+                            <small>Cliente @ClienteTitular · Unidad @UnidadTitular</small>
                             <span>Saldo actual del cliente</span>
                             @if (Preparacion.SaldoAl is { } corte)
                             {
-                                @foreach (var saldo in Preparacion.SaldosCliente.Where(s=>s.Cliente==doc.Cliente))
+                                @foreach (var saldo in Preparacion.SaldosCliente.Where(s=>s.Cliente==ClienteTitular))
                                 {
                                     <strong class="cobranza-editor__importe">@saldo.Moneda @Dinero(saldo.Saldo)</strong>
                                 }
-                                @if (!Preparacion.SaldosCliente.Any(s=>s.Cliente==doc.Cliente)) { <strong class="cobranza-editor__importe">$ 0,00</strong> }
+                                @if (!Preparacion.SaldosCliente.Any(s=>s.Cliente==ClienteTitular)) { <strong class="cobranza-editor__importe">$ 0,00</strong> }
                                 <small>Al @corte.ToString("dd/MM/yyyy") · unidades autorizadas · antes de esta cobranza</small>
                             }
                             else { <small>Saldo no consultado</small> }
@@ -43,8 +43,21 @@
                         }
                     </section>
                     <h3>1. Facturas a cancelar</h3>
-                    <p>Seleccioná las facturas. Podés corregir el importe aplicado a cada una.</p>
+                    @if (Directo && DocumentosUnidad.Count == 0)
+                    {
+                        <p class="cobranza-editor__sugerencia">El cliente no tiene comprobantes pendientes en esta unidad. Lo que cobres queda a cuenta (anticipo) y después se aplica a sus facturas.</p>
+                    }
+                    else if (Directo)
+                    {
+                        <p>Tildá las facturas que cancela este cobro, o ninguna si es un anticipo. Lo que no se aplique queda a cuenta del cliente.</p>
+                    }
+                    else
+                    {
+                        <p>Seleccioná las facturas. Podés corregir el importe aplicado a cada una.</p>
+                    }
                     @if (_seleccionSugerida) { <p class="cobranza-editor__sugerencia">Selección precargada desde la propuesta. Revisala antes de confirmar.</p> }
+                    @if (DocumentosUnidad.Count > 0)
+                    {
                     <div class="cobranza-editor__documentos"><table>
                         <thead><tr><th>Seleccionar</th><th>Comprobante</th><th>Pendiente de factura</th><th>Aplicar</th></tr></thead>
                         <tbody>@foreach(var d in DocumentosUnidad)
@@ -60,6 +73,7 @@
                         }</tbody>
                     </table></div>
                     <p>@_seleccionadas.Count factura(s) · Pendiente seleccionado: <strong>@Dinero(SaldoSeleccionado)</strong>.</p>
+                    }
                 }
                 <h3>@(Directo ? "2. Medios de pago" : "2. Banco y retenciones")</h3>
                 @foreach (var linea in _lineas)
@@ -126,11 +140,18 @@
         <div class="cobranza-editor__totales">
             <span>Total CB: <strong>@Dinero(Total)</strong></span>
             @if (_ajusteActivo){<span>Ajuste incluido: <strong>@Dinero(ParsearImporte(_importeAjuste))</strong></span>}
-            <span>Aplicado: <strong>@Dinero(TotalAplicado)</strong> · Diferencia por aplicar: <strong>@Dinero(Total-TotalAplicado)</strong></span>
+            @if (Directo)
+            {
+                <span>Aplicado a facturas: <strong>@Dinero(TotalAplicado)</strong> · A cuenta (anticipo): <strong>@Dinero(Math.Max(0,Total-TotalAplicado))</strong></span>
+            }
+            else
+            {
+                <span>Aplicado: <strong>@Dinero(TotalAplicado)</strong> · Diferencia por aplicar: <strong>@Dinero(Total-TotalAplicado)</strong></span>
+            }
             <span>Pendiente en facturas seleccionadas: <strong>@Dinero(SaldoSeleccionado-TotalAplicado)</strong></span>
         </div>
         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@Busy" OnClick="() => OnClose.InvokeAsync()">Cancelar</AlfaButton>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(Busy || Documento is null || string.IsNullOrEmpty(_talonario) || _seleccionadas.Count==0 || Total!=TotalAplicado || AplicacionesActuales.Any(a=>a.Importe<=0) || (_ajusteActivo && (string.IsNullOrWhiteSpace(_cuentaAjuste) || string.IsNullOrWhiteSpace(_motivoAjuste) || ParsearImporte(_importeAjuste)==0 || Math.Abs(ParsearImporte(_importeAjuste))>(Preparacion?.LimiteAjuste??0))))"
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(Busy || !TieneTitular || string.IsNullOrEmpty(_talonario) || (Directo ? Total<=0 || TotalAplicado>Total : _seleccionadas.Count==0 || Total!=TotalAplicado) || AplicacionesActuales.Any(a=>a.Importe<=0) || (_ajusteActivo && (string.IsNullOrWhiteSpace(_cuentaAjuste) || string.IsNullOrWhiteSpace(_motivoAjuste) || ParsearImporte(_importeAjuste)==0 || Math.Abs(ParsearImporte(_importeAjuste))>(Preparacion?.LimiteAjuste??0))))"
             OnClick="Confirmar">@(Busy ? "Registrando…" : "Confirmar cobranza CB")</AlfaButton>
     </Footer>
 </AlfaDialog>
@@ -166,7 +187,13 @@
     private CobranzaDocumento? Documento => Preparacion?.Documentos.SingleOrDefault(d=>d.Id.ToString()==_factura);
     private IReadOnlyList<AlfaSelectOption> OpcionesDocumentos => Preparacion?.Documentos.DistinctBy(d=>(d.Cliente,d.Unidad))
         .Select(d=>new AlfaSelectOption(d.Id.ToString(),$"{d.Nombre} · Unidad {d.Unidad}")).ToList() ?? [];
-    private IReadOnlyList<CobranzaDocumento> DocumentosUnidad => Preparacion?.Documentos.Where(d=>d.Cliente==Documento?.Cliente && d.Unidad==Documento?.Unidad).ToList() ?? [];
+    private IReadOnlyList<CobranzaDocumento> DocumentosUnidad => Preparacion?.Documentos.Where(d=>d.Cliente==ClienteTitular && d.Unidad==UnidadTitular).ToList() ?? [];
+    // Titular del recibo: el del comprobante elegido o, en cobranza directa, el cliente elegido aunque no deba nada.
+    private bool DirectoConCliente => Directo && !string.IsNullOrEmpty(Preparacion?.Cliente);
+    private string ClienteTitular => DirectoConCliente ? Preparacion!.Cliente : Documento?.Cliente ?? "";
+    private string UnidadTitular => DirectoConCliente ? Preparacion!.Unidad : Documento?.Unidad ?? "";
+    private string NombreTitular => Documento?.Nombre ?? Preparacion?.NombreCliente ?? "";
+    private bool TieneTitular => ClienteTitular.Length > 0 && UnidadTitular.Length > 0;
     private decimal SaldoSeleccionado => DocumentosUnidad.Where(d=>_seleccionadas.Contains(d.Id)).Sum(d=>d.Saldo);
     private decimal TotalAplicado => AplicacionesActuales.Sum(a=>a.Importe);
     private IReadOnlyList<CobranzaAplicacion> AplicacionesActuales
@@ -192,7 +219,7 @@
         get
         {
             var todos=Preparacion?.Talonarios ?? [];
-            return todos.Any(t=>t.Unidad==Documento?.Unidad) ? todos.Where(t=>t.Unidad==Documento?.Unidad).ToList()
+            return todos.Any(t=>t.Unidad==UnidadTitular) ? todos.Where(t=>t.Unidad==UnidadTitular).ToList()
                 : todos.Where(t=>t.Unidad is "" or "0").ToList();
         }
     }
@@ -203,7 +230,7 @@
         .Select(m=>new AlfaSelectOption(m.Cuenta,$"{m.Descripcion} ({m.Tipo})")).ToList() ?? [];
     private decimal Total => _lineas.Sum(l=>decimal.TryParse(l.Importe,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0)+(_ajusteActivo?ParsearImporte(_importeAjuste):0);
     private CobranzaRetencionSugerida? UltimaRetencion => Preparacion?.RetencionesSugeridas.FirstOrDefault(r=>
-        r.Cliente==Documento?.Cliente && r.Unidad==Documento?.Unidad && OpcionesRetenciones.Any(o=>o.Value==r.Cuenta));
+        r.Cliente==ClienteTitular && r.Unidad==UnidadTitular && OpcionesRetenciones.Any(o=>o.Value==r.Cuenta));
     protected override void OnParametersSet()
     {
         if(ReferenceEquals(_anterior,Preparacion)) return;
@@ -215,12 +242,15 @@
         if(Directo) _lineas.Add(new() { Auto=true });
         else _lineas.Add(new() { Banco=true,Cuenta=Preparacion.CuentaBanco,Importe=Preparacion.ImporteBanco.ToString("0.00",Invariante) });
         var propuestaId=Preparacion.AplicacionesSugeridas.FirstOrDefault()?.FacturaId;
-        CambiarFactura((Preparacion.Documentos.FirstOrDefault(d=>Preseleccion?.Contains(d.Id)==true)
+        var inicial=Preparacion.Documentos.FirstOrDefault(d=>Preseleccion?.Contains(d.Id)==true)
             ?? Preparacion.Documentos.FirstOrDefault(d=>$"{d.Tc}|{d.Comprobante}"==ComprobantePreferido)
-            ?? Preparacion.Documentos.FirstOrDefault(d=>d.Id==propuestaId) ?? Preparacion.Documentos.First()).Id.ToString());
-        if(Directo && Preseleccion is { Count: >0 })
+            ?? Preparacion.Documentos.FirstOrDefault(d=>d.Id==propuestaId) ?? Preparacion.Documentos.FirstOrDefault();
+        CambiarFactura(inicial?.Id.ToString());
+        if(Directo)
         {
-            foreach(var id in Preseleccion.Where(id=>DocumentosUnidad.Any(d=>d.Id==id))) _seleccionadas.Add(id);
+            // Cobranza nueva sin comprobantes tildados en el listado: no se preselecciona ninguno (puede ser un anticipo).
+            _seleccionadas.Clear();
+            foreach(var id in (Preseleccion ?? []).Where(id=>DocumentosUnidad.Any(d=>d.Id==id))) _seleccionadas.Add(id);
             ActualizarRetencionSugerida();
         }
         if(Preparacion.AplicacionesSugeridas.Count>0 && Preparacion.AplicacionesSugeridas.Any(a=>a.FacturaId==Documento?.Id)
@@ -287,15 +317,19 @@
         {
             _error=null;
             if(!DateTime.TryParseExact(_fecha,"yyyy-MM-dd",Invariante,System.Globalization.DateTimeStyles.None,out var fecha)||
-                !int.TryParse(_talonario,out var tal)||Documento is null)
+                !int.TryParse(_talonario,out var tal)||!TieneTitular)
                 throw new InvalidOperationException("Seleccioná comprobante, fecha y talonario.");
             var pagos=_lineas.Select(l=>new CobranzaPago(l.Cuenta,
                 decimal.TryParse(l.Importe,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0,l.Certificado)).ToList();
             var aplicaciones=AplicacionesActuales;
-            if(aplicaciones.Count==0) throw new InvalidOperationException("Seleccioná al menos un comprobante a cobrar.");
-            var solicitud=new CobranzaSolicitud(_operacion,aplicaciones[0].FacturaId,fecha,tal,pagos,Preparacion!.MovimientoId,_detalle,
-                aplicaciones.Count==1 && aplicaciones[0].Importe==Total ? null : aplicaciones,
-                _ajusteActivo?new(_cuentaAjuste,ParsearImporte(_importeAjuste),_motivoAjuste,_recordarAjuste):null);
+            if(aplicaciones.Count==0&&!Directo) throw new InvalidOperationException("Seleccioná al menos un comprobante a cobrar.");
+            // Cobranza directa: siempre a nombre del cliente elegido; lo que no se aplica a facturas queda a cuenta.
+            var solicitud=Directo
+                ? new CobranzaSolicitud(_operacion,aplicaciones.FirstOrDefault()?.FacturaId ?? 0,fecha,tal,pagos,null,_detalle,
+                    aplicaciones,null,new CobranzaACuenta(ClienteTitular,UnidadTitular))
+                : new CobranzaSolicitud(_operacion,aplicaciones[0].FacturaId,fecha,tal,pagos,Preparacion!.MovimientoId,_detalle,
+                    aplicaciones.Count==1 && aplicaciones[0].Importe==Total ? null : aplicaciones,
+                    _ajusteActivo?new(_cuentaAjuste,ParsearImporte(_importeAjuste),_motivoAjuste,_recordarAjuste):null);
             var total=CobranzasService.ValidarImportes(solicitud);
             if(aplicaciones.Any(a=>a.Importe>DocumentosUnidad.Single(d=>d.Id==a.FacturaId).Saldo))
                 throw new InvalidOperationException("El importe aplicado supera el saldo de un comprobante. Revisá los importes y las retenciones.");

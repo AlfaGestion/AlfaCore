@@ -15,3 +15,4 @@
 .cobranzas-page__vencido { color: var(--alfa-color-danger, #d64545); font-weight: 600; }
 .cobranzas-page__pie { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 2px; font-size: 13px; }
 .cobranzas-page__paginas { display: inline-flex; align-items: center; gap: 8px; }
+.cobranzas-nueva { display: grid; gap: 12px; min-height: 280px; align-content: start; }

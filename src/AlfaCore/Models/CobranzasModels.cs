@@ -55,6 +55,10 @@ public sealed class CobranzaPreparacion
     public IReadOnlyList<ConciliacionAsientoCuenta> CuentasAjuste { get; set; } = [];
     public string CuentaAjustePredeterminada { get; set; } = "";
     public decimal LimiteAjuste { get; set; } = 1m;
+    // Cobranza directa: cliente y unidad elegidos, aunque no tengan comprobantes pendientes (anticipo).
+    public string Cliente { get; set; } = "";
+    public string NombreCliente { get; set; } = "";
+    public string Unidad { get; set; } = "";
 }
 
 public sealed class CobranzaSaldoCliente
@@ -91,5 +95,10 @@ public sealed record CobranzaSolicitud(Guid Operacion, int FacturaId, DateTime F
     [property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<CobranzaAplicacion>? Aplicaciones = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    CobranzaAjuste? Ajuste = null);
+    CobranzaAjuste? Ajuste = null,
+    // Cobranza directa con importe a cuenta (anticipo): cliente y unidad del recibo aunque no se aplique a ninguna factura.
+    // Solo sin movimiento bancario. Lo que no se aplica queda como crédito del cliente, igual que un CB sin aplicar del legacy.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    CobranzaACuenta? ACuenta = null);
+public sealed record CobranzaACuenta(string Cliente, string Unidad);
 public sealed record CobranzaResultado(Guid Operacion, int CobranzaId, string Comprobante, int NumeroAsiento, decimal Importe);
