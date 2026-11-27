@@ -2140,6 +2140,13 @@
                         <div class="field">
                             <label>Cliente</label>
                             <LookupAutocomplete @ref="_viajeClienteLookup" Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" OnEnterCommitted="FocusViajeChoferAsync" OnCreateRequested="OnViajeClienteCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
+                            @if (_viajeClienteTieneTarifasPropias is false)
+                            {
+                                <div class="carga-viajes-viaje__tarifas-notice" role="status">
+                                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                    <span>Este cliente no tiene tarifas propias. Se utilizarán tarifas generales.</span>
+                                </div>
+                            }
                             <div class="carga-viajes-viaje__tarifas-block">
                                 <div class="carga-viajes-viaje__tarifas-anchor">
                                     <button type="button"
@@ -2279,6 +2286,27 @@
                             <label>Chofer</label>
                             <LookupAutocomplete @ref="_viajeChoferLookup" Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" OnEnterCommitted="FocusViajeDestinoAsync" OnCreateRequested="OnViajeChoferCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                         </div>
+                        <div class="field field--wide carga-viajes-viaje__choferes-adicionales">
+                            <label>Choferes adicionales <span class="editor-field__optional">(opcional)</span></label>
+                            <LookupAutocomplete Label="" Placeholder="Agregar otro chofer o fletero..." Text="@_viajeChoferAdicionalTexto" TextChanged="OnViajeChoferAdicionalTextoChangedAsync" SelectedChanged="OnViajeChoferAdicionalSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
+                            @if (_viajeForm.ChoferesAdicionales.Count > 0)
+                            {
+                                <div class="carga-viajes-viaje__choferes-adicionales-list">
+                                    @foreach (var choferAdicional in _viajeForm.ChoferesAdicionales)
+                                    {
+                                        <span class="carga-viajes-viaje__chofer-chip">
+                                            @DisplayText(choferAdicional.Nombre, choferAdicional.Codigo)
+                                            @if (!_viajeReadOnly)
+                                            {
+                                                <button type="button" aria-label="Quitar chofer adicional" title="Quitar chofer adicional" @onclick="() => QuitarChoferAdicional(choferAdicional.Codigo)">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            }
+                                        </span>
+                                    }
+                                </div>
+                            }
+                        </div>
                         <div class="field">
                             <label>Destino</label>
                             <LookupAutocomplete @ref="_viajeDestinoLookup" Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" OnEnterCommitted="FocusViajeTipoVehiculoAsync" OnCreateRequested="OnViajeDestinoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
@@ -2307,8 +2335,10 @@
                                        inputmode="decimal"
                                        class="carga-viajes-viaje__money-input"
                                        value="@_viajeImporteFleteroTexto"
-                                       readonly="true"
-                                       aria-readonly="true" />
+                                       @oninput="OnViajeImporteFleteroTextChangedAsync"
+                                       @onchange="OnViajeImporteFleteroTextChangedAsync"
+                                       @onblur="OnViajeImporteFleteroBlurAsync"
+                                       disabled="@_viajeReadOnly" />
                             </div>
                             <div class="field">
                                 <label>Peaje</label>
@@ -2726,6 +2756,8 @@
     private string _viajesFechaRango = "todo";
     private string _viajeClienteTexto = string.Empty;
     private string _viajeChoferTexto = string.Empty;
+    private string _viajeChoferAdicionalTexto = string.Empty;
+    private bool? _viajeClienteTieneTarifasPropias;
     private string _viajeDestinoTexto = string.Empty;
     private string _viajeTipoVehiculoTexto = string.Empty;
     private string _viajeListaTexto = string.Empty;
@@ -4284,7 +4316,9 @@
                 _viajeReadOnly = false;
                 _viajeSeleccionado = null;
                 _viajeForm = BuildDefaultViajeForm(_config);
+                _viajeClienteTieneTarifasPropias = null;
                 _viajeClienteTexto = _viajeChoferTexto = _viajeDestinoTexto = _viajeTipoVehiculoTexto = string.Empty;
+                _viajeChoferAdicionalTexto = string.Empty;
                 await Task.CompletedTask;
                 break;
             default:
@@ -4705,7 +4739,9 @@
         _viajeReadOnly = false;
         _viajeSeleccionado = null;
         _viajeForm = BuildDefaultViajeForm(_config);
+        _viajeClienteTieneTarifasPropias = null;
         _viajeClienteTexto = _viajeChoferTexto = _viajeDestinoTexto = _viajeTipoVehiculoTexto = string.Empty;
+        _viajeChoferAdicionalTexto = string.Empty;
         _viajeListaTexto = string.Empty;
         _viajeListaManualOverride = false;
         _viajeForm.ClienteDisplay = string.Empty;
@@ -5007,13 +5043,14 @@
     private void LogViajeDraftBeforeSave()
     {
         Logger.LogInformation(
-            "UI SaveViaje draft Cliente={Cliente} Chofer={Chofer} Destino={Destino} TipoVehiculo={TipoVehiculo} Lista={Lista} ImporteCliente={ImporteCliente} Fecha={Fecha:yyyy-MM-dd} Adic0={Adic0} Adic1={Adic1} Adic2={Adic2} Adic3={Adic3} Adic4={Adic4}",
+            "UI SaveViaje draft Cliente={Cliente} Chofer={Chofer} Destino={Destino} TipoVehiculo={TipoVehiculo} Lista={Lista} ImporteCliente={ImporteCliente} ImporteFletero={ImporteFletero} Fecha={Fecha:yyyy-MM-dd} Adic0={Adic0} Adic1={Adic1} Adic2={Adic2} Adic3={Adic3} Adic4={Adic4}",
             _viajeForm.Cliente,
             _viajeForm.Chofer,
             _viajeForm.Destino,
             _viajeForm.TipoVehiculo,
             _viajeForm.Lista,
             _viajeForm.ImporteCliente,
+            _viajeForm.ImporteFletero,
             _viajeForm.Fecha,
             GetViajeAdicionalChecked(0),
             GetViajeAdicionalChecked(1),
@@ -5225,6 +5262,9 @@
 
     private async Task OnViajeImporteFleteroBlurAsync(FocusEventArgs _)
     {
+        if (TryParseMoneyInput(_viajeImporteFleteroTexto, out var value))
+            _viajeForm.ImporteFletero = Math.Max(0m, value);
+
         SyncViajeMoneyTexts();
         await Task.CompletedTask;
     }
@@ -5627,6 +5667,17 @@
             ListaDisplay = FormatListaDisplay(detail.Lista, detail.ListaDescripcion),
             ImporteCliente = detail.ImporteCliente > 0m ? detail.ImporteCliente : detail.TotalCliente,
             ImporteFletero = detail.ImporteFletero > 0m ? detail.ImporteFletero : detail.TotalFletero,
+            ChoferesAdicionales = detail.Choferes
+                .Where(c => !string.Equals(c.Codigo, detail.ChoferCodigo, StringComparison.OrdinalIgnoreCase))
+                .Select(c => new CargaViajeChoferAsignadoDto
+                {
+                    Id = c.Id,
+                    Codigo = c.Codigo,
+                    Nombre = c.Nombre,
+                    Orden = c.Orden,
+                    ImporteFlete = c.ImporteFlete
+                })
+                .ToList(),
             Peaje = detail.Peaje,
             CantidadViajes = detail.CantidadViajes,
             PorcentajeAdic = detail.PorcentajeAdic,
@@ -5654,6 +5705,7 @@
 
         _viajeClienteTexto = _viajeForm.ClienteDisplay;
         _viajeChoferTexto = _viajeForm.ChoferDisplay;
+        _viajeChoferAdicionalTexto = string.Empty;
         _viajeDestinoTexto = _viajeForm.DestinoDisplay;
         _viajeTipoVehiculoTexto = _viajeForm.TipoVehiculoDisplay;
         _viajeListaTexto = _viajeForm.ListaDisplay;
@@ -5684,6 +5736,7 @@
             form.ListaDisplay,
             form.ImporteCliente,
             form.ImporteFletero,
+            form.ChoferesAdicionales,
             form.Peaje,
             form.CantidadViajes,
             form.PorcentajeAdic,
@@ -7683,6 +7736,7 @@
         _viajeClienteTexto = text;
         _viajeForm.Cliente = string.Empty;
         _viajeForm.ClienteDisplay = text;
+        _viajeClienteTieneTarifasPropias = null;
         _viajeForm.Lista = string.Empty;
         _viajeForm.ListaDisplay = string.Empty;
         ResetViajeTarifasClientePanelState();
@@ -7754,9 +7808,28 @@
         _viajeForm.ListaDisplay = string.IsNullOrWhiteSpace(item.Subtitulo) ? item.Lista : item.Subtitulo;
         _viajeClienteTexto = _viajeForm.ClienteDisplay;
         ResetViajeTarifasClientePanelState();
+        await ActualizarAvisoTarifasClienteAsync();
         _viajeDirty = true;
         await ActualizarTarifaClienteAsync();
         await Task.CompletedTask;
+    }
+
+    private async Task ActualizarAvisoTarifasClienteAsync()
+    {
+        _viajeClienteTieneTarifasPropias = null;
+        var cliente = (_viajeForm.Cliente ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cliente))
+            return;
+
+        var result = await UiOps.RunAsync(
+            () => CargaViajesSvc.GetTarifasPorClienteAsync(cliente),
+            "No se pudo verificar si el cliente tiene tarifas propias.");
+        if (result.Success && result.Value is not null)
+        {
+            _viajeClienteTieneTarifasPropias = result.Value.Any(tarifa => !tarifa.EsTarifaGeneral);
+            _viajeTarifasClienteRows.Clear();
+            _viajeTarifasClienteRows.AddRange(result.Value);
+        }
     }
 
     private bool _canOpenTarifasClienteSelector
@@ -8011,9 +8084,44 @@
         _viajeForm.Chofer = item.Codigo;
         _viajeForm.ChoferDisplay = FormatLookupDisplay(item.Codigo, item.Titulo);
         _viajeChoferTexto = _viajeForm.ChoferDisplay;
+        _viajeForm.ChoferesAdicionales.RemoveAll(chofer => string.Equals(chofer.Codigo, item.Codigo, StringComparison.OrdinalIgnoreCase));
         _viajeDirty = true;
         await ActualizarTarifaFleteroAsync(allowManualOverride: true);
         await Task.CompletedTask;
+    }
+
+    private async Task OnViajeChoferAdicionalTextoChangedAsync(string text)
+    {
+        _viajeChoferAdicionalTexto = text;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeChoferAdicionalSeleccionadoAsync(CargaViajeLookupOptionDto item)
+    {
+        var codigo = (item.Codigo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(codigo)
+            || string.Equals(codigo, _viajeForm.Chofer, StringComparison.OrdinalIgnoreCase)
+            || _viajeForm.ChoferesAdicionales.Any(chofer => string.Equals(chofer.Codigo, codigo, StringComparison.OrdinalIgnoreCase)))
+        {
+            _viajeChoferAdicionalTexto = string.Empty;
+            return;
+        }
+
+        _viajeForm.ChoferesAdicionales.Add(new CargaViajeChoferAsignadoDto
+        {
+            Codigo = codigo,
+            Nombre = (item.Titulo ?? string.Empty).Trim(),
+            Orden = _viajeForm.ChoferesAdicionales.Count + 2
+        });
+        _viajeChoferAdicionalTexto = string.Empty;
+        _viajeDirty = true;
+        await Task.CompletedTask;
+    }
+
+    private void QuitarChoferAdicional(string codigo)
+    {
+        _viajeForm.ChoferesAdicionales.RemoveAll(chofer => string.Equals(chofer.Codigo, codigo, StringComparison.OrdinalIgnoreCase));
+        _viajeDirty = true;
     }
 
     private async Task OnViajeDestinoSelectedAsync(CargaViajeLookupOptionDto item)

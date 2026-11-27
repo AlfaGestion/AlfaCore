@@ -1,0 +1,32 @@
+-- ============================================================
+-- Carga de viajes - choferes asignados por viaje
+-- Conserva MV_VIAJES_CARGA.IDCHOFER como chofer principal y
+-- permite registrar uno o más choferes adicionales.
+-- ============================================================
+SET NOCOUNT ON;
+
+IF OBJECT_ID(N'dbo.MV_VIAJES_CARGA', N'U') IS NULL
+    RETURN;
+
+IF OBJECT_ID(N'dbo.MV_VIAJES_CARGA_CHOFERES', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.MV_VIAJES_CARGA_CHOFERES
+    (
+        ID int IDENTITY(1,1) NOT NULL,
+        IDVIAJE int NOT NULL,
+        IDCHOFER nvarchar(4) NOT NULL,
+        ORDEN int NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_CHOFERES_ORDEN DEFAULT (1),
+        IMPORTE_FLETE money NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_CHOFERES_IMPORTE DEFAULT (0),
+        FECHAHORA_ALTA datetime NULL,
+        FECHAHORA_MODIFICACION datetime NULL,
+        CONSTRAINT PK_MV_VIAJES_CARGA_CHOFERES PRIMARY KEY CLUSTERED (ID),
+        CONSTRAINT UQ_MV_VIAJES_CARGA_CHOFERES_VIAJE_CHOFER UNIQUE (IDVIAJE, IDCHOFER)
+    );
+
+    CREATE INDEX IX_MV_VIAJES_CARGA_CHOFERES_VIAJE
+        ON dbo.MV_VIAJES_CARGA_CHOFERES (IDVIAJE, ORDEN);
+
+    CREATE INDEX IX_MV_VIAJES_CARGA_CHOFERES_CHOFER
+        ON dbo.MV_VIAJES_CARGA_CHOFERES (IDCHOFER, IDVIAJE);
+END;
+GO

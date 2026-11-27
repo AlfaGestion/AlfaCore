@@ -10,10 +10,6 @@ DECLARE @def nvarchar(max) = OBJECT_DEFINITION(OBJECT_ID(N'dbo.sp_web_Alta_Compr
 IF @def IS NULL OR CHARINDEX(N'ALFACORE_NP_CONDICION_VENTA_DEFAULT', @def) > 0
     RETURN;
 
-DECLARE @needle nvarchar(max) = N'IF @condicionIva IS NULL SET @condicionIva = ''   1''';
-IF CHARINDEX(@needle, @def) = 0
-    THROW 51001, 'No se pudo localizar el punto seguro para homologar la condición de venta de la NP en sp_web_Alta_Comprobante.', 1;
-
 DECLARE @insert nvarchar(max) = N'
 IF NULLIF(LTRIM(RTRIM(@idCondCpraVta)), '''') IS NULL
 BEGIN
@@ -32,8 +28,35 @@ BEGIN
         WHERE LTRIM(RTRIM(IDCond_Cpra_Vta)) = ''1'';
 END';
 
-SET @def = REPLACE(@def, @needle, @needle + @insert);
-SET @def = REPLACE(@def,
-    N'CREATE PROCEDURE [dbo].[sp_web_Alta_Comprobante]',
-    N'ALTER PROCEDURE [dbo].[sp_web_Alta_Comprobante]');
+DECLARE @insertPos int = CHARINDEX(N'SET @idComprobante', @def);
+IF @insertPos = 0
+BEGIN
+    RAISERROR('No se pudo localizar SET @idComprobante en sp_web_Alta_Comprobante.', 16, 1);
+    RETURN;
+END;
+
+SET @def = STUFF(@def, @insertPos, 0, @insert + CHAR(13) + CHAR(10));
+DECLARE @createPos int = PATINDEX(N'%CREATE%PROCEDURE%', @def);
+IF CHARINDEX(N'CREATE OR ALTER PROCEDURE', @def) > 0
+    SET @def = REPLACE(@def, N'CREATE OR ALTER PROCEDURE', N'ALTER PROCEDURE');
+ELSE IF CHARINDEX(N'ALTER PROCEDURE', @def) > 0 OR CHARINDEX(N'ALTER PROC', @def) > 0
+    SET @createPos = 0;
+ELSE IF @createPos > 0
+BEGIN
+    DECLARE @procedurePos int = CHARINDEX(N'PROCEDURE', @def, @createPos);
+    SET @def = STUFF(@def, @createPos, @procedurePos + LEN(N'PROCEDURE') - @createPos, N'ALTER PROCEDURE');
+END;
+ELSE
+BEGIN
+    SET @createPos = CHARINDEX(N'CREATE PROC', @def);
+    IF @createPos > 0
+        SET @def = STUFF(@def, @createPos, LEN(N'CREATE PROC'), N'ALTER PROC');
+END;
+
+IF CHARINDEX(N'ALTER PROCEDURE', @def) = 0 AND CHARINDEX(N'ALTER PROC', @def) = 0
+BEGIN
+    RAISERROR('No se pudo preparar sp_web_Alta_Comprobante para su actualización.', 16, 1);
+    RETURN;
+END;
+
 EXEC sys.sp_executesql @def;

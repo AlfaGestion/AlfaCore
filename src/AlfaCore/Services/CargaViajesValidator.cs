@@ -68,8 +68,27 @@ public sealed class CargaViajesValidator(
         if (!await ExistsAsync(cn, "Vt_Clientes", "CODIGO", request.Cliente, ct))
             result.Add("cliente", "El cliente seleccionado no existe.");
 
-        if (!await ExistsAsync(cn, await ResolveChoferTableAsync(cn, ct), await ResolveChoferCodeColumnAsync(cn, ct), request.Chofer, ct))
+        var choferTable = await ResolveChoferTableAsync(cn, ct);
+        var choferCodeColumn = await ResolveChoferCodeColumnAsync(cn, ct);
+        if (!await ExistsAsync(cn, choferTable, choferCodeColumn, request.Chofer, ct))
             result.Add("chofer", "El chofer seleccionado no existe.");
+
+        var choferesAdicionales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var choferAdicional in request.ChoferesAdicionales ?? [])
+        {
+            var codigo = (choferAdicional.Codigo ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(codigo) || !choferesAdicionales.Add(codigo))
+                continue;
+
+            if (string.Equals(codigo, request.Chofer.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                result.Add("choferes-adicionales", "No se puede repetir el chofer principal.");
+                continue;
+            }
+
+            if (!await ExistsAsync(cn, choferTable, choferCodeColumn, codigo, ct))
+                result.Add("choferes-adicionales", $"El chofer adicional '{codigo}' no existe.");
+        }
 
         if (!await ExistsAsync(cn, await ResolveDestinoTableAsync(cn, ct), await ResolveDestinoCodeColumnAsync(cn, ct), request.Destino, ct))
             result.Add("destino", "El destino seleccionado no existe.");
