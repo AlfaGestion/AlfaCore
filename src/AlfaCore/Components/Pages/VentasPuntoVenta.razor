@@ -6590,6 +6590,20 @@
         return element.scrollHeight <= element.clientHeight + 1;
     };
 
+    window.alfaPosScrollCartTo = function (container, index) {
+        if (!container) {
+            return;
+        }
+
+        var lines = container.querySelectorAll('.pos-line');
+        var target = index >= 0 && index < lines.length ? lines[index] : lines[lines.length - 1];
+        if (target) {
+            target.scrollIntoView({ block: 'nearest' });
+        } else {
+            container.scrollTop = container.scrollHeight;
+        }
+    };
+
     window.alfaPosScrollToTop = function (element) {
         if (element) {
             element.scrollTop = 0;
@@ -7100,7 +7114,7 @@
 
         <section class="pos-stage @(_settings.ModoIngresoRapido != PuntoVentaIngresoRapidoModoKeys.Deshabilitado ? "pos-stage--quick" : string.Empty)">
             <aside class="pos-sidebar">
-                <div class="pos-sidebar__items">
+                <div class="pos-sidebar__items" @ref="_cartItemsRef">
                     @if (!_cartItems.Any())
                     {
                         <div class="pos-sidebar__empty">
@@ -7136,7 +7150,7 @@
                                                 <i class="bi bi-trash3"></i>
                                             </button>
                                         </div>
-                                        @if (EsNotaPedido && !string.IsNullOrWhiteSpace(item.Observaciones))
+                                        @if (!string.IsNullOrWhiteSpace(item.Observaciones))
                                         {
                                             <div class="pos-line__observation"><i class="bi bi-chat-left-text"></i> @item.Observaciones</div>
                                         }
@@ -7427,22 +7441,19 @@
 
             <div class="pos-item-modal__price">@FmtMoney(SelectedCartItem.Subtotal)</div>
 
-            @if (EsNotaPedido)
-            {
-                <label class="pos-item-modal__observation">
-                    <span><i class="bi bi-chat-left-text" aria-hidden="true"></i> Nota para preparación</span>
-                    <textarea @bind="_lineObservationBeingEdited" maxlength="500"
-                              @ref="_lineObservationRef"
-                              placeholder="Indicaciones para este artículo"></textarea>
-                </label>
-                <div class="pos-item-modal__observation-actions">
-                    <button type="button" @onclick="SaveLineObservation">Guardar nota</button>
-                    @if (!string.IsNullOrWhiteSpace(SelectedCartItem.Observaciones))
-                    {
-                        <button type="button" class="is-muted" @onclick="ClearLineObservation">Quitar nota</button>
-                    }
-                </div>
-            }
+            <label class="pos-item-modal__observation">
+                <span><i class="bi bi-chat-left-text" aria-hidden="true"></i> Observación</span>
+                <textarea @bind="_lineObservationBeingEdited" maxlength="500"
+                          @ref="_lineObservationRef"
+                          placeholder="Indicaciones para este artículo"></textarea>
+            </label>
+            <div class="pos-item-modal__observation-actions">
+                <button type="button" @onclick="SaveLineObservation">Guardar nota</button>
+                @if (!string.IsNullOrWhiteSpace(SelectedCartItem.Observaciones))
+                {
+                    <button type="button" class="is-muted" @onclick="ClearLineObservation">Quitar nota</button>
+                }
+            </div>
 
             <button type="button" class="pos-item-modal__danger" @onclick="() => RemoveItemAndClose(SelectedCartItem!)">Eliminar</button>
 
@@ -10344,7 +10355,7 @@
             try { await _manualArticlePriceRef.FocusAsync(); } catch { }
         }
 
-        if (_lineObservationFocusPending && SelectedCartItem is not null && EsNotaPedido)
+        if (_lineObservationFocusPending && SelectedCartItem is not null)
         {
             _lineObservationFocusPending = false;
             try { await _lineObservationRef.FocusAsync(); } catch { }
@@ -10370,6 +10381,19 @@
             {
                 await LoadMoreCatalogAsync();
                 await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        if (_cartScrollToIndex is int cartScrollIndex)
+        {
+            _cartScrollToIndex = null;
+            try
+            {
+                await Js.InvokeVoidAsync("alfaPosScrollCartTo", _cartItemsRef, cartScrollIndex);
+            }
+            catch
+            {
+                // Mostrar la línea agregada es solo una mejora visual; no debe afectar el POS.
             }
         }
 
@@ -10639,6 +10663,7 @@
                     }
 
                     existente.Cantidad = cantidadNueva;
+                    _cartScrollToIndex = _cartItems.IndexOf(existente);
                     _chargeSuccess = null;
                     ConsumirIngresoRapido();
                     return;
@@ -10770,6 +10795,9 @@
 
     private bool _mobileCartView;
     private bool _mobileScrollToTop;
+    private ElementReference _cartItemsRef;
+    /// <summary>Línea del carrito a mostrar tras agregar un artículo (se desplaza la lista hasta ella).</summary>
+    private int? _cartScrollToIndex;
 
     private decimal GetMobileArticleQuantity(string idArticulo)
         => _cartItems.FirstOrDefault(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase))?.Cantidad ?? 0m;
@@ -10843,13 +10871,15 @@
     {
         _chargeSuccess = null;
         var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo
-            && (!EsNotaPedido || string.IsNullOrWhiteSpace(x.Observaciones)));
+            && string.IsNullOrWhiteSpace(x.Observaciones));
         if (existing is not null)
         {
             existing.Cantidad += cantidad;
+            _cartScrollToIndex = _cartItems.IndexOf(existing);
             return;
         }
 
+        _cartScrollToIndex = _cartItems.Count;
         _cartItems.Add(new PuntoVentaCartItemDto
         {
             IdArticulo = article.IdArticulo,
@@ -11001,7 +11031,7 @@
             ? string.Empty
             : item.Descripcion;
         _lineObservationBeingEdited = item.Observaciones ?? string.Empty;
-        _lineObservationFocusPending = EsNotaPedido;
+        _lineObservationFocusPending = true;
     }
 
     private void CloseCartItemModal()
@@ -11027,7 +11057,7 @@
 
     private void SaveLineObservation()
     {
-        if (SelectedCartItem is null || !EsNotaPedido)
+        if (SelectedCartItem is null)
             return;
 
         SelectedCartItem.Observaciones = _lineObservationBeingEdited.Trim();
