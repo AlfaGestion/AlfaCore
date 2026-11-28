@@ -17,9 +17,9 @@ BEGIN
 END;
 GO
 
-UPDATE dbo.ALFACORE_MENU_WEB
-SET RutaWeb    = N'/ventas',
-    Componente = N'Ventas'
-WHERE Menu = N'ALFA'
-  AND Clave = N'D60';
+-- 2026-11-28: SIN EFECTO. Este cambio lo reemplazó 2026-10-13-001 (D60 -> /shell/D60, panel de opciones de Ventas),
+-- y /ventas ahora redirige a Punto de venta. En ALFANET2007 este script se aplicó tarde (26/11, por salteado) y volvió
+-- a mandar "Ventas" directo a Punto de venta. Se deja vacío para que ninguna base que lo corra tarde vuelva a romperse.
+-- Ver 2026-11-28-003__ventas_menu_raiz_panel.sql.
+PRINT N'2026-09-19-001: sin efecto (reemplazado por 2026-10-13-001).';
 GO

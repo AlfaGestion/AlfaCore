@@ -9,8 +9,7 @@ SET NOCOUNT ON;
 IF OBJECT_ID(N'dbo.ALFACORE_MENU_WEB', N'U') IS NULL
     RETURN;
 
-UPDATE dbo.ALFACORE_MENU_WEB
-SET RutaWeb = N'/ventas/punto-venta',
-    Componente = N'VentasPuntoVentaSelector'
-WHERE Menu = N'ALFA'
-  AND Clave = N'D60';
+-- 2026-11-28: SIN EFECTO. Lo reemplazó 2026-10-13-001 (D60 -> /shell/D60, panel de opciones de Ventas). Se deja vacío
+-- para que una base que lo corra tarde (scripts salteados) no vuelva a mandar "Ventas" directo a Punto de venta.
+-- Ver 2026-11-28-003__ventas_menu_raiz_panel.sql.
+PRINT N'2026-09-22-006: sin efecto (reemplazado por 2026-10-13-001).';
