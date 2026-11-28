@@ -23,7 +23,7 @@ public sealed class SqlTools(ToolRunner runner, SqlExecutor ejecutor)
                 """, null, ct, maxFilas: 2000);
             var r = new ToolResponse
             {
-                Criterio = "Una fila por vista. dir.vw_Ventas = una fila por línea vendida, con signo aplicado (NC negativas), neto sin IVA, costo y margen. " +
+                Criterio = "Una fila por vista. dir.vw_Ventas = una fila por línea vendida, con signo aplicado (NC negativas), neto sin IVA, costo y margen; los comprobantes cargados sin artículos van en una sola fila con SinDetalle = 1 (ArticuloCodigo vacío, sin costo). " +
                            "dir.vw_CuentaCorriente = saldos abiertos por comprobante. dir.vw_Stock = existencia por artículo y depósito. " +
                            "dir.vw_Compras = una fila por comprobante del libro de IVA compras (+ proformas), con signo. dir.vw_ComprasDetalle = líneas de artículos de esas compras. " +
                            "dir.vw_CuentaCorrienteProveedores = saldos abiertos con proveedores (Saldo < 0 = crédito a favor)."
@@ -41,7 +41,7 @@ public sealed class SqlTools(ToolRunner runner, SqlExecutor ejecutor)
     [Description("Ejecuta una consulta SELECT de T-SQL propia SOLO sobre las vistas del esquema dir (dir.vw_Ventas, dir.vw_Articulos, dir.vw_Clientes, dir.vw_CuentaCorriente, dir.vw_Stock, dir.vw_Proveedores, dir.vw_Compras, dir.vw_ComprasDetalle, dir.vw_CuentaCorrienteProveedores). " +
                  "Usarla únicamente cuando ninguna otra herramienta responda la pregunta. Una sola sentencia, sin variables, sin funciones de tabla; CTEs permitidas. " +
                  "Compatible con SQL Server 2008: sin LAG/LEAD, IIF, CONCAT, FORMAT ni OFFSET/FETCH. Los literales de fecha se interpretan como AAAA-MM-DD. " +
-                 "Las ventas ya vienen con signo y neto sin IVA en dir.vw_Ventas (columnas NetoSinIva, CostoTotal, Margen): sumarlas sin volver a aplicar signo. " +
+                 "Las ventas ya vienen con signo y neto sin IVA en dir.vw_Ventas (columnas NetoSinIva, CostoTotal, Margen): sumarlas sin volver a aplicar signo; para contar comprobantes usar COUNT(DISTINCT Tc + Comprobante), no COUNT(*). " +
                  "El resultado se recorta al máximo configurado. Llamar antes a describir_esquema para ver las columnas.")]
     public Task<ToolResponse> ConsultarSql(
         [Description("Sentencia SELECT en T-SQL, ej: SELECT TOP 10 RubroNombre, SUM(NetoSinIva) AS Ventas FROM dir.vw_Ventas WHERE Fecha >= '2026-10-01' GROUP BY RubroNombre ORDER BY 2 DESC")] string sql,

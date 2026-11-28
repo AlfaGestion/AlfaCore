@@ -97,7 +97,7 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
             r.Filas = res.Filas;
             r.Truncado = res.Truncado;
             if (res.Truncado) r.Advertencias.Add($"Hay más de {cfg.MaxFilas} grupos; la lista está recortada (los totales son del período completo).");
-            r.Totales = await TotalesAsync(cfg, p, r, ct);
+            r.Totales = await TotalesAsync(cfg, p, r, ct, porArticulo: grupo is "rubro" or "articulo");
             return r;
         }, ct);
 
@@ -137,7 +137,7 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
                 ORDER BY {orden} DESC, ArticuloCodigo
                 """, p, ct);
             r.Filas = res.Filas;
-            r.Totales = await TotalesAsync(cfg, p, r, ct);
+            r.Totales = await TotalesAsync(cfg, p, r, ct, porArticulo: true);
             return r;
         }, ct);
 
@@ -342,7 +342,8 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
     // ---- helpers --------------------------------------------------------------------------------------------------------
 
     /// <summary>Totales del periodo completo (no recortados) + advertencia si hay muchas lineas sin costo.</summary>
-    private async Task<Dictionary<string, object?>> TotalesAsync(McpRuntimeSettings cfg, Dictionary<string, object?> p, ToolResponse r, CancellationToken ct)
+    private async Task<Dictionary<string, object?>> TotalesAsync(McpRuntimeSettings cfg, Dictionary<string, object?> p, ToolResponse r, CancellationToken ct,
+        bool porArticulo = false)
     {
         var t = (await sql.QueryAsync(cfg, $"""
             SELECT CAST(ISNULL(SUM(NetoSinIva), 0) AS decimal(18,2)) AS Ventas,
@@ -350,12 +351,18 @@ public sealed class NegocioTools(ToolRunner runner, SqlExecutor sql)
                    CAST(ISNULL(SUM(Margen), 0) AS decimal(18,2)) AS Margen,
                    CAST(CASE WHEN SUM(NetoSinIva) = 0 THEN NULL ELSE 100.0 * SUM(Margen) / SUM(NetoSinIva) END AS decimal(9,2)) AS MargenPct,
                    COUNT(DISTINCT Tc + N'|' + Comprobante) AS Comprobantes,
+                   COUNT(DISTINCT CASE WHEN ArticuloCodigo = N'' THEN Tc + N'|' + Comprobante END) AS ComprobantesSinDetalle,
                    COUNT(*) AS Lineas,
                    ISNULL(SUM(SinCosto), 0) AS LineasSinCosto
             FROM dir.vw_Ventas
             WHERE {Filtro(p)}
             """, p, ct)).Filas.Single();
         AdvertirSinCosto(cfg, Convert.ToInt64(t["Lineas"]), Convert.ToInt64(t["LineasSinCosto"]), r);
+        // Comprobantes cargados solo con importe (sin lineas de articulos): cuentan en los totales pero no tienen articulo ni rubro.
+        var sinDetalle = Convert.ToInt64(t["ComprobantesSinDetalle"]);
+        if (porArticulo && sinDetalle > 0)
+            r.Advertencias.Add($"{sinDetalle} de {Convert.ToInt64(t["Comprobantes"])} comprobantes del período se cargaron sin detalle de artículos: " +
+                               "cuentan en los totales, pero en este listado aparecen juntos como 'Sin detalle de artículos' (sin rubro ni costo).");
         if (Convert.ToInt64(t["Lineas"]) == 0)
             r.Advertencias.Add(p.ContainsKey("Cliente") || p.ContainsKey("Articulo")
                 ? "No hay ventas en el período para ese cliente / artículo. Si no es lo esperado, verificar el código con buscar_clientes / buscar_articulos."
