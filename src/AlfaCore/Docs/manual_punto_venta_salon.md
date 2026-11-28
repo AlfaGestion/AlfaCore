@@ -15,7 +15,7 @@ Lo prepara una sola vez el administrador:
 1. En [[bi:pencil-square]] **Agregar o editar puntos**, creá un punto de venta con modo **Salón** y elegí la caja y la sucursal. Ahí también elegís los **rubros** que vende (por ejemplo, solo *Bar y cocina*), la **lista de precios** y la **clase de precio**: valen para el salón, el Mostrador y la carta QR.
 2. En el mismo lugar, cargá los **sectores** (Salón, Terraza, Barra…) y las **mesas** de cada sector, con su capacidad.
 3. Entrá al salón y acomodá las mesas en el plano (ver **Editar el plano**).
-4. En cada artículo que se prepara, indicá a dónde va: en el campo de destino del artículo (**TalleDefault**) poné **C** para cocina, **B** para barra o **R** para barra 2. Es el mismo dato que usa el salón de Alfa Gestión. Lo que no tiene letra (gaseosas, agua, cubiertos) no pasa por la cocina.
+4. En cada artículo que se prepara, indicá a dónde va: en **Artículos**, abrí el artículo y elegí **Destino de preparación (salón)**: Cocina, Barra o Barra 2. Para varios a la vez, tildalos en el listado y usá **Acción por lote** → **Asignar destino de preparación**. Es el mismo dato que usa el salón de Alfa Gestión (campo TalleDefault: C, B o R). Lo que queda en **Ninguno** (gaseosas, agua, cubiertos) no pasa por la cocina. Los artículos que usan talles no muestran esta opción.
 5. Los **mozos** son los vendedores de Alfa Gestión. Si querés que sea obligatorio elegir mozo al abrir una mesa, activá **Requiere mozo** en la configuración del salón.
 6. Si cobrás **cubierto**, configurá el artículo de cubierto: se agrega uno por persona al abrir la mesa.
 7. Si vas a usar la carta en el celular, configurala desde [[bi:qr-code]] **Carta QR** e imprimí los QR (ver **Carta QR: configuración**).

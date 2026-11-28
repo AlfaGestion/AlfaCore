@@ -395,6 +395,56 @@ Criterio aplicado:
 - Datos que usa: `IConsultasService`
 - Observaciones: expone utilidades para explorar tablas y columnas visibles vía `INFORMATION_SCHEMA`.
 
+## Artículos: fórmula de producción y cascada de costos
+
+### ArticulosService.Formula
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ArticulosService.Formula.cs`
+- Propósito: partial de `ArticulosService`. Solapa "Fórmula" del editor de artículos (port de la solapa Insumos de `Ma_art.frm`): lee y graba insumos y tareas de producción. `ResolverInsumosAsync` es la **única** rutina de valuación de insumos (COSTO o PRECIOn según `ClasePr`, conversión de unidades por `S_TA_EQUIV`); la usan el editor y la cascada.
+- Datos que usa: `V_MA_INSUMOS`, `V_MA_INSUMOSTAREAS`, `V_TA_TAREAS`, `S_TA_EQUIV`, `V_MA_ARTICULOS` (`ActualizaCosto`, `InsumosPorPorcentaje`, `CostoInsumos`, `Procedencia`), `v_ta_unidad`.
+- Observaciones: graba dentro de la transacción del artículo; rechaza ciclos (`ArticuloFormulaCalculo.BuscarCiclo`). Insumos en otra moneda: avisa, no convierte.
+
+### ArticulosService.Cascada
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ArticulosService.Cascada.cs`
+- Propósito: partial de `ArticulosService`. `PropagarCostosAsync(cn, tx, origenes, usuario)` recalcula, en orden y una sola vez, los productos con "Calcular costo automáticamente" que usan como insumo a los artículos que cambiaron, hasta el final de la cadena; aplica margen del maestro y de cada lista. Con `PreciosArticulosPorBorrador=SI` graba el costo y manda los precios a `V_MA_PRECIOS_BORRADOR` (formato de Alfa Gestión).
+- Datos que usa: `V_MA_INSUMOS`, `V_MA_ARTICULOS`, `V_MA_PRECIOS`, `V_MA_PRECIOS_BORRADOR`, `V_MA_PRECIOSCAB`, `TA_CONFIGURACION`.
+- Observaciones: corre en la transacción del llamador (editor `GuardarConCascadaAsync`/`PrevisualizarCascadaAsync`, `AplicarLoteAsync`, `CostosService` aplicar/deshacer, `PoliticasPreciosService.AplicarAsync`, `PreciosBorradorService`). Todo nuevo cambio de costo debe llamarla en vez de recalcular por su cuenta. También tiene `RetenerPreciosArticulosAsync` / `RetenerPreciosListaAsync`: con `PreciosArticulosPorBorrador=SI` corren la operación en un savepoint, graban solo el costo y mandan los precios nuevos al borrador; **todo nuevo cambio de precio de venta debe pasar por ellas**.
+
+### ArticuloFormulaCalculo
+
+- Tipo: DTO
+- Ubicación: `src/AlfaCore/Models/ArticulosFormulaModels.cs`
+- Propósito: clase de cálculo puro (con los DTO de la fórmula). Cálculos testeables: valor por unidad, costo de tareas, total, validaciones, ciclos y orden de la cascada (`OrdenCascada`).
+- Datos que usa: ninguno (sin base).
+- Observaciones: tests en `tests/AlfaCore.Tests/ArticulosFormulaTests.cs`.
+
+### ArticuloFormulaEditor
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Shared/ArticuloFormulaEditor.razor`
+- Propósito: componente compartido (no es página con ruta). Grilla editable de insumos y tareas de la solapa Fórmula (buscador F5 compartido, "Copiar de…").
+- Datos que usa: `IArticulosService`
+- Observaciones: no graba sola; edita `ArticuloSaveRequest.Formula` y el artículo la graba al guardar.
+
+### PreciosBorradorService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PreciosBorradorService.cs`
+- Propósito: borrador de precios (D010508 del legacy, FrmBorradorPrecios): lista, aplica y descarta filas de `V_MA_PRECIOS_BORRADOR` (B = maestro, V = lista, G = grupo de listas). Un precio en 0 o vacío en el borrador no se aplica (`PrecioBorradorCalculo.ValorAplicado`).
+- Datos que usa: `V_MA_PRECIOS_BORRADOR`, `V_MA_ARTICULOS`, `V_MA_PRECIOS`, `V_MA_PRECIOSCAB`, `TA_CONFIGURACION`.
+- Observaciones: tabla compartida con Alfa Gestión; al aplicar precios del maestro llama a la cascada de fórmulas. Permiso D010508 (script `2026-11-28-002__articulos_borrador_precios_menu_web.sql`).
+
+### ArticulosBorradorPrecios
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/ArticulosBorradorPrecios.razor`
+- Propósito: pantalla `/articulos/borrador-precios` para revisar (actual → nuevo, variación), aplicar y descartar cambios de precios pendientes.
+- Datos que usa: `IPreciosBorradorService`
+- Observaciones: shell AlfaDesign, módulo `articulos`.
+
 ## Costos
 
 ### CostosService
@@ -403,7 +453,7 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/CostosService.cs`
 - Propósito: administra perfiles de importación, detecta columnas de archivos, importa listas de costos, matchea artículos, confirma decisiones, aplica costos y permite revertir la última aplicación.
 - Datos que usa: `V_Ta_InterODBC`, `VT_PROVEEDORES`, `IA_Costos_Importacion_CAB`, `IA_Costos_Importacion_DET`, `IA_Costos_Actualizacion_Hist`, `V_MA_ARTICULOS`
-- Observaciones: escribe auditoría funcional con `IAppEventService`; además guarda archivos fuente en `App_Data/CostosImports`.
+- Observaciones: escribe auditoría funcional con `IAppEventService`; además guarda archivos fuente en `App_Data/CostosImports`. Al aplicar costos llama a `ArticulosService.PropagarCostosAsync` (cascada de fórmulas).
 
 ### CostosModels
 

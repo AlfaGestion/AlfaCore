@@ -1,3 +1,4 @@
+using AlfaCore.Models;
 using AlfaCore.Services;
 using Xunit;
 
@@ -21,4 +22,16 @@ public class ArticulosLoteTests
     [InlineData(1500, 150, 10.5, 10, 4140)]  // 4143.75 -> 4140
     public void PrecioDesdeUtilidadIgualQueElEditor(decimal costo, decimal utilidad, decimal iva, decimal paso, decimal esperado)
         => Assert.Equal(esperado, ArticuloLoteCalculo.PrecioDesdeUtilidad(costo, utilidad, iva, paso));
+
+    [Theory]
+    [InlineData("C", "C")]
+    [InlineData("b", "B")]
+    [InlineData(" R ", "R")]
+    [InlineData("N", "")]   // opción "Ninguno" del combo
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    [InlineData("X", null)] // destino inválido
+    [InlineData("CB", null)]
+    public void DestinoPreparacionSoloAceptaCocinaBarraBarra2ONinguno(string? valor, string? esperado)
+        => Assert.Equal(esperado, ArticuloDestinoPreparacion.Normalizar(valor));
 }

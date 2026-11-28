@@ -1,0 +1,75 @@
+/* Solapa "Fórmula" del editor de artículos. Misma grilla editable que Movimientos de stock. */
+.formula {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12, 12px);
+    min-width: 0;
+}
+
+.formula__opciones {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-12, 12px) var(--alfa-space-16, 16px);
+}
+
+.formula__opciones ::deep .alfa-button {
+    margin-left: auto;
+}
+
+.formula__titulo {
+    margin: var(--alfa-space-8, 8px) 0 0;
+    font-size: var(--alfa-font-body, 14px);
+    font-weight: 600;
+}
+
+.formula__ayuda {
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.formula__scroll {
+    overflow-x: auto;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 6px);
+}
+
+.formula-tabla { width: 100%; min-width: 820px; border-collapse: collapse; }
+.formula-tabla th, .formula-tabla td { padding: 6px 8px; border-bottom: 1px solid var(--alfa-border-default); text-align: left; vertical-align: middle; }
+.formula-tabla th { background: var(--alfa-bg-surface); color: var(--alfa-text-secondary, #a6abb5); font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
+.formula-tabla .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.formula-tabla .col-cod { width: 170px; }
+.formula-tabla .col-ud { width: 80px; }
+.formula-tabla .col-cant { width: 110px; }
+.formula-tabla .col-clase { width: 150px; }
+.formula-tabla .col-tarea { width: 220px; }
+.formula-tabla .col-acc { width: 48px; text-align: right; }
+.formula-tabla tr.is-error td { background: color-mix(in srgb, var(--alfa-danger, #e5484d) 7%, transparent); }
+
+.formula-cell {
+    width: 100%; min-width: 0; padding: 5px 8px; box-sizing: border-box;
+    border: 1px solid var(--alfa-border-default, #333640); border-radius: var(--alfa-radius-4, 4px);
+    background: var(--alfa-bg-input, #1d2027); color: var(--alfa-text-primary, #f5f5f7); font: inherit; text-align: inherit;
+}
+.formula-cell:focus { outline: 2px solid var(--alfa-accent, #4f9efa); outline-offset: -1px; border-color: transparent; }
+.formula-cell:disabled { opacity: .55; }
+
+.formula__codigo { display: flex; align-items: center; gap: 4px; }
+
+.formula__vacio { color: var(--alfa-text-secondary, #a6abb5); text-align: center !important; padding: 14px 8px !important; }
+
+.formula__error { display: block; color: var(--alfa-danger, #e5484d); font-size: 12px; }
+.formula__aviso { display: block; color: var(--alfa-warning, #f5a524); font-size: 12px; }
+
+.formula__acciones { display: flex; flex-wrap: wrap; align-items: center; gap: var(--alfa-space-12, 12px); }
+
+.formula__pie {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--alfa-space-12, 12px);
+    padding: 10px var(--alfa-space-16, 16px);
+    border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm, 6px);
+    background: var(--alfa-bg-surface); font-variant-numeric: tabular-nums;
+}
+.formula__pie strong { font-size: 16px; }
+.formula__pie .formula__error { display: inline; margin-left: auto; }
+.formula__pie .formula__ayuda { margin-left: auto; }

@@ -436,6 +436,7 @@ public class Program
         builder.Services.AddScoped<IArticulosService, ArticulosService>();
         builder.Services.AddScoped<IListasPreciosService, ListasPreciosService>();
         builder.Services.AddScoped<IHistorialPreciosService, HistorialPreciosService>();
+        builder.Services.AddScoped<IPreciosBorradorService, PreciosBorradorService>();
         builder.Services.AddScoped<IPoliticasPreciosService, PoliticasPreciosService>();
         builder.Services.AddScoped<ICargaViajesService, CargaViajesService>();
         builder.Services.AddScoped<ICargaViajesValidator, CargaViajesValidator>();

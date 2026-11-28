@@ -1,0 +1,275 @@
+@page "/articulos/borrador-precios"
+@page "/{idweb}/{idbase:int}/articulos/borrador-precios"
+@using System.Globalization
+@using AlfaCore.Services
+@using AlfaCore.Components.Shared.AlfaDesign
+@inject IPreciosBorradorService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Borrador de precios | Alfa Gestión</PageTitle>
+
+@* Borrador de precios (D010508 del legacy, FrmBorradorPrecios): cambios de precios pendientes en V_MA_PRECIOS_BORRADOR (la misma
+   tabla que usa Alfa Gestión). Con PreciosArticulosPorBorrador=SI los cambios de precio van acá y no afectan el precio real hasta aplicarse. *@
+<div class="gd-page gd bp-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_pagina is { Instalado: false })
+    {
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="Esta base no tiene la tabla de borrador de precios (V_MA_PRECIOS_BORRADOR)." />
+    }
+    else
+    {
+        <div class="bp-filtros">
+            <input type="search" class="bp-input" aria-label="Buscar artículo" placeholder="Código, descripción o código de barras..." maxlength="50"
+                   value="@_filtro.Texto" disabled="@_cargando" @oninput="e => _filtro.Texto = e.Value?.ToString() ?? string.Empty" @onkeydown="TeclaAsync" />
+            <select class="bp-input bp-input--select" aria-label="Qué precios" disabled="@_cargando" @onchange="e => CambiarFiltroAsync(() => _filtro.Tipo = e.Value?.ToString() ?? string.Empty)">
+                <option value="" selected="@(_filtro.Tipo.Length == 0)">Maestro y listas</option>
+                <option value="B" selected="@(_filtro.Tipo == "B")">Solo maestro</option>
+                <option value="V" selected="@(_filtro.Tipo == "V")">Solo listas</option>
+            </select>
+            <select class="bp-input bp-input--select" aria-label="Usuario que generó el cambio" disabled="@_cargando" @onchange="e => CambiarFiltroAsync(() => _filtro.Usuario = e.Value?.ToString() ?? string.Empty)">
+                <option value="" selected="@(_filtro.Usuario.Length == 0)">Todos los usuarios</option>
+                @foreach (var u in _pagina?.Usuarios ?? [])
+                {
+                    <option value="@u" selected="@(_filtro.Usuario == u)">@u</option>
+                }
+            </select>
+            @if (_pagina is { BorradorActivo: false })
+            {
+                <span class="bp-aviso"><i class="bi bi-info-circle"></i> El borrador no está activo (PreciosArticulosPorBorrador): los cambios de precio se graban directo. Lo pendiente se puede aplicar igual.</span>
+            }
+        </div>
+
+        @if (_cargando && _pagina is null)
+        {
+            <AlfaEmptyState Loading="true" Title="Leyendo el borrador…" />
+        }
+        else if (_pagina is { } p)
+        {
+            @if (p.Filas.Count == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hay cambios de precios pendientes" />
+            }
+            else
+            {
+                <div class="bp-panel">
+                    <div class="bp-scroll">
+                        <table class="bp-tabla">
+                            <thead>
+                                <tr>
+                                    <th class="col-check"><input type="checkbox" aria-label="Elegir todas las filas de la página" checked="@TodaLaPaginaElegida"
+                                                                 @onchange="e => ElegirPagina(e.Value is true)" /></th>
+                                    <th>Código</th>
+                                    <th>Artículo</th>
+                                    <th>Dónde</th>
+                                    <th class="num">Costo</th>
+                                    <th class="num">@p.NombreClaseVenta</th>
+                                    <th class="num">Var.</th>
+                                    <th>Otros cambios</th>
+                                    <th>Usuario</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var f in p.Filas)
+                                {
+                                    var fila = f;
+                                    <tr class="@(_elegidas.Contains(fila.Id) ? "is-selected" : null) @(fila.SinDestino ? "is-muted" : null)">
+                                        <td class="col-check"><input type="checkbox" aria-label="@($"Elegir {fila.IdArticulo}")" checked="@_elegidas.Contains(fila.Id)"
+                                                                     @onchange="e => Elegir(fila.Id, e.Value is true)" /></td>
+                                        <td>@fila.IdArticulo</td>
+                                        <td>@fila.Descripcion @if (fila.SinDestino) { <small class="bp-error">Ya no está en esa lista: no se puede aplicar.</small> }</td>
+                                        <td>@fila.Lista</td>
+                                        <td class="num">@Cambio(fila.CostoActual, fila.CostoNuevo)</td>
+                                        <td class="num">@Cambio(fila.PrecioActual, fila.PrecioNuevo)</td>
+                                        <td class="num @(fila.Variacion > 0 ? "is-sube" : fila.Variacion < 0 ? "is-baja" : null)">@(fila.Variacion is { } v ? $"{v:+0.#;-0.#;0}%" : "—")</td>
+                                        <td class="bp-otros">@string.Join(" · ", fila.OtrosCambios)</td>
+                                        <td>@fila.Usuario</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <footer class="bp-pie">
+                        <span>@p.Total.ToString("N0", Ar) fila(s) pendientes · @_elegidas.Count.ToString("N0", Ar) elegida(s)</span>
+                        @if (p.Total > p.Filas.Count && _elegidas.Count < p.IdsFiltrados.Count)
+                        {
+                            <button type="button" class="bp-link" @onclick="ElegirTodoLoFiltrado">Elegir las @p.Total.ToString("N0", Ar) del filtro</button>
+                        }
+                        @if (_elegidas.Count > 0)
+                        {
+                            <button type="button" class="bp-link" @onclick="() => _elegidas.Clear()">Quitar selección</button>
+                        }
+                        <span class="bp-ayuda">Un precio en 0 en el borrador no se aplica: se conserva el actual.</span>
+                    </footer>
+                </div>
+            }
+        }
+    }
+</div>
+
+@if (_confirmar is { } accion)
+{
+    <AlfaConfirmDialog Open="true"
+                       Title="@(accion == "aplicar" ? $"Aplicar {_elegidas.Count} cambio(s) de precio" : $"Descartar {_elegidas.Count} cambio(s) de precio")"
+                       Message="@(accion == "aplicar"
+                           ? "Los precios elegidos pasan a ser los precios reales y salen del borrador. Los productos que usan esos precios como insumo se recalculan."
+                           : "Las filas elegidas se borran del borrador sin aplicarse. No se deshace.")"
+                       ConfirmLabel="@(accion == "aplicar" ? "Aplicar" : "Descartar")"
+                       OnConfirm="ConfirmarAsync" OnCancel="() => _confirmar = null" />
+}
+
+@code {
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly HashSet<int> _elegidas = [];
+    private PrecioBorradorFiltro _filtro = new();
+    private PrecioBorradorPagina? _pagina;
+    private AppUiMessage? _feedback;
+    private bool _cargando, _procesando, _disposed;
+    private string? _confirmar;
+
+    private bool TodaLaPaginaElegida => _pagina is { Filas.Count: > 0 } p && p.Filas.All(f => _elegidas.Contains(f.Id));
+
+    protected override Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        return CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        if (_cargando || _disposed) return;
+        _cargando = true; UpdateHeader(); StateHasChanged();
+        var f = new PrecioBorradorFiltro { Texto = _filtro.Texto, Tipo = _filtro.Tipo, Usuario = _filtro.Usuario, Pagina = _filtro.Pagina, TamanoPagina = _filtro.TamanoPagina };
+        var r = await UiOps.RunAsync(() => Service.ListarAsync(f, _lifetime.Token), "Borrador de precios", _lifetime.Token);
+        if (_disposed) return;
+        _cargando = false;
+        if (r.Success && r.Value is { } pagina)
+        {
+            _pagina = pagina;
+            _elegidas.IntersectWith(pagina.IdsFiltrados);
+        }
+        else
+        {
+            _feedback = r.Feedback;
+        }
+        UpdateHeader();
+    }
+
+    private Task CambiarFiltroAsync(Action cambio)
+    {
+        cambio();
+        _filtro.Pagina = 1;
+        return CargarAsync();
+    }
+
+    private Task TeclaAsync(KeyboardEventArgs e)
+        => e.Key == "Enter" ? CambiarFiltroAsync(() => { }) : Task.CompletedTask;
+
+    private void Elegir(int id, bool elegida)
+    {
+        if (elegida) _elegidas.Add(id); else _elegidas.Remove(id);
+        UpdateHeader();
+    }
+
+    private void ElegirPagina(bool elegida)
+    {
+        foreach (var f in _pagina?.Filas ?? [])
+            if (elegida) _elegidas.Add(f.Id); else _elegidas.Remove(f.Id);
+        UpdateHeader();
+    }
+
+    private void ElegirTodoLoFiltrado()
+    {
+        _elegidas.UnionWith(_pagina?.IdsFiltrados ?? []);
+        UpdateHeader();
+    }
+
+    private Task PedirConfirmacion(string accion)
+    {
+        _confirmar = accion;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmarAsync()
+    {
+        var accion = _confirmar;
+        _confirmar = null;
+        if (accion is null || _elegidas.Count == 0) return;
+        _procesando = true; UpdateHeader();
+        var ids = _elegidas.ToList();
+        var r = await UiOps.RunAsync(() => accion == "aplicar" ? Service.AplicarAsync(ids, _lifetime.Token) : Service.DescartarAsync(ids, _lifetime.Token),
+            "Borrador de precios", _lifetime.Token);
+        _procesando = false;
+        if (r.Success && r.Value is { } res)
+        {
+            var texto = accion == "aplicar"
+                ? $"Se aplicaron {res.Aplicadas} cambio(s) de precio."
+                  + (res.ProductosRecalculados > 0 ? $" Se recalcularon {res.ProductosRecalculados} producto(s) que los usan como insumo." : string.Empty)
+                : $"Se descartaron {res.Descartadas} fila(s) del borrador.";
+            if (res.Observaciones.Count > 0)
+                texto += " " + string.Join(" ", res.Observaciones.Take(5));
+            _feedback = res.Observaciones.Count > 0 ? AppUiMessage.Warning("Borrador de precios", texto) : AppUiMessage.Success("Borrador de precios", texto);
+            _elegidas.Clear();
+        }
+        else
+        {
+            _feedback = r.Feedback;
+        }
+        await CargarAsync();
+    }
+
+    private static MarkupString Cambio(decimal antes, decimal despues)
+        => Math.Round(antes, 2) == Math.Round(despues, 2)
+            ? new MarkupString(despues.ToString("#,##0.00", Ar))
+            : new MarkupString($"<s class=\"bp-antes\">{antes.ToString("#,##0.00", Ar)}</s> <strong>{despues.ToString("#,##0.00", Ar)}</strong>");
+
+    private PageHeaderPaginationConfig? Paginador()
+    {
+        if (_pagina is not { Total: > 0 } p) return null;
+        var paginas = Math.Max(1, (int)Math.Ceiling(p.Total / (double)p.TamanoPagina));
+        return new()
+        {
+            Label = $"{p.Total.ToString("N0", Ar)} fila(s)", PageLabel = $"{p.Pagina} de {paginas}", Disabled = _cargando,
+            HasPrevious = p.Pagina > 1, HasNext = p.Pagina < paginas,
+            OnPrevious = () => { _filtro.Pagina = p.Pagina - 1; return CargarAsync(); },
+            OnNext = () => { _filtro.Pagina = p.Pagina + 1; return CargarAsync(); }
+        };
+    }
+
+    private void UpdateHeader()
+    {
+        if (_disposed) return;
+        var ocupado = _cargando || _procesando;
+        PageHeader.Set(new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "articulos", Title = "Borrador de precios",
+            Breadcrumb = ["Artículos", "Borrador de precios"],
+            TopNavigationItems = ModuleTopNavPresets.BuildArticulos(RouteContext, Nav, "borrador"),
+            State = _cargando ? PageHeaderState.Loading : PageHeaderState.List,
+            Pagination = Paginador(),
+            Actions =
+            [
+                new() { Key = "aplicar", Label = _elegidas.Count > 0 ? $"Aplicar ({_elegidas.Count})" : "Aplicar", Icon = "bi-check2-circle",
+                        Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Busy = _procesando,
+                        Disabled = ocupado || _elegidas.Count == 0, OnClick = () => PedirConfirmacion("aplicar") },
+                new() { Key = "descartar", Label = "Descartar", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger,
+                        Disabled = ocupado || _elegidas.Count == 0, OnClick = () => PedirConfirmacion("descartar") },
+                new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost,
+                        Disabled = ocupado, OnClick = CargarAsync }
+            ]
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _lifetime.Cancel(); _lifetime.Dispose();
+        PageHeader.Clear();
+    }
+}

@@ -48,5 +48,7 @@ public sealed class PoliticaPrecioAplicarResultado
 {
     public int Articulos { get; set; }
     public int FilasListas { get; set; }
+    /// <summary>Productos recalculados en cascada por usar como insumo a los artículos de la política (fórmulas).</summary>
+    public int ProductosRecalculados { get; set; }
     public string Mensaje { get; set; } = string.Empty;
 }

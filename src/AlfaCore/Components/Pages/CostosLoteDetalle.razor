@@ -608,7 +608,10 @@ else
         {
             var result = await CostosSvc.ApplySelectedRowsAsync(Id, _checkedRows.ToArray(), CurrentUserName);
             await ReloadAsync();
-            _message = $"Aplicación finalizada. Actualizadas: {result.Updated}, sin cambio: {result.Same}, errores: {result.Errors}. Estado: {result.Status}.";
+            _message = $"Aplicación finalizada. Actualizadas: {result.Updated}, sin cambio: {result.Same}, errores: {result.Errors}. Estado: {result.Status}."
+                + (result.ProductosRecalculados > 0
+                    ? $" Se recalcularon {result.ProductosRecalculados} producto(s) que usan estos artículos como insumo{(result.PreciosAlBorrador ? " (precios nuevos al borrador)" : string.Empty)}."
+                    : string.Empty);
         }
         catch (Exception ex)
         {
@@ -631,7 +634,10 @@ else
         {
             var result = await CostosSvc.UndoLastApplyAsync(Id, CurrentUserName);
             await ReloadAsync();
-            _message = $"Deshacer finalizado. Revertidas: {result.Reverted}, errores: {result.Errors}. Estado: {result.Status}.";
+            _message = $"Deshacer finalizado. Revertidas: {result.Reverted}, errores: {result.Errors}. Estado: {result.Status}."
+                + (result.ProductosRecalculados > 0
+                    ? $" Se recalcularon {result.ProductosRecalculados} producto(s) que usan estos artículos como insumo{(result.PreciosAlBorrador ? " (precios nuevos al borrador)" : string.Empty)}."
+                    : string.Empty);
         }
         catch (Exception ex)
         {

@@ -131,6 +131,9 @@ public sealed class CostosApplyResultDto
     public int Same { get; init; }
     public int Errors { get; init; }
     public string Status { get; init; } = string.Empty;
+    /// <summary>Productos recalculados en cascada por usar como insumo a los artículos actualizados (fórmulas).</summary>
+    public int ProductosRecalculados { get; init; }
+    public bool PreciosAlBorrador { get; init; }
 }
 
 public sealed class CostosUndoResultDto
@@ -139,6 +142,9 @@ public sealed class CostosUndoResultDto
     public int Reverted { get; init; }
     public int Errors { get; init; }
     public string Status { get; init; } = string.Empty;
+    /// <summary>Productos recalculados en cascada por usar como insumo a los artículos revertidos (fórmulas).</summary>
+    public int ProductosRecalculados { get; init; }
+    public bool PreciosAlBorrador { get; init; }
 }
 
 public sealed class CostosColumnDto

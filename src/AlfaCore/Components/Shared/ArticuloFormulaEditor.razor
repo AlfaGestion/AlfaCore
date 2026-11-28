@@ -1,0 +1,387 @@
+@using System.Globalization
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared.AlfaDesign
+@inject AlfaCore.Services.IArticulosService ArticulosSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+
+@* Solapa "Fórmula" del editor de artículos (solapa Insumos de Ma_art.frm): insumos y tareas de producción.
+   No graba sola: edita Formula y el artículo la graba en su misma transacción al tocar Guardar. *@
+
+<div class="formula">
+    <div class="formula__opciones">
+        <AlfaCheckbox Value="@Formula.CalcularCostoAutomatico" ValueChanged="v => CambiarAsync(() => Formula.CalcularCostoAutomatico = v == true)">
+            <i class="bi bi-calculator"></i> Calcular el costo automáticamente
+        </AlfaCheckbox>
+        <AlfaCheckbox Value="@Formula.PorPorcentaje" ValueChanged="v => CambiarAsync(() => Formula.PorPorcentaje = v == true)">
+            <i class="bi bi-percent"></i> Insumos por porcentaje
+        </AlfaCheckbox>
+        <AlfaCheckbox Value="@Formula.DescuentaSoloPorProduccion" ValueChanged="v => Formula.DescuentaSoloPorProduccion = v == true">
+            <i class="bi bi-gear"></i> Los insumos descuentan stock solo al producir
+        </AlfaCheckbox>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-files" Disabled="@_ocupado" OnClick="_ => AbrirBuscador(-2)">
+            Copiar de…
+        </AlfaButton>
+    </div>
+    @if (Formula.CostoAutomaticoVigente)
+    {
+        <p class="formula__ayuda"><i class="bi bi-info-circle"></i> El costo del artículo es el de esta fórmula y se recalcula solo cuando cambia el costo de un insumo.</p>
+    }
+    else if (Formula.CalcularCostoAutomatico)
+    {
+        <p class="formula__ayuda"><i class="bi bi-info-circle"></i> Sin insumos ni tareas el costo no se calcula: se mantiene el que tiene el artículo.</p>
+    }
+    @if (Formula.PorPorcentaje)
+    {
+        <p class="formula__ayuda"><i class="bi bi-info-circle"></i> Cada insumo lleva el % del artículo que representa (tienen que sumar 100). Sirve para partir el stock (ej. media res); en este modo los insumos no suman costo, igual que en Alfa Gestión.</p>
+    }
+
+    <h3 class="formula__titulo">Insumos</h3>
+    <div class="formula__scroll">
+        <table class="formula-tabla">
+            <thead>
+                <tr>
+                    <th class="col-cod">Código</th>
+                    <th>Descripción</th>
+                    <th class="col-ud">Unidad</th>
+                    <th class="num col-cant">@(Formula.PorPorcentaje ? "%" : "Cantidad")</th>
+                    @if (!Formula.PorPorcentaje)
+                    {
+                        <th class="col-clase">Valor del insumo</th>
+                        <th class="num col-cant">Unitario</th>
+                        <th class="num col-cant">Costo</th>
+                    }
+                    <th class="col-acc"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Formula.Insumos.Count == 0)
+                {
+                    <tr><td colspan="8" class="formula__vacio">El artículo no tiene insumos. Agregá el primero con <strong>Agregar insumo</strong>.</td></tr>
+                }
+                @for (var i = 0; i < Formula.Insumos.Count; i++)
+                {
+                    var idx = i;
+                    var r = Formula.Insumos[i];
+                    <tr class="@(r.Error.Length > 0 ? "is-error" : null)">
+                        <td class="col-cod">
+                            <div class="formula__codigo">
+                                <input class="formula-cell" value="@r.Codigo" aria-label="Código del insumo" placeholder="Código o *"
+                                       @onchange="e => CodigoChangedAsync(r, e.Value?.ToString())" disabled="@_ocupado" />
+                                <AlfaIconButton Icon="bi-search" Label="Buscar insumo (F5)" Disabled="@_ocupado" OnClick="() => AbrirBuscador(idx)" />
+                            </div>
+                        </td>
+                        <td>
+                            @if (r.EsTextoLibre)
+                            {
+                                <input class="formula-cell" value="@r.Descripcion" maxlength="24" aria-label="Descripción del insumo de texto libre"
+                                       placeholder="Descripción (sin artículo, costo 0)" @onchange="e => CambiarAsync(() => r.Descripcion = e.Value?.ToString() ?? string.Empty)" />
+                            }
+                            else
+                            {
+                                @r.Descripcion
+                            }
+                            @if (r.Error.Length > 0) { <small class="formula__error">@r.Error</small> }
+                            else if (r.Aviso.Length > 0) { <small class="formula__aviso">@r.Aviso</small> }
+                        </td>
+                        <td class="col-ud">
+                            <select class="formula-cell" aria-label="Unidad del insumo" disabled="@_ocupado" @onchange="e => UnidadChangedAsync(r, e.Value?.ToString())">
+                                <option value="" selected="@(r.Unidad.Length == 0)">—</option>
+                                @foreach (var u in Unidades)
+                                {
+                                    <option value="@u.Codigo" selected="@string.Equals(u.Codigo, r.Unidad, StringComparison.OrdinalIgnoreCase)">@u.Codigo</option>
+                                }
+                            </select>
+                        </td>
+                        <td class="num">
+                            <input class="formula-cell" inputmode="decimal" aria-label="Cantidad del insumo" value="@Num(r.Cantidad)"
+                                   @onchange="e => CambiarAsync(() => r.Cantidad = ParseDec(e.Value?.ToString()))" disabled="@_ocupado" />
+                        </td>
+                        @if (!Formula.PorPorcentaje)
+                        {
+                            <td class="col-clase">
+                                <select class="formula-cell" aria-label="Valor del insumo que se toma" disabled="@(_ocupado || r.EsTextoLibre)"
+                                        @onchange="e => ClaseChangedAsync(r, e.Value?.ToString())">
+                                    @for (var c = 0; c <= 8; c++)
+                                    {
+                                        var clase = c;
+                                        <option value="@clase" selected="@(r.ClasePr == clase)">@EtiquetaClase(clase)</option>
+                                    }
+                                </select>
+                            </td>
+                            <td class="num">@Money(r.CostoUnitario)</td>
+                            <td class="num"><strong>@Money(r.Costo)</strong></td>
+                        }
+                        <td class="col-acc"><AlfaIconButton Icon="bi-trash" Label="Quitar insumo" Disabled="@_ocupado" OnClick="() => CambiarAsync(() => Formula.Insumos.Remove(r))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="formula__acciones">
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" Disabled="@_ocupado"
+                    OnClick="_ => CambiarAsync(() => Formula.Insumos.Add(new ArticuloFormulaInsumoDto()))">Agregar insumo</AlfaButton>
+        <span class="formula__ayuda">Código con <strong>*</strong> = insumo de texto libre (sin artículo). La unidad puede ser otra que la del insumo si tiene equivalencia cargada.</span>
+    </div>
+
+    @if (UsaTareas)
+    {
+        <h3 class="formula__titulo">Tareas</h3>
+        <div class="formula__scroll">
+            <table class="formula-tabla">
+                <thead>
+                    <tr>
+                        <th class="col-tarea">Tarea</th>
+                        <th>Descripción</th>
+                        <th class="num col-cant">Minutos</th>
+                        <th class="num col-cant">Segundos</th>
+                        <th class="num col-cant">Valor hora</th>
+                        <th class="num col-cant">Costo</th>
+                        <th class="col-acc"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Formula.Tareas.Count == 0)
+                    {
+                        <tr><td colspan="7" class="formula__vacio">Sin tareas.</td></tr>
+                    }
+                    @foreach (var t in Formula.Tareas)
+                    {
+                        var tarea = t;
+                        <tr>
+                            <td class="col-tarea">
+                                <select class="formula-cell" aria-label="Tarea" @onchange="e => TareaChangedAsync(tarea, e.Value?.ToString())">
+                                    <option value="" selected="@(tarea.IdTarea.Length == 0)">Elegí…</option>
+                                    @foreach (var op in Tareas)
+                                    {
+                                        <option value="@op.IdTarea" selected="@string.Equals(op.IdTarea, tarea.IdTarea.Trim(), StringComparison.OrdinalIgnoreCase)">@op.IdTarea · @op.Descripcion</option>
+                                    }
+                                </select>
+                            </td>
+                            <td><input class="formula-cell" value="@tarea.Descripcion" maxlength="100" aria-label="Descripción de la tarea"
+                                       @onchange="e => tarea.Descripcion = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td class="num"><input class="formula-cell" inputmode="decimal" aria-label="Minutos" value="@Num(tarea.Minutos)"
+                                                   @onchange="e => CambiarAsync(() => tarea.Minutos = ParseDec(e.Value?.ToString()))" /></td>
+                            <td class="num"><input class="formula-cell" inputmode="numeric" aria-label="Segundos" value="@tarea.Segundos"
+                                                   @onchange="e => CambiarAsync(() => tarea.Segundos = (int)ParseDec(e.Value?.ToString()))" /></td>
+                            <td class="num">@Money(tarea.ValorHora)</td>
+                            <td class="num"><strong>@Money(tarea.Costo)</strong></td>
+                            <td class="col-acc"><AlfaIconButton Icon="bi-trash" Label="Quitar tarea" OnClick="() => CambiarAsync(() => Formula.Tareas.Remove(tarea))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="formula__acciones">
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-lg"
+                        OnClick="_ => CambiarAsync(() => Formula.Tareas.Add(new ArticuloFormulaTareaDto()))">Agregar tarea</AlfaButton>
+        </div>
+    }
+
+    <div class="formula__pie">
+        <span>Costo de la fórmula</span>
+        <strong>@Money(Formula.CostoInsumos)</strong>
+        @if (Errores.Count > 0)
+        {
+            <span class="formula__error">@string.Join(" ", Errores)</span>
+        }
+        else if (_mensaje is not null)
+        {
+            <span class="formula__ayuda">@_mensaje</span>
+        }
+    </div>
+</div>
+
+<ArticuloStockBuscadorDialog Open="@_buscadorAbierto" TextoInicial="@_buscadorTexto" SearchFunc="BuscarInsumos"
+                             StockLabel="Costo" InputId="formula-buscar" OnElegir="ElegidoAsync" OnClose="() => _buscadorAbierto = false" />
+
+@code {
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+
+    [Parameter, EditorRequired] public ArticuloFormulaDto Formula { get; set; } = new();
+    /// <summary>Código del artículo que se edita (vacío en alta): no puede ser su propio insumo.</summary>
+    [Parameter] public string? CodigoProducto { get; set; }
+    [Parameter] public IReadOnlyList<ArticuloLookupOptionDto> Unidades { get; set; } = [];
+    [Parameter] public bool UsaTareas { get; set; }
+    [Parameter] public IReadOnlyList<ArticuloTareaOptionDto> Tareas { get; set; } = [];
+    /// <summary>Nombre de cada clase de precio (1..8), el mismo que usa la solapa Precios.</summary>
+    [Parameter] public Func<int, string>? NombreClase { get; set; }
+    /// <summary>Avisa el nuevo costo de la fórmula después de cada cambio (la página decide si lo usa como costo).</summary>
+    [Parameter] public EventCallback<decimal> CostoCambiado { get; set; }
+
+    private bool _ocupado;
+    private bool _buscadorAbierto;
+    private string _buscadorTexto = string.Empty;
+    /// <summary>Renglón que completa el buscador; -1 = renglón nuevo, -2 = "Copiar de…".</summary>
+    private int _buscadorDestino = -1;
+    private string? _mensaje;
+
+    private List<string> Errores => ArticuloFormulaCalculo.Validar(Formula)
+        .Where(e => !e.Contains("sin código", StringComparison.Ordinal)).ToList();
+
+    private string EtiquetaClase(int clase)
+        => clase == 0 ? "Costo" : NombreClase?.Invoke(clase) ?? $"Precio {clase}";
+
+    private async Task CambiarAsync(Action cambio)
+    {
+        cambio();
+        _mensaje = null;
+        await CostoCambiado.InvokeAsync(Formula.CostoInsumos);
+    }
+
+    private async Task CodigoChangedAsync(ArticuloFormulaInsumoDto r, string? valor)
+    {
+        r.Codigo = (valor ?? string.Empty).Trim();
+        if (r.EsTextoLibre)
+        {
+            r.Codigo = "*";
+            r.ClasePr = 0;
+            r.CostoUnitario = 0;
+            r.Error = string.Empty;
+            await CambiarAsync(() => { });
+            return;
+        }
+        r.Unidad = string.Empty; // al cambiar de insumo se toma su unidad
+        await ResolverAsync(r);
+    }
+
+    private Task UnidadChangedAsync(ArticuloFormulaInsumoDto r, string? valor)
+    {
+        r.Unidad = (valor ?? string.Empty).Trim();
+        return r.EsTextoLibre ? CambiarAsync(() => { }) : ResolverAsync(r);
+    }
+
+    private Task ClaseChangedAsync(ArticuloFormulaInsumoDto r, string? valor)
+    {
+        r.ClasePr = int.TryParse(valor, out var c) && c is >= 0 and <= 8 ? c : 0;
+        return ResolverAsync(r);
+    }
+
+    private Task TareaChangedAsync(ArticuloFormulaTareaDto t, string? valor)
+        => CambiarAsync(() =>
+        {
+            var op = Tareas.FirstOrDefault(x => string.Equals(x.IdTarea, (valor ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase));
+            t.IdTarea = op?.IdTarea ?? string.Empty;
+            t.Descripcion = op?.Descripcion ?? string.Empty;
+            t.ValorHora = op?.ValorHora ?? 0;
+        });
+
+    private async Task ResolverAsync(ArticuloFormulaInsumoDto r)
+    {
+        if (r.Codigo.Length == 0)
+        {
+            r.Descripcion = string.Empty;
+            r.CostoUnitario = 0;
+            r.Error = string.Empty;
+            await CambiarAsync(() => { });
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => ArticulosSvc.ResolverInsumoAsync(CodigoProducto, r), "No se pudo calcular el insumo.");
+            if (result.Success && result.Value is { } v)
+            {
+                r.Codigo = v.Codigo;
+                r.Descripcion = v.Descripcion;
+                r.Unidad = v.Unidad;
+                r.CostoUnitario = v.CostoUnitario;
+                r.Error = v.Error;
+                r.Aviso = v.Aviso;
+            }
+            else
+            {
+                r.Error = result.Feedback?.Message ?? "No se pudo calcular el insumo.";
+            }
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+        await CambiarAsync(() => { });
+    }
+
+    private void AbrirBuscador(int destino)
+    {
+        _buscadorDestino = destino;
+        _buscadorTexto = destino >= 0 && destino < Formula.Insumos.Count && !Formula.Insumos[destino].EsTextoLibre
+            ? Formula.Insumos[destino].Codigo
+            : string.Empty;
+        _buscadorAbierto = true;
+    }
+
+    private Task<IReadOnlyList<StockMovimientoArticulo>> BuscarInsumos(string texto, CancellationToken ct)
+        => ArticulosSvc.BuscarInsumosAsync(texto, ct);
+
+    private async Task ElegidoAsync(StockMovimientoArticulo articulo)
+    {
+        _buscadorAbierto = false;
+        if (_buscadorDestino == -2)
+        {
+            await CopiarDeAsync(articulo);
+            return;
+        }
+        ArticuloFormulaInsumoDto r;
+        if (_buscadorDestino >= 0 && _buscadorDestino < Formula.Insumos.Count)
+        {
+            r = Formula.Insumos[_buscadorDestino];
+        }
+        else
+        {
+            r = new ArticuloFormulaInsumoDto { Cantidad = 1 };
+            Formula.Insumos.Add(r);
+        }
+        r.Codigo = articulo.Codigo;
+        r.Unidad = string.Empty;
+        if (r.Cantidad <= 0) r.Cantidad = 1;
+        await ResolverAsync(r);
+    }
+
+    /// <summary>"Copiar de…" de Ma_art.frm: trae la fórmula de otro artículo (insumos, tareas y modo porcentaje).</summary>
+    private async Task CopiarDeAsync(StockMovimientoArticulo origen)
+    {
+        if (string.Equals(origen.Codigo, CodigoProducto?.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            _mensaje = "Elegí otro artículo: no se puede copiar la fórmula de sí mismo.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => ArticulosSvc.GetFormulaAsync(origen.Codigo), "No se pudo copiar la fórmula.");
+            if (!result.Success || result.Value is not { } copia)
+            {
+                _mensaje = result.Feedback?.Message ?? "No se pudo copiar la fórmula.";
+                return;
+            }
+            if (copia.Insumos.Count == 0 && copia.Tareas.Count == 0)
+            {
+                _mensaje = $"{origen.Descripcion} no tiene fórmula para copiar.";
+                return;
+            }
+            Formula.Insumos.Clear();
+            Formula.Insumos.AddRange(copia.Insumos);
+            Formula.Tareas.Clear();
+            Formula.Tareas.AddRange(copia.Tareas);
+            Formula.PorPorcentaje = copia.PorPorcentaje;
+            await CostoCambiado.InvokeAsync(Formula.CostoInsumos);
+            _mensaje = $"Se copió la fórmula de {origen.Descripcion} ({copia.Insumos.Count} insumo(s)). Revisala y guardá el artículo.";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Num(decimal v) => v == 0 ? string.Empty : v.ToString("0.####", Ar);
+    private static string Money(decimal v) => v.ToString("$ #,##0.00", Ar);
+
+    /// <summary>Acepta coma o punto decimal (1,5 · 1.5 · 1.234,5).</summary>
+    private static decimal ParseDec(string? valor)
+    {
+        var s = (valor ?? string.Empty).Trim();
+        if (s.Length == 0) return 0;
+        if (s.Contains(','))
+            s = s.Replace(".", string.Empty).Replace(',', '.');
+        return decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var d) ? d : 0;
+    }
+}

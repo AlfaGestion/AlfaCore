@@ -203,6 +203,7 @@ public static class ModuleTopNavPresets
             ("articulos", "Artículos", "/articulos"),
             ("listas", "Listas de precios", "/articulos/listas-precios"),
             ("historial", "Historial de precios", "/articulos/historial-precios"),
+            ("borrador", "Borrador de precios", "/articulos/borrador-precios"),
             ("configuracion", "Configuración", "/articulos/configuracion")
         ]);
 

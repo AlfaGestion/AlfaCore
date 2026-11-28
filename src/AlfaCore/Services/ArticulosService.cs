@@ -149,9 +149,31 @@ public sealed partial class ArticulosService(
             await cn.OpenAsync(token);
             var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
             var precioOfertaSql = await ResolvePrecioOfertaSqlAsync(cn, token);
+            var destino = await LeerColumnasDestinoAsync(cn, token);
+            var usaTalleExpr = destino.UsaTalle ? "ISNULL(a.UsaTalle, 0)" : "0";
+            // Mismo criterio que el salón (PuntoVentaSalonService.AsignarDestinosAsync): gana C, después B, después R.
+            // Con talles (UsaTalle = 1) TalleDefault es el talle real: el destino queda null y no se toca al grabar.
+            var destinoSql = destino.TalleDefault
+                ? $"""
+                    CASE WHEN {usaTalleExpr} <> 0 THEN NULL
+                         WHEN UPPER(ISNULL(a.TalleDefault, '')) LIKE '%C%' THEN 'C'
+                         WHEN UPPER(ISNULL(a.TalleDefault, '')) LIKE '%B%' THEN 'B'
+                         WHEN UPPER(ISNULL(a.TalleDefault, '')) LIKE '%R%' THEN 'R'
+                         ELSE '' END AS DestinoPreparacion,
+                    """
+                : "CAST(NULL AS varchar(1)) AS DestinoPreparacion,";
+            var usaTalleSql = $"CONVERT(bit, CASE WHEN {usaTalleExpr} <> 0 THEN 1 ELSE 0 END) AS UsaTalle,";
+            var esquemaFormula = await LeerEsquemaFormulaAsync(cn, null, token);
+            // Costo por fórmula solo si además tiene fórmula cargada (hay artículos con ActualizaCosto = 1 sin insumos).
+            var costoPorFormulaSql = esquemaFormula.ActualizaCosto && esquemaFormula.TablaInsumos
+                ? "CONVERT(bit, CASE WHEN ISNULL(a.ActualizaCosto, 0) = 1 AND EXISTS (SELECT 1 FROM dbo.V_MA_INSUMOS fi WHERE fi.IdArticulo = a.IDARTICULO) THEN 1 ELSE 0 END) AS CostoPorFormula,"
+                : "CAST(0 AS bit) AS CostoPorFormula,";
 
             var sql = $"""
                 SELECT TOP (1)
+                    {destinoSql}
+                    {usaTalleSql}
+                    {costoPorFormulaSql}
                     LTRIM(RTRIM(a.IDARTICULO)) AS Codigo,
                     LTRIM(RTRIM(a.IDARTICULO)) AS CodigoOriginal,
                     ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
@@ -231,8 +253,12 @@ public sealed partial class ArticulosService(
                 cancellationToken: token));
 
             var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta", "CLASEPRECIOOFERTA", "OFERTAPORDESCUENTO", "UsaPerecederos" };
+            claves.Add("UsaTareasEnArticulos");
             claves.AddRange(Enumerable.Range(1, 8).Select(i => $"NOM_PCLASE{i}"));
             var cfg = await ReadConfigMapAsync(cn, claves, token);
+            var esquemaFormula = await LeerEsquemaFormulaAsync(cn, null, token);
+            var usaTareas = esquemaFormula.TablaInsumos && esquemaFormula.TablaTareas && esquemaFormula.TablaTareasCatalogo
+                && ParseBool(Get(cfg, "UsaTareasEnArticulos"));
             var clasePrecioVenta = int.TryParse(Get(cfg, "ClasePrecioVenta"), out var clase) && clase is >= 1 and <= 8 ? clase : 1;
             var politicas = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
                 "SELECT CASE WHEN OBJECT_ID(N'dbo.V_TA_POLITICAPRECIOS', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: token)) == 1
@@ -254,7 +280,11 @@ public sealed partial class ArticulosService(
                 Politicas = politicas,
                 ClasePrecioOferta = int.TryParse(Get(cfg, "CLASEPRECIOOFERTA"), out var claseOferta) && claseOferta is >= 1 and <= 8 ? claseOferta : 0,
                 OfertaPorDescuento = ParseBool(Get(cfg, "OFERTAPORDESCUENTO")),
-                UsaPerecederos = ParseBool(Get(cfg, "UsaPerecederos"))
+                UsaPerecederos = ParseBool(Get(cfg, "UsaPerecederos")),
+                UsaDestinoPreparacion = (await LeerColumnasDestinoAsync(cn, token)).TalleDefault,
+                UsaFormula = esquemaFormula.TablaInsumos,
+                UsaTareas = usaTareas,
+                Tareas = usaTareas ? await LeerTareasAsync(cn, null, token) : []
             };
         }, "No se pudieron cargar las referencias de artículos.", ct);
 
@@ -336,8 +366,21 @@ public sealed partial class ArticulosService(
                 new { Codigo = normalizado }, cancellationToken: token));
         }, "No se pudo subir la imagen del artículo.", ct);
 
-    public Task<string> SaveAsync(ArticuloSaveRequest request, CancellationToken ct = default)
-        => ExecuteLoggedAsync("Save", async token =>
+    public async Task<string> SaveAsync(ArticuloSaveRequest request, CancellationToken ct = default)
+        => (await GuardarConCascadaAsync(request, ct)).Codigo;
+
+    public Task<ArticuloGuardadoResultado> GuardarConCascadaAsync(ArticuloSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Save", token => GuardarCoreAsync(request, simular: false, token), "No se pudo guardar el artículo.", ct);
+
+    /// <summary>Corre el grabado completo (con la cascada de costos) y lo deshace: muestra qué productos cambiarían.</summary>
+    public Task<ArticuloCascadaResultado> PrevisualizarCascadaAsync(ArticuloSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("PrevisualizarCascada",
+            async token => (await GuardarCoreAsync(request, simular: true, token)).Cascada,
+            "No se pudo calcular cómo cambian los productos que usan este artículo.", ct);
+
+    /// <param name="inspeccionSimulada">Solo pruebas: se llama con la transacción abierta antes de deshacer una simulación.</param>
+    internal async Task<ArticuloGuardadoResultado> GuardarCoreAsync(ArticuloSaveRequest request, bool simular, CancellationToken token,
+        Func<SqlConnection, SqlTransaction, Task>? inspeccionSimulada = null)
         {
             ArgumentNullException.ThrowIfNull(request);
             var descripcion = (request.Descripcion ?? string.Empty).Trim();
@@ -411,8 +454,14 @@ public sealed partial class ArticulosService(
             if (usaPerecederos && request.Perecedero && request.DiasVencimiento is < 1 or > 3650)
                 throw new InvalidOperationException("Ingresá los días de vencimiento del producto perecedero (entre 1 y 3650).");
 
-            var parameters = new
+            // Fórmula con "Calcular costo automáticamente": el costo del artículo es el de la fórmula. Se fija antes
+            // del UPDATE principal para que el trigger aplique la política de precios sobre ese costo.
+            if (request.Formula is { CostoAutomaticoVigente: true } formulaAuto)
+                request.Costo = await CalcularCostoFormulaAsync(cn, codigoCrudo, formulaAuto, token);
+
+            object Parametros(int desdeTrigger) => new
             {
+                DesdeTrigger = desdeTrigger,
                 UsaPerecederos = usaPerecederos,
                 Perecedero = usaPerecederos && request.Perecedero,
                 DiasVencimiento = (double)request.DiasVencimiento,
@@ -446,76 +495,231 @@ public sealed partial class ArticulosService(
 
             // Artículo y solapa "Listas" en una sola transacción: si falla una lista no queda el artículo a medias.
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
-            if (esAlta)
+            var valorAntes = esAlta ? null : await LeerValorArticuloAsync(cn, tx, codigoCrudo, token);
+            async Task EscribirAsync(object prm)
             {
-                var insertSql = $"""
-                    INSERT INTO dbo.V_MA_ARTICULOS
-                        (IDARTICULO, CODIGOBARRA, DESCRIPCION, IDRUBRO, IDTIPO, IDUNIDAD, CUENTAPROVEEDOR,
-                        CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA,
-                        POLITICAPRECIOS, DesdeTrigger, Perecedero, Largo, Usuario)
-                    VALUES
-                        (@Codigo, @CodigoBarra, @Descripcion, @RubroCodigo, @MarcaCodigo, @UnidadCodigo, @CuentaProveedor,
-                         @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE(),
-                         @Politica, 0, @Perecedero, CASE WHEN @Perecedero = 1 THEN @DiasVencimiento ELSE NULL END, @Usuario);
-                    """;
-                await cn.ExecuteAsync(new CommandDefinition(insertSql, parameters, tx, cancellationToken: token));
+                if (esAlta)
+                {
+                    var insertSql = $"""
+                        INSERT INTO dbo.V_MA_ARTICULOS
+                            (IDARTICULO, CODIGOBARRA, DESCRIPCION, IDRUBRO, IDTIPO, IDUNIDAD, CUENTAPROVEEDOR,
+                            CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA,
+                            POLITICAPRECIOS, DesdeTrigger, Perecedero, Largo, Usuario)
+                        VALUES
+                            (@Codigo, @CodigoBarra, @Descripcion, @RubroCodigo, @MarcaCodigo, @UnidadCodigo, @CuentaProveedor,
+                             @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE(),
+                             @Politica, 0, @Perecedero, CASE WHEN @Perecedero = 1 THEN @DiasVencimiento ELSE NULL END, @Usuario);
+                        """;
+                    await cn.ExecuteAsync(new CommandDefinition(insertSql, prm, tx, cancellationToken: token));
+                }
+                else
+                {
+                    var original = request.CodigoOriginal!.Trim();
+                    if (!string.Equals(original, codigoCrudo, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("El código de un artículo existente no se puede modificar.");
+
+                    var updateSql = $"""
+                        UPDATE dbo.V_MA_ARTICULOS
+                        SET
+                            CODIGOBARRA = @CodigoBarra,
+                            DESCRIPCION = @Descripcion,
+                            IDRUBRO = @RubroCodigo,
+                            IDTIPO = @MarcaCodigo,
+                            IDUNIDAD = @UnidadCodigo,
+                            CUENTAPROVEEDOR = @CuentaProveedor,
+                            CodigoArtProveedor = @CodigoArtProveedor,
+                            Pesable = @Pesable,
+                            COSTO = @Costo,
+                            PRECIO1 = @Precio1,
+                            PRECIO2 = @Precio2,
+                            PRECIO3 = @Precio3,
+                            PRECIO4 = @Precio4,
+                            PRECIO5 = @Precio5,
+                            PRECIO6 = @Precio6,
+                            PRECIO7 = @Precio7,
+                            PRECIO8 = @Precio8,
+                            UTILIDAD = @Utilidad,
+                            TasaIVA = @TasaIva,
+                            EXENTO = @Exento,
+                            POLITICAPRECIOS = @Politica,
+                            Usuario = @Usuario,
+                            -- Perecedero comparte Largo con las medidas: con PideMedidas no se toca (Ma_art.frm oculta el check).
+                            Perecedero = CASE WHEN @UsaPerecederos = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @Perecedero ELSE Perecedero END,
+                            Largo = CASE WHEN @UsaPerecederos = 1 AND @Perecedero = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @DiasVencimiento ELSE Largo END,
+                            -- Como Ma_art.frm al grabar: el trigger FMT_V_MA_ARTICULOS aplica la política y pasa los precios a las listas
+                            -- (DesdeTrigger = 0). Con borrador de precios, la pasada real va con 1: los precios no cambian.
+                            DesdeTrigger = @DesdeTrigger
+                        WHERE LTRIM(RTRIM(IDARTICULO)) = @CodigoWhere;
+                        """;
+                    var affected = await cn.ExecuteAsync(new CommandDefinition(updateSql, prm, tx, cancellationToken: token));
+                    if (affected == 0)
+                        throw new InvalidOperationException("El artículo ya no existe en la base activa.");
+                }
+
+                if (request.Formula is not null)
+                    await GuardarFormulaAsync(cn, tx, codigoCrudo, request.Formula, token);
+
+                if (request.DestinoPreparacion is not null)
+                {
+                    var destinoNuevo = ArticuloDestinoPreparacion.Normalizar(request.DestinoPreparacion)
+                        ?? throw new InvalidOperationException("Elegí un destino de preparación válido (cocina, barra, barra 2 o ninguno).");
+                    await GrabarDestinoPreparacionAsync(cn, tx, codigoCrudo, destinoNuevo, token);
+                }
+
+                if (request.Listas is not null || (esAlta && request.IncluirEnTodasLasListas))
+                {
+                    var usuario = UsuarioQueGraba();
+                    var idArticulo = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
+                        "SELECT TOP (1) IDARTICULO FROM dbo.V_MA_ARTICULOS WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;",
+                        new { Codigo = codigoCrudo }, tx, cancellationToken: token));
+                    await ListasPreciosService.GuardarListasArticuloAsync(cn, tx, idArticulo, request, request.Listas,
+                        esAlta && request.IncluirEnTodasLasListas, usuario, token);
+                }
+            }
+
+            // "Todos los cambios van al borrador" (PreciosArticulosPorBorrador=SI), en edición: pasada A en un savepoint para ver
+            // cómo quedarían los precios (trigger, política, listas); se deshace y la pasada real graba todo menos los precios
+            // (que quedan como estaban, con DesdeTrigger = 1). Los precios nuevos van a V_MA_PRECIOS_BORRADOR. El alta va directo.
+            var borrador = esAlta ? null : await ConfigBorradorAsync(cn, tx, token);
+            var preciosAlBorrador = false;
+            if (borrador is null)
+            {
+                await EscribirAsync(Parametros(0));
             }
             else
             {
-                var original = request.CodigoOriginal!.Trim();
-                if (!string.Equals(original, codigoCrudo, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("El código de un artículo existente no se puede modificar.");
+                var idReal = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
+                    "SELECT TOP (1) IDARTICULO FROM dbo.V_MA_ARTICULOS WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;",
+                    new { Codigo = codigoCrudo }, tx, cancellationToken: token))
+                    ?? throw new InvalidOperationException("El artículo ya no existe en la base activa.");
+                var fotoAntes = await LeerValoresAsync(cn, tx, idReal, token);
+                const string punto = "editor_borrador";
+                tx.Save(punto);
+                await EscribirAsync(Parametros(0));
+                var fotoNueva = await LeerValoresAsync(cn, tx, idReal, token);
+                tx.Rollback(punto);
 
-                var updateSql = $"""
-                    UPDATE dbo.V_MA_ARTICULOS
-                    SET
-                        CODIGOBARRA = @CodigoBarra,
-                        DESCRIPCION = @Descripcion,
-                        IDRUBRO = @RubroCodigo,
-                        IDTIPO = @MarcaCodigo,
-                        IDUNIDAD = @UnidadCodigo,
-                        CUENTAPROVEEDOR = @CuentaProveedor,
-                        CodigoArtProveedor = @CodigoArtProveedor,
-                        Pesable = @Pesable,
-                        COSTO = @Costo,
-                        PRECIO1 = @Precio1,
-                        PRECIO2 = @Precio2,
-                        PRECIO3 = @Precio3,
-                        PRECIO4 = @Precio4,
-                        PRECIO5 = @Precio5,
-                        PRECIO6 = @Precio6,
-                        PRECIO7 = @Precio7,
-                        PRECIO8 = @Precio8,
-                        UTILIDAD = @Utilidad,
-                        TasaIVA = @TasaIva,
-                        EXENTO = @Exento,
-                        POLITICAPRECIOS = @Politica,
-                        Usuario = @Usuario,
-                        -- Perecedero comparte Largo con las medidas: con PideMedidas no se toca (Ma_art.frm oculta el check).
-                        Perecedero = CASE WHEN @UsaPerecederos = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @Perecedero ELSE Perecedero END,
-                        Largo = CASE WHEN @UsaPerecederos = 1 AND @Perecedero = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @DiasVencimiento ELSE Largo END,
-                        -- Como Ma_art.frm al grabar: el trigger FMT_V_MA_ARTICULOS aplica la política y pasa los precios a las listas.
-                        DesdeTrigger = 0
-                    WHERE LTRIM(RTRIM(IDARTICULO)) = @CodigoWhere;
-                    """;
-                var affected = await cn.ExecuteAsync(new CommandDefinition(updateSql, parameters, tx, cancellationToken: token));
-                if (affected == 0)
-                    throw new InvalidOperationException("El artículo ya no existe en la base activa.");
+                // Pasada real con los precios actuales; el formulario no se modifica (la vista previa usa el mismo objeto).
+                var preciosForm = Enumerable.Range(1, 8).Select(PrecioClase).ToArray();
+                var listasForm = (request.Listas ?? []).Select(l => (Lista: l, Precios: Enumerable.Range(1, 8).Select(l.Precio).ToArray(), l.Precio9, l.Precio10)).ToList();
+                try
+                {
+                    for (var c = 1; c <= 8; c++)
+                        PonerPrecioClase(c, fotoAntes.Maestro.GetValueOrDefault($"PRECIO{c}"));
+                    foreach (var (lista, _, _, _) in listasForm)
+                    {
+                        var actual = fotoAntes.Listas.FirstOrDefault(x => string.Equals(x.Key.Trim(), lista.IdLista.Trim(), StringComparison.OrdinalIgnoreCase)).Value;
+                        if (actual is null) continue; // lista nueva para el artículo: entra con sus precios
+                        for (var c = 1; c <= 8; c++)
+                            lista.SetPrecio(c, actual.GetValueOrDefault($"PRECIO{c}"));
+                        lista.Precio9 = actual.GetValueOrDefault("PRECIO9") is var p9 && p9 != 0 ? p9 : lista.Precio9 is null ? null : 0;
+                        lista.Precio10 = actual.GetValueOrDefault("PRECIO10") is var p10 && p10 != 0 ? p10 : lista.Precio10 is null ? null : 0;
+                    }
+                    await EscribirAsync(Parametros(1));
+                }
+                finally
+                {
+                    for (var c = 1; c <= 8; c++)
+                        PonerPrecioClase(c, preciosForm[c - 1]);
+                    foreach (var (lista, precios, p9, p10) in listasForm)
+                    {
+                        for (var c = 1; c <= 8; c++)
+                            lista.SetPrecio(c, precios[c - 1]);
+                        lista.Precio9 = p9;
+                        lista.Precio10 = p10;
+                    }
+                }
+                if (Math.Round(request.Costo, 2) != Math.Round(fotoAntes.Maestro.GetValueOrDefault("COSTO"), 2))
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        "UPDATE dbo.V_MA_PRECIOS SET COSTO = @Costo, Usuario = @Usuario, DesdeTrigger = 1 WHERE IDARTICULO = @Id AND TIPOLISTA = 'V';",
+                        new { Id = idReal, request.Costo, Usuario = UsuarioQueGraba() }, tx, cancellationToken: token));
+                var (enMaestro, enListas) = await EscribirBorradorAsync(cn, tx, borrador, idReal, fotoAntes, fotoNueva, UsuarioQueGraba(), token);
+                preciosAlBorrador = enMaestro || enListas > 0;
             }
 
-            if (request.Listas is not null || (esAlta && request.IncluirEnTodasLasListas))
+            decimal PrecioClase(int c) => c switch
             {
-                var usuario = UsuarioQueGraba();
-                var idArticulo = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
-                    "SELECT TOP (1) IDARTICULO FROM dbo.V_MA_ARTICULOS WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;",
-                    new { Codigo = codigoCrudo }, tx, cancellationToken: token));
-                await ListasPreciosService.GuardarListasArticuloAsync(cn, tx, idArticulo, request, request.Listas,
-                    esAlta && request.IncluirEnTodasLasListas, usuario, token);
+                1 => request.Precio1, 2 => request.Precio2, 3 => request.Precio3, 4 => request.Precio4,
+                5 => request.Precio5, 6 => request.Precio6, 7 => request.Precio7, _ => request.Precio8
+            };
+            void PonerPrecioClase(int c, decimal v)
+            {
+                switch (c)
+                {
+                    case 1: request.Precio1 = v; break;
+                    case 2: request.Precio2 = v; break;
+                    case 3: request.Precio3 = v; break;
+                    case 4: request.Precio4 = v; break;
+                    case 5: request.Precio5 = v; break;
+                    case 6: request.Precio6 = v; break;
+                    case 7: request.Precio7 = v; break;
+                    default: request.Precio8 = v; break;
+                }
+            }
+
+            // Si cambió el valor del artículo (costo o algún precio, por la ClasePr), se recalculan los productos que
+            // lo usan como insumo, en la misma transacción.
+            var cascada = new ArticuloCascadaResultado();
+            if (valorAntes is not null && !string.Equals(valorAntes, await LeerValorArticuloAsync(cn, tx, codigoCrudo, token), StringComparison.Ordinal))
+                cascada = await PropagarCostosAsync(cn, tx, [codigoCrudo], UsuarioQueGraba(), token);
+
+            if (simular)
+            {
+                if (inspeccionSimulada is not null)
+                    await inspeccionSimulada(cn, tx);
+                await tx.RollbackAsync(token);
+                return new ArticuloGuardadoResultado { Codigo = codigoCrudo, Cascada = cascada, PreciosAlBorrador = preciosAlBorrador };
             }
             await tx.CommitAsync(token);
 
-            return codigoCrudo;
-        }, "No se pudo guardar el artículo.", ct);
+            if (cascada.Cambios.Count > 0)
+                await appEvents.LogAuditAsync(ModuleName, "CascadaCostos", "V_MA_ARTICULOS", codigoCrudo,
+                    $"Cambio de valor de {codigoCrudo}: se recalcularon {cascada.Cambios.Count} producto(s) que lo usan como insumo{(cascada.AlBorrador ? " (precios al borrador)" : "")}.",
+                    new { Origen = codigoCrudo, cascada.AlBorrador, Productos = cascada.Cambios.Select(c => new { c.Codigo, c.CostoAnterior, c.CostoNuevo }) },
+                    CancellationToken.None);
+            if (preciosAlBorrador)
+                await appEvents.LogAuditAsync(ModuleName, "PreciosAlBorrador", "V_MA_PRECIOS_BORRADOR", codigoCrudo,
+                    $"Los precios nuevos de {codigoCrudo} quedaron en el borrador de precios.", null, CancellationToken.None);
+            return new ArticuloGuardadoResultado { Codigo = codigoCrudo, Cascada = cascada, PreciosAlBorrador = preciosAlBorrador };
+        }
+
+    /// <summary>Huella del valor del artículo (costo y PRECIO1..8) para saber si cambió y hay que propagar.</summary>
+    internal static async Task<string?> LeerValorArticuloAsync(SqlConnection cn, SqlTransaction tx, string codigo, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+            SELECT TOP (1) CONCAT(CONVERT(decimal(18, 2), ISNULL(COSTO, 0)), '|',
+                CONVERT(decimal(18, 2), ISNULL(PRECIO1, 0)), '|', CONVERT(decimal(18, 2), ISNULL(PRECIO2, 0)), '|',
+                CONVERT(decimal(18, 2), ISNULL(PRECIO3, 0)), '|', CONVERT(decimal(18, 2), ISNULL(PRECIO4, 0)), '|',
+                CONVERT(decimal(18, 2), ISNULL(PRECIO5, 0)), '|', CONVERT(decimal(18, 2), ISNULL(PRECIO6, 0)), '|',
+                CONVERT(decimal(18, 2), ISNULL(PRECIO7, 0)), '|', CONVERT(decimal(18, 2), ISNULL(PRECIO8, 0)))
+            FROM dbo.V_MA_ARTICULOS WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;
+            """, new { Codigo = codigo.Trim() }, tx, cancellationToken: ct));
+
+    /// <summary>Qué columnas del destino de preparación tiene la base (no todas las bases tienen talles).</summary>
+    private static async Task<(bool TalleDefault, bool UsaTalle)> LeerColumnasDestinoAsync(SqlConnection cn, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        var fila = await cn.QuerySingleAsync<(int TalleDefault, int UsaTalle)>(new CommandDefinition("""
+            SELECT
+                CASE WHEN COL_LENGTH(N'dbo.V_MA_ARTICULOS', N'TalleDefault') IS NULL THEN 0 ELSE 1 END,
+                CASE WHEN COL_LENGTH(N'dbo.V_MA_ARTICULOS', N'UsaTalle') IS NULL THEN 0 ELSE 1 END;
+            """, transaction: tx, cancellationToken: ct));
+        return (fila.TalleDefault == 1, fila.UsaTalle == 1);
+    }
+
+    /// <summary>
+    /// Graba el destino de preparación del salón en TalleDefault (C/B/R o vacío). No toca los artículos con
+    /// talles (UsaTalle = 1): ahí TalleDefault es el talle por defecto. Devuelve false si no se grabó.
+    /// </summary>
+    private static async Task<bool> GrabarDestinoPreparacionAsync(SqlConnection cn, SqlTransaction tx, string codigo, string destino, CancellationToken ct)
+    {
+        var columnas = await LeerColumnasDestinoAsync(cn, ct, tx);
+        if (!columnas.TalleDefault)
+            return false;
+        var filtroTalle = columnas.UsaTalle ? " AND ISNULL(UsaTalle, 0) = 0" : string.Empty;
+        var afectadas = await cn.ExecuteAsync(new CommandDefinition(
+            $"UPDATE dbo.V_MA_ARTICULOS SET TalleDefault = @Destino WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo{filtroTalle};",
+            new { Destino = destino, Codigo = codigo.Trim() }, tx, cancellationToken: ct));
+        return afectadas > 0;
+    }
 
     private string UsuarioQueGraba()
         => appUserSession?.GetCurrentUserName().Trim() is { Length: > 0 } u ? (u.Length > 50 ? u[..50] : u) : "AlfaCore";
@@ -695,12 +899,12 @@ public sealed partial class ArticulosService(
         return baseCentral?.IdCliente ?? string.Empty;
     }
 
-    private static async Task<Dictionary<string, string>> ReadConfigMapAsync(SqlConnection cn, IReadOnlyList<string> claves, CancellationToken ct)
+    private static async Task<Dictionary<string, string>> ReadConfigMapAsync(SqlConnection cn, IReadOnlyList<string> claves, CancellationToken ct, SqlTransaction? tx = null)
     {
         var rows = await cn.QueryAsync<(string Clave, string Valor)>(new CommandDefinition("""
             SELECT UPPER(LTRIM(RTRIM(CLAVE))) AS Clave, ISNULL(LTRIM(RTRIM(VALOR)), '') AS Valor
             FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN @Claves;
-            """, new { Claves = claves }, cancellationToken: ct));
+            """, new { Claves = claves }, tx, cancellationToken: ct));
         return rows.ToDictionary(r => r.Clave, r => r.Valor, StringComparer.OrdinalIgnoreCase);
     }
 

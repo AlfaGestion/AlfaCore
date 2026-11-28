@@ -121,6 +121,7 @@ public static class AyudaManuales
         ("/costos/historial","archivos","Historial de actualizaciones"),
         ("/costos","archivos","Importar una lista de costos"),
         ("/tareas","general","Tareas"),
+        ("/articulos/borrador-precios","archivos","Revisar y aplicar el borrador"),
         ("/articulos/listas-precios","archivos","Listas de precios"),
         ("/articulos/configuracion","archivos","Configuración de artículos"),
         ("/articulos","archivos","Dar de alta un artículo"),

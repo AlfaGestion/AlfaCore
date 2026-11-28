@@ -54,6 +54,8 @@ public sealed class ListaPrecioFiltro
 /// <summary>Fila de la lista: precios de la lista más datos del artículo para mostrar.</summary>
 public sealed class ListaPrecioFilaDto
 {
+    /// <summary>Al grabar, el precio nuevo quedó en el borrador de precios (PreciosArticulosPorBorrador=SI): la fila trae el precio real.</summary>
+    public bool EnBorrador { get; set; }
     public int Id { get; set; }
     public string IdArticulo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;

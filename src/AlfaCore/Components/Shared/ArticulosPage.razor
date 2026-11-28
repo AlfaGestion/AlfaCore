@@ -65,6 +65,52 @@
                        OnConfirm="ConfirmDeactivateAsync"
                        OnCancel="CloseDeactivateConfirm" />
 
+    @* Cascada de costos: antes de grabar un artículo que es insumo de otros, qué productos cambian (FrmConfirmar del legacy). *@
+    <AlfaDialog Open="@(_cascadaPreview is not null)"
+                Title="Productos que usan este artículo"
+                Eyebrow="Fórmulas de producción"
+                Description="@(_cascadaPreview?.AlBorrador == true
+                    ? "Al guardar se recalcula el costo de estos productos. Los precios de venta nuevos van al borrador de precios: no cambian hasta que se aplique."
+                    : "Al guardar se recalcula el costo de estos productos y, si tienen margen, sus precios de venta y de listas.")"
+                Size="AlfaDialogSize.Lg"
+                Loading="@_saving"
+                OnClose="() => _cascadaPreview = null">
+        <ChildContent>
+            @if (_cascadaPreview is { } cp)
+            {
+                @if (cp.Cambios.Count > 0)
+                {
+                    <div class="articulos-cascada">
+                        <table class="articulos-cascada__tabla">
+                            <thead><tr><th>Código</th><th>Producto</th><th class="num">Costo</th><th class="num">@($"{GetPrecioLabel(_lookups.ClasePrecioVenta)}{(cp.AlBorrador ? " (borrador)" : "")}")</th><th class="num">Listas</th></tr></thead>
+                            <tbody>
+                                @foreach (var c in cp.Cambios)
+                                {
+                                    <tr>
+                                        <td>@c.Codigo</td>
+                                        <td>@c.Descripcion</td>
+                                        <td class="num">@Cambio(c.CostoAnterior, c.CostoNuevo)</td>
+                                        <td class="num">@Cambio(c.PrecioVentaAnterior, c.PrecioVentaNuevo)</td>
+                                        <td class="num">@(c.Listas == 0 ? "—" : c.Listas.ToString())</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @foreach (var o in cp.Observaciones)
+                {
+                    <p class="articulos-hint"><i class="bi bi-exclamation-triangle"></i> @o</p>
+                }
+            }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_saving" OnClick="_ => _cascadaPreview = null">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Loading="@_saving" Disabled="@_saving"
+                        OnClick="_ => GuardarConfirmadoAsync()">@($"Guardar y actualizar {_cascadaPreview?.Cambios.Count ?? 0} producto(s)")</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+
     @* Acción por lote sobre los artículos seleccionados (aumento %, rubro, marca, familia, utilidad). *@
     <AlfaDialog Open="@_loteAbierto"
                 Title="Acción por lote"
@@ -106,6 +152,11 @@
                     case ArticuloLoteAcciones.Familia:
                         <AlfaSelect Label="Familia" Value="@_loteCodigo" ValueChanged="v => _loteCodigo = v ?? string.Empty"
                                     Options="@LoteFamiliaOptions" Placeholder="@(_loteFamilias is null ? "Cargando familias..." : "Elegí una familia...")" Disabled="@(_loteProcesando || _loteFamilias is null)" />
+                        break;
+                    case ArticuloLoteAcciones.DestinoPreparacion:
+                        <AlfaSelect Label="Destino de preparación" Value="@_loteCodigo" ValueChanged="v => _loteCodigo = v ?? string.Empty"
+                                    Options="@DestinoPreparacionOptions" Placeholder="Elegí cocina, barra o barra 2..." Disabled="@_loteProcesando" />
+                        <p class="articulos-lote__nota">Es a dónde va el artículo al enviar la comanda del salón. Los artículos que usan talles no se cambian.</p>
                         break;
                     case ArticuloLoteAcciones.Utilidad:
                         <div class="articulos-lote__fila">
@@ -370,6 +421,17 @@
                             <i class="bi bi-speedometer2"></i> Producto para balanza (pesable)
                         </AlfaCheckbox>
                     </div>
+                    @if (_lookups.UsaDestinoPreparacion && _form is not ArticuloDetailDto { UsaTalle: true })
+                    {
+                        @* Salón: a qué pantalla/comandera va al enviar la comanda. Se guarda en TalleDefault, como Alfa Gestión. *@
+                        <div class="articulos-field">
+                            <AlfaSelect Label="Destino de preparación (salón)"
+                                        Value="@(string.IsNullOrEmpty(_form.DestinoPreparacion) ? ArticuloDestinoPreparacion.OpcionNinguno : _form.DestinoPreparacion)"
+                                        ValueChanged="v => _form.DestinoPreparacion = ArticuloDestinoPreparacion.Normalizar(v)"
+                                        Options="@DestinoPreparacionOptions" />
+                            <small class="articulos-field__help">Al enviar la comanda del salón va a esta pantalla o comandera. Sin destino queda servido directamente (bebidas, cubiertos).</small>
+                        </div>
+                    }
                     @if (_lookups.UsaPerecederos)
                     {
                         @* Como Ma_art.frm: Perecedero + días de vencimiento (se guardan en Largo); no convive con Pide medidas ni con lotes. *@
@@ -404,7 +466,8 @@
                         <h3 id="articulos-precios-config-title">Costo y configuración</h3>
                         <div class="articulos-precios-config-grid">
                             <AlfaInput Label="Costo" Type="number" Value="@_form.Costo.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                                       ValueChanged="OnCostoChangedAsync" />
+                                       ValueChanged="OnCostoChangedAsync" Disabled="@CostoPorFormula"
+                                       HelpText="@(CostoPorFormula ? "Se calcula con la fórmula (solapa Fórmula)" : null)" />
                             <AlfaInput Label="Utilidad %" Type="number" Value="@_form.Utilidad.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                        ValueChanged="OnUtilidadChangedAsync" />
                             <AlfaInput Label="Alícuota de IVA" Type="number" Value="@_form.TasaIva.ToString(System.Globalization.CultureInfo.InvariantCulture)"
@@ -495,6 +558,23 @@
                         </section>
                     </div>
                 </div>
+                    }
+                    else if (_activeTab == ArticuloTab.Formula)
+                    {
+                        @if (_cargandoFormula || _form.Formula is null)
+                        {
+                            <p class="articulos-hint"><i class="bi bi-hourglass-split"></i> Cargando fórmula...</p>
+                        }
+                        else
+                        {
+                            <ArticuloFormulaEditor Formula="@_form.Formula"
+                                                   CodigoProducto="@(_isNewMode ? null : _selectedCodigo)"
+                                                   Unidades="@_lookups.Unidades"
+                                                   UsaTareas="@_lookups.UsaTareas"
+                                                   Tareas="@_lookups.Tareas"
+                                                   NombreClase="GetPrecioLabel"
+                                                   CostoCambiado="OnCostoFormulaCambiadoAsync" />
+                        }
                     }
                     else
                     {
@@ -680,12 +760,22 @@
     private bool _hasPrev;
     private bool _hasNext;
 
-    private readonly IReadOnlyList<AlfaTabItem> _tabItems =
-    [
-        new(ArticuloTab.Datos.ToString(), "Datos generales"),
-        new(ArticuloTab.Precios.ToString(), "Precios"),
-        new(ArticuloTab.Listas.ToString(), "Listas de precios")
-    ];
+    // La solapa Fórmula aparece solo si la base tiene la tabla de insumos (V_MA_INSUMOS).
+    private IReadOnlyList<AlfaTabItem> _tabItems =>
+        _lookups.UsaFormula
+            ?
+            [
+                new(ArticuloTab.Datos.ToString(), "Datos generales"),
+                new(ArticuloTab.Precios.ToString(), "Precios"),
+                new(ArticuloTab.Listas.ToString(), "Listas de precios"),
+                new(ArticuloTab.Formula.ToString(), "Fórmula")
+            ]
+            :
+            [
+                new(ArticuloTab.Datos.ToString(), "Datos generales"),
+                new(ArticuloTab.Precios.ToString(), "Precios"),
+                new(ArticuloTab.Listas.ToString(), "Listas de precios")
+            ];
 
     private static readonly IReadOnlyList<AlfaSelectOption> PageSizeOptions =
     [
@@ -694,8 +784,9 @@
         new("100", "100 por página")
     ];
 
-    private enum ArticuloTab { Datos, Precios, Listas }
+    private enum ArticuloTab { Datos, Precios, Listas, Formula }
     private bool _cargandoListas;
+    private bool _cargandoFormula;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1663,16 +1754,25 @@
             Nav.NavigateTo(path);
     }
 
+    private ArticuloCascadaResultado? _cascadaPreview;
+
     private async Task GuardarAsync()
     {
         _saving = true;
         UpdatePageHeader();
         try
         {
-            var savedCode = await ArticulosSvc.SaveAsync(_form);
-            SetFeedback(AppUiMessage.Success("Artículo guardado", $"El artículo {savedCode} se guardó correctamente."));
-            CerrarEditor();
-            await BuscarAsync();
+            // Si el artículo es insumo de otros y cambia su valor, se muestra antes qué productos se recalculan.
+            if (!_isNewMode && _lookups.UsaFormula)
+            {
+                var previa = await ArticulosSvc.PrevisualizarCascadaAsync(_form);
+                if (previa.Cambios.Count > 0 || previa.Observaciones.Count > 0)
+                {
+                    _cascadaPreview = previa;
+                    return;
+                }
+            }
+            await GuardarConfirmadoCoreAsync();
         }
         catch (Exception ex)
         {
@@ -1683,6 +1783,40 @@
             _saving = false;
             UpdatePageHeader();
         }
+    }
+
+    private async Task GuardarConfirmadoAsync()
+    {
+        _saving = true;
+        UpdatePageHeader();
+        try
+        {
+            await GuardarConfirmadoCoreAsync();
+            _cascadaPreview = null;
+        }
+        catch (Exception ex)
+        {
+            _cascadaPreview = null;
+            SetFeedback(UiOps.BuildMessage(ex, "No se pudo guardar el artículo."));
+        }
+        finally
+        {
+            _saving = false;
+            UpdatePageHeader();
+        }
+    }
+
+    private async Task GuardarConfirmadoCoreAsync()
+    {
+        var r = await ArticulosSvc.GuardarConCascadaAsync(_form);
+        var detalle = (r.Cascada.Cambios.Count == 0
+            ? $"El artículo {r.Codigo} se guardó correctamente."
+            : $"El artículo {r.Codigo} se guardó y se recalcularon {r.Cascada.Cambios.Count} producto(s) que lo usan como insumo"
+              + (r.Cascada.AlBorrador ? "; sus precios nuevos quedaron en el borrador de precios." : "."))
+            + (r.PreciosAlBorrador ? " Los precios nuevos del artículo quedaron en el borrador de precios: no cambian hasta aplicarlos." : string.Empty);
+        SetFeedback(AppUiMessage.Success("Artículo guardado", detalle));
+        CerrarEditor();
+        await BuscarAsync();
     }
 
     // ---- Acción por lote (aumento %, rubro, marca, familia, utilidad) ----
@@ -1703,8 +1837,14 @@
         new(ArticuloLoteAcciones.Rubro, "Asignar rubro"),
         new(ArticuloLoteAcciones.Marca, "Asignar marca"),
         new(ArticuloLoteAcciones.Familia, "Asignar familia"),
-        new(ArticuloLoteAcciones.Utilidad, "Asignar utilidad")
+        new(ArticuloLoteAcciones.Utilidad, "Asignar utilidad"),
+        new(ArticuloLoteAcciones.DestinoPreparacion,
+            _lookups.UsaDestinoPreparacion ? "Asignar destino de preparación (cocina/barra)" : "Asignar destino de preparación (la base no lo tiene)",
+            !_lookups.UsaDestinoPreparacion)
     ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> DestinoPreparacionOptions =
+        ArticuloDestinoPreparacion.Opciones.Select(o => new AlfaSelectOption(o.Codigo, o.Descripcion)).ToList();
 
     private static readonly IReadOnlyList<AlfaSelectOption> LoteAplicarAOptions =
     [
@@ -1791,7 +1931,7 @@
                 }
                 request.Utilidad = ParseDecimal(_loteUtilidad);
                 break;
-            case ArticuloLoteAcciones.Rubro or ArticuloLoteAcciones.Marca or ArticuloLoteAcciones.Familia:
+            case ArticuloLoteAcciones.Rubro or ArticuloLoteAcciones.Marca or ArticuloLoteAcciones.Familia or ArticuloLoteAcciones.DestinoPreparacion:
                 if (string.IsNullOrWhiteSpace(_loteCodigo))
                 {
                     _loteError = "Elegí el valor a asignar.";
@@ -1812,9 +1952,14 @@
             }
 
             var r = result.Value;
+            var borrador = r.ArticulosAlBorrador > 0
+                ? $" Los precios nuevos de {r.ArticulosAlBorrador} artículo(s) quedaron en el borrador de precios: no cambian hasta aplicarlos."
+                : string.Empty;
+            var cascada = borrador + (r.ProductosRecalculados == 0 ? string.Empty
+                : $" Además se recalcularon {r.ProductosRecalculados} producto(s) que los usan como insumo{(r.PreciosAlBorrador ? " (precios nuevos al borrador)" : string.Empty)}.");
             var detalle = r.Observaciones.Count == 0
-                ? $"Se actualizaron {r.Actualizados} artículo(s)."
-                : $"Se actualizaron {r.Actualizados} artículo(s). Observaciones: {string.Join(" ", r.Observaciones.Take(5))}{(r.Observaciones.Count > 5 ? $" (y {r.Observaciones.Count - 5} más)" : string.Empty)}";
+                ? $"Se actualizaron {r.Actualizados} artículo(s).{cascada}"
+                : $"Se actualizaron {r.Actualizados} artículo(s).{cascada} Observaciones: {string.Join(" ", r.Observaciones.Take(5))}{(r.Observaciones.Count > 5 ? $" (y {r.Observaciones.Count - 5} más)" : string.Empty)}";
             SetFeedback(r.Observaciones.Count == 0
                 ? AppUiMessage.Success("Acción aplicada", detalle)
                 : AppUiMessage.Warning("Acción aplicada con observaciones", detalle));
@@ -1896,7 +2041,44 @@
             _activeTab = tab;
         if (_activeTab == ArticuloTab.Listas && _form.Listas is null && !_cargandoListas)
             await CargarListasAsync();
+        if (_activeTab == ArticuloTab.Formula && _form.Formula is null && !_cargandoFormula)
+            await CargarFormulaAsync();
     }
+
+    private async Task CargarFormulaAsync()
+    {
+        var form = _form;
+        _cargandoFormula = true;
+        try
+        {
+            if (_isNewMode)
+            {
+                _form.Formula = new ArticuloFormulaDto();
+                return;
+            }
+            var result = await UiOps.RunAsync(() => ArticulosSvc.GetFormulaAsync(_selectedCodigo ?? string.Empty), "No se pudo cargar la fórmula.");
+            if (!result.Success) { SetFeedback(result.Feedback); return; }
+            if (!ReferenceEquals(form, _form)) return; // cambió de artículo mientras cargaba
+            _form.Formula = result.Value ?? new ArticuloFormulaDto();
+        }
+        finally
+        {
+            _cargandoFormula = false;
+        }
+    }
+
+    /// <summary>Con "Calcular el costo automáticamente", el costo del artículo sigue al de la fórmula
+    /// (y con utilidad cargada se recalcula el precio de venta, como al tipear el costo).</summary>
+    private Task OnCostoFormulaCambiadoAsync(decimal costo)
+    {
+        if (_form.Formula is { CostoAutomaticoVigente: true })
+            return OnCostoChangedAsync(costo.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>El costo sale de la fórmula: el campo Costo de la solapa Precios queda de solo lectura.</summary>
+    private bool CostoPorFormula
+        => _form.Formula?.CostoAutomaticoVigente ?? _form is ArticuloDetailDto { CostoPorFormula: true };
 
     // ---- Rubro/Marca/Unidad/Proveedor: mismo combo con búsqueda (AlfaLookup) que el panel de
     // filtros, para que todo campo de tabla relacionada se maneje de forma homogénea en todo el

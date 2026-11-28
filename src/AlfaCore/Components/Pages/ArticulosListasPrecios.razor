@@ -479,6 +479,8 @@
         {
             var guardada = await Service.GuardarFilaAsync(_idLista, copia);
             Reemplazar(guardada);
+            if (guardada.EnBorrador)
+                _feedback = AppUiMessage.Info("Precio en el borrador", $"El precio nuevo de {guardada.IdArticulo} quedó en el borrador de precios: no cambia hasta aplicarlo.");
         }
         catch (Exception ex)
         {
@@ -496,8 +498,11 @@
         _busy = true; _error = null;
         try
         {
-            Reemplazar(await Service.GuardarFilaAsync(_idLista, _editFila));
+            var guardada = await Service.GuardarFilaAsync(_idLista, _editFila);
+            Reemplazar(guardada);
             _editFila = null;
+            if (guardada.EnBorrador)
+                _feedback = AppUiMessage.Info("Precio en el borrador", $"Los precios nuevos de {guardada.IdArticulo} quedaron en el borrador de precios: no cambian hasta aplicarlos.");
         }
         catch (Exception ex) { _error = Mensaje(ex, "No se pudo grabar el artículo."); }
         finally { _busy = false; }

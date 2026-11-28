@@ -761,6 +761,7 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
                 var updated = 0;
                 var same = 0;
                 var errors = 0;
+                var costosCambiados = new List<string>();
 
                 foreach (var row in rowsToApply)
                 {
@@ -817,6 +818,7 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
 
                         await MarkDetailAppliedAsync(row.DetailId, userName, "OK", null, true, cn, tx, token);
                         await InsertHistoryRowAsync(detail, row, currentCost.Value, newCost, userName, cn, tx, token);
+                        costosCambiados.Add(row.ArticleId);
                         updated++;
                     }
                     catch (Exception ex)
@@ -854,9 +856,15 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
                 await cmd.ExecuteNonQueryAsync(token);
                 }
 
+                // Fórmulas de producción: los productos que usan estos artículos como insumo se recalculan en la
+                // misma transacción (con PreciosArticulosPorBorrador=SI sus precios nuevos van al borrador).
+                var cascada = costosCambiados.Count == 0
+                    ? new ArticuloCascadaResultado()
+                    : await ArticulosService.PropagarCostosAsync(cn, tx, costosCambiados, userName, token);
+
                 await tx.CommitAsync(token);
                 await _appEvents.LogAuditAsync("Costos", "ApplyConfirmedRows", "IA_Costos_Importacion_CAB", batchId.ToString(CultureInfo.InvariantCulture), "Aplicación de costos ejecutada.",
-                    new { batchId, userName, updated, same, errors, status }, token);
+                    new { batchId, userName, updated, same, errors, status, productosRecalculados = cascada.Cambios.Count, cascada.AlBorrador }, token);
 
                 return new CostosApplyResultDto
                 {
@@ -864,7 +872,9 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
                     Updated = updated,
                     Same = same,
                     Errors = errors,
-                    Status = status
+                    Status = status,
+                    ProductosRecalculados = cascada.Cambios.Count,
+                    PreciosAlBorrador = cascada.AlBorrador && cascada.Cambios.Count > 0
                 };
             }
             catch
@@ -924,6 +934,7 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
 
                 var reverted = 0;
                 var errors = 0;
+                var costosRevertidos = new List<string>();
                 foreach (var row in rows)
                 {
                     if (string.IsNullOrWhiteSpace(row.ArticleId) || row.PreviousCost is null)
@@ -963,6 +974,7 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
                             await cmd.ExecuteNonQueryAsync(token);
                         }
 
+                        costosRevertidos.Add(row.ArticleId);
                         reverted++;
                     }
                     catch
@@ -970,6 +982,12 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
                         errors++;
                     }
                 }
+
+                // Fórmulas de producción: al volver el costo atrás, los productos que usan esos artículos como
+                // insumo también vuelven a recalcularse (si no, quedarían con el costo de la importación deshecha).
+                var cascada = costosRevertidos.Count == 0
+                    ? new ArticuloCascadaResultado()
+                    : await ArticulosService.PropagarCostosAsync(cn, tx, costosRevertidos, userName, token);
 
                 var status = errors > 0 ? "DESHECHA_PARCIAL" : "EN_REVISION";
                 await using (var cmd = new SqlCommand("""
@@ -990,14 +1008,16 @@ public sealed class CostosService(IConfiguration configuration, ISessionService 
 
                 await tx.CommitAsync(token);
                 await _appEvents.LogAuditAsync("Costos", "UndoLastApply", "IA_Costos_Importacion_CAB", batchId.ToString(CultureInfo.InvariantCulture), "Se deshicieron actualizaciones del lote.",
-                    new { batchId, userName, reverted, errors }, token);
+                    new { batchId, userName, reverted, errors, productosRecalculados = cascada.Cambios.Count, cascada.AlBorrador }, token);
 
                 return new CostosUndoResultDto
                 {
                     BatchId = batchId,
                     Reverted = reverted,
                     Errors = errors,
-                    Status = status
+                    Status = status,
+                    ProductosRecalculados = cascada.Cambios.Count,
+                    PreciosAlBorrador = cascada.AlBorrador && cascada.Cambios.Count > 0
                 };
             }
             catch

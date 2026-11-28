@@ -80,7 +80,7 @@ En la solapa **Condiciones** de la ficha del proveedor, sección **Descuentos po
 
 ## Artículos
 
-Maestro de artículos y servicios: código, descripción, costos, precios, IVA e imagen. Arriba están las pestañas **Artículos**, **Listas de precios** y **Configuración**.
+Maestro de artículos y servicios: código, descripción, costos, precios, IVA, imagen y fórmula de producción. Arriba están las pestañas **Artículos**, **Listas de precios**, **Historial de precios**, **Borrador de precios** y **Configuración**.
 
 ### Dar de alta un artículo
 
@@ -89,7 +89,10 @@ Maestro de artículos y servicios: código, descripción, costos, precios, IVA e
 3. Elegí **Rubro**, **Marca** y **Familia** (podés buscar o crear desde el mismo campo).
 4. En **Costo y configuración** cargá el **Costo**, la **Alícuota de IVA** y la **Política de precios** (por ejemplo, calcular el precio con la **Utilidad %**). [[bi:eye]] **Ver cómo quedan los precios** muestra el resultado antes de guardar.
 5. En **Precios de venta** revisá el precio de cada clase. Podés cargar una **oferta** con fechas **Oferta desde / hasta** y precios por cantidad.
-6. Tocá [[bi:floppy]] **Guardar**.
+6. Si el artículo se prepara en el salón (restaurante, bar), en **Datos generales** elegí el **Destino de preparación (salón)**: **Cocina**, **Barra** o **Barra 2**. Lo que queda en **Ninguno** (bebidas, cubiertos) no pasa por la cocina.
+7. Tocá [[bi:floppy]] **Guardar**.
+
+Si el borrador de precios está activo, al editar un artículo existente el costo se graba enseguida pero los precios nuevos quedan pendientes en el **Borrador de precios** (ver más abajo). Un artículo nuevo se da de alta con sus precios directamente.
 
 ### Imagen del artículo
 
@@ -110,7 +113,44 @@ Marcá los artículos y tocá [[bi:lightning-charge]] **Acción por lote** en la
 - **Aplicar a**: elegí sobre qué precios o costos aplicar.
 - **Redondear precios a**: sin redondeo, $1, $10 o $100.
 
-También podés cambiar el rubro, la marca, la familia o la utilidad de todos los marcados. Tocá [[bi:lightning-charge]] **Aplicar a N artículo(s)**.
+También podés cambiar el rubro, la marca, la familia, la utilidad o el **destino de preparación** (cocina, barra o barra 2) de todos los marcados. Tocá [[bi:lightning-charge]] **Aplicar a N artículo(s)**.
+
+Si alguno de los artículos es insumo de otros productos, esos productos se recalculan solos (ver **Costo automático y productos que usan el artículo**). Con el borrador de precios activo, los precios nuevos quedan pendientes en el borrador.
+
+### Fórmula de producción
+
+Para los artículos que se fabrican o se arman (una hamburguesa, un combo, una torta), en la pestaña **Fórmula** de la ficha se cargan los **insumos** que lleva: es la misma fórmula que la pestaña Insumos de Alfa Gestión, así que lo que cargues en un sistema se ve en el otro.
+
+1. Abrí el artículo y tocá la pestaña **Fórmula**.
+2. Tocá [[bi:plus-lg]] **Agregar insumo** y escribí el código, o tocá [[bi:search]] para buscarlo por descripción.
+3. Completá la **Cantidad** que lleva y, si hace falta, la **Unidad** (por ejemplo, el insumo se compra por kilo y la fórmula lleva 180 gramos: elegí la unidad en gramos; tiene que estar cargada la equivalencia entre las dos unidades).
+4. En **Valor del insumo** elegí qué valor se toma: **Costo** (lo habitual) o una de las clases de precio del insumo.
+5. Abajo se ve el **Costo de la fórmula**. Tocá [[bi:floppy]] **Guardar**.
+
+Otras opciones de la pestaña:
+
+- [[bi:files]] **Copiar de…** trae la fórmula de otro artículo parecido, para no cargarla de cero.
+- Un código que empieza con **\*** es un insumo de **texto libre** (sin artículo, no suma costo).
+- **Insumos por porcentaje**: cada insumo lleva el % del artículo que representa y tienen que sumar 100. Sirve para partir el stock (por ejemplo, una media res en sus cortes); en este modo los insumos no suman costo.
+- **Los insumos descuentan stock solo al producir**: al vender el artículo no se descuentan sus insumos; se descuentan cuando se registra la producción.
+- Si la base usa tareas (configuración **UsaTareasEnArticulos**), abajo aparece la grilla de **Tareas** con sus minutos y su costo por hora.
+
+El sistema no deja guardar una fórmula con errores: un insumo que no existe, una unidad sin equivalencia, cantidades en 0, o un **ciclo** (que el artículo termine siendo insumo de sus propios insumos, por ejemplo A lleva B y B lleva A). El renglón con problemas se marca en rojo con el motivo.
+
+### Costo automático y productos que usan el artículo
+
+Si en la pestaña **Fórmula** tildás **Calcular el costo automáticamente**, el costo del artículo es el costo de su fórmula: el campo **Costo** de la pestaña Precios queda bloqueado y se actualiza solo. Si el artículo no tiene insumos ni tareas, el costo no se toca.
+
+Cuando cambia el costo (o el precio) de un insumo, **se recalculan todos los productos que lo usan**, y los que usan a esos, hasta el final de la cadena. Por ejemplo: sube la harina → se recalcula el pan → se recalcula la hamburguesa que lleva ese pan → se recalcula el combo que lleva la hamburguesa.
+
+- Cada producto se recalcula una sola vez y después de sus insumos.
+- La cadena se corta en los productos que no tienen tildado **Calcular el costo automáticamente**.
+- Con el costo nuevo se recalculan los precios: los que salen de una **política de precios**, el precio de venta del maestro si tiene **utilidad** cargada, y el precio de cada **lista** que tiene utilidad propia. Si la utilidad es 0 el precio no se toca.
+- Con el borrador de precios activo, el costo se graba pero los precios nuevos quedan pendientes en el **Borrador de precios**.
+
+Pasa al guardar un artículo, en la **Acción por lote**, al aplicar o deshacer una **Actualización de costos**, al aplicar una **Política de precios** y al aplicar el **Borrador de precios**.
+
+Al guardar desde la ficha un artículo que es insumo de otros, antes aparece **Productos que usan este artículo**, con el costo y el precio de cada producto antes y después. Tocá **Guardar y actualizar N producto(s)** para confirmar o **Cancelar** para no guardar nada.
 
 ## Listas de precios
 
@@ -132,9 +172,29 @@ Con la lista elegida, arriba de los artículos están los botones:
 
 En cada fila, [[bi:sliders]] abre **Todas las clases, oferta y precios por cantidad** de ese artículo.
 
+Si el borrador de precios está activo, el **Aumento %**, el **Redondeo** y los precios que cambiás en una fila quedan pendientes en el **Borrador de precios**: la lista sigue mostrando el precio vigente hasta que se aplique.
+
 ### Borrar una lista
 
 [[bi:trash]] **Borrar lista** (en los datos de la lista) solo funciona si ningún cliente la tiene asignada. Queda registrado en el histórico de precios.
+
+## Borrador de precios
+
+Con el borrador activo (configuración **PreciosArticulosPorBorrador** en SI), **ningún cambio de precio de venta afecta el precio real hasta que se aplica**: los precios nuevos quedan pendientes y se revisan en **Artículos → Borrador de precios**. Es el mismo borrador de Alfa Gestión (Borrador de Cambios de Precios): lo que queda pendiente en un sistema se puede aplicar desde el otro.
+
+Van al borrador los precios que cambian desde la ficha del artículo, la **Acción por lote**, las **Listas de precios** (aumento, redondeo y edición), las **Políticas de precios** y los productos que se recalculan por su **fórmula**. El **costo** no va al borrador: se graba enseguida, como en Alfa Gestión.
+
+### Revisar y aplicar el borrador
+
+1. Entrá en **Artículos → Borrador de precios** (pestaña de arriba).
+2. Buscá por código, descripción o código de barras, y filtrá por **Solo maestro** / **Solo listas** o por el usuario que generó el cambio.
+3. Cada fila muestra dónde cambia el precio (**Maestro** o la lista), el **costo** y el **precio de venta** de antes (tachado) y el nuevo, la **variación** y las otras clases de precio que cambian.
+4. Marcá las filas que querés aplicar. La casilla del título marca toda la página y **Elegir las N del filtro** marca todo lo filtrado.
+5. Tocá [[bi:check2-circle]] **Aplicar** y confirmá. Los precios pasan a ser los reales y las filas salen del borrador.
+
+[[bi:trash]] **Descartar** borra del borrador las filas marcadas sin aplicarlas (no se deshace). [[bi:arrow-clockwise]] **Actualizar** vuelve a leer el borrador.
+
+Un precio en 0 en el borrador no se aplica: se conserva el precio vigente. Si un artículo ya no está en la lista de la fila, la fila aparece atenuada y no se aplica.
 
 ## Configuración de artículos
 
@@ -204,6 +264,8 @@ En **Actualización de costos** se actualizan los costos de los artículos impor
 5. Tocá [[bi:upload]] **Iniciar importación**. Aparece la **Vista previa**; tocá [[bi:box-arrow-right]] **Abrir lote** para revisarlo.
 6. En el lote, revisá cada fila. Las que no encontraron su artículo tienen [[bi:search]] **Buscar**: elegí el artículo con [[bi:check2-circle]] **Elegir artículo** o [[bi:x-circle]] **Descartar fila**.
 7. Marcá las filas que querés aplicar y tocá [[bi:check2-square]] **Aplicar chequeadas**.
+
+Si alguno de los artículos es insumo de otros productos con **Calcular el costo automáticamente**, esos productos se recalculan en el mismo momento (y también al deshacer).
 
 Si te equivocaste, en el lote está [[bi:arrow-counterclockwise]] **Deshacer aplicación**. [[bi:file-earmark-arrow-down]] **Archivo original** baja el archivo que se importó.
 

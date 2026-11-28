@@ -201,15 +201,19 @@ public sealed class ListasPreciosService(ISessionService sessions, IAppUserSessi
                 fila.CantidadOf2, fila.Precio9, fila.CantidadOf3, fila.Precio10);
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
             var id = await IdListaExistenteAsync(cn, tx, idLista, ct);
-            var n = await cn.ExecuteScalarAsync<int>(new CommandDefinition(ActualizarPreciosSql("p.ID = @Id"), ParametrosPrecios(PreciosFila.De(fila), Usuario(), id, fila.Id),
-                tx, cancellationToken: ct));
+            var n = 0;
+            var retenido = await ArticulosService.RetenerPreciosListaAsync(cn, tx, id, Usuario(), async () =>
+                n = await cn.ExecuteScalarAsync<int>(new CommandDefinition(ActualizarPreciosSql("p.ID = @Id"), ParametrosPrecios(PreciosFila.De(fila), Usuario(), id, fila.Id),
+                    tx, cancellationToken: ct)), ct);
             if (n == 0) throw new ReglaException($"El artículo {fila.IdArticulo} ya no está en la lista {id}.");
             await tx.CommitAsync(ct);
-            // Se relee: el trigger redondea a los decimales de la lista.
+            // Se relee: el trigger redondea a los decimales de la lista (con borrador activo, vuelve el precio real sin cambios).
             var p = new DynamicParameters();
             p.Add("IdLista", id); p.Add("IdFila", fila.Id);
             var leidas = await LeerFilasAsync(cn, "p.IdLista = @IdLista AND p.TipoLista = 'V' AND p.ID = @IdFila", p, ct);
-            return leidas.FirstOrDefault() ?? fila;
+            var guardada = leidas.FirstOrDefault() ?? fila;
+            guardada.EnBorrador = retenido.AlBorrador && retenido.Filas > 0;
+            return guardada;
         }, ct);
 
     public Task<ListaPrecioOperacionResultado> QuitarAsync(string idLista, IReadOnlyList<int> ids, CancellationToken ct = default)
@@ -323,14 +327,16 @@ public sealed class ListasPreciosService(ISessionService sessions, IAppUserSessi
                 : "p." + Columna(request.Origen);
             string Nuevo() => $"CASE WHEN @Redondeo > 0 THEN CEILING(ROUND({origen} * @Factor, 4) / @Redondeo) * @Redondeo ELSE {origen} * @Factor END";
             var sets = string.Join(", ", destinos.Select(d => $"p.{Columna(d)} = {Nuevo()}"));
-            var n = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
-                SET NOCOUNT ON;
-                UPDATE p SET {sets}, p.DesdeTrigger = 0, p.USUARIO = @Usuario
-                FROM dbo.V_MA_PRECIOS p
-                LEFT JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = p.IdArticulo
-                WHERE {where} AND ({origen}) > 0;
-                SELECT @@ROWCOUNT;
-                """, p, tx, commandTimeout: TimeoutMasivo, cancellationToken: ct));
+            var n = 0;
+            var retenido = await ArticulosService.RetenerPreciosListaAsync(cn, tx, id, Usuario(), async () =>
+                n = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+                    SET NOCOUNT ON;
+                    UPDATE p SET {sets}, p.DesdeTrigger = 0, p.USUARIO = @Usuario
+                    FROM dbo.V_MA_PRECIOS p
+                    LEFT JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = p.IdArticulo
+                    WHERE {where} AND ({origen}) > 0;
+                    SELECT @@ROWCOUNT;
+                    """, p, tx, commandTimeout: TimeoutMasivo, cancellationToken: ct)), ct);
             await tx.CommitAsync(ct);
             var desc = $"{(request.Porcentaje > 0 ? "+" : "")}{request.Porcentaje.ToString("0.##", CultureInfo.GetCultureInfo("es-AR"))}%";
             await events.LogAuditAsync("ListasPrecios", "Aumento", "V_MA_PRECIOS", id,
@@ -339,7 +345,9 @@ public sealed class ListasPreciosService(ISessionService sessions, IAppUserSessi
             return new ListaPrecioOperacionResultado
             {
                 Filas = n,
-                Mensaje = $"Se actualizaron {n} artículo(s) ({desc})."
+                Mensaje = (retenido.AlBorrador
+                        ? $"Los precios nuevos de {retenido.Filas} artículo(s) ({desc}) quedaron en el borrador de precios: no cambian hasta aplicarlos."
+                        : $"Se actualizaron {n} artículo(s) ({desc}).")
                     + (bloqueadas.Count > 0 ? $" Las clases {string.Join(", ", bloqueadas)} no se tocaron: la lista las copia del maestro." : "")
             };
         }, ct);
@@ -363,14 +371,16 @@ public sealed class ListasPreciosService(ISessionService sessions, IAppUserSessi
             p.Add("Usuario", Usuario());
             var sets = string.Join(", ", clases.Select(c => $"p.{Columna(c)} = CASE WHEN p.{Columna(c)} > 0 THEN CEILING(ROUND(p.{Columna(c)}, 4) / @Multiplo) * @Multiplo ELSE p.{Columna(c)} END"));
             var cambia = string.Join(" OR ", clases.Select(c => $"(p.{Columna(c)} > 0 AND CEILING(ROUND(p.{Columna(c)}, 4) / @Multiplo) * @Multiplo <> p.{Columna(c)})"));
-            var n = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
-                SET NOCOUNT ON;
-                UPDATE p SET {sets}, p.DesdeTrigger = 0, p.USUARIO = @Usuario
-                FROM dbo.V_MA_PRECIOS p
-                LEFT JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = p.IdArticulo
-                WHERE {where} AND ({cambia});
-                SELECT @@ROWCOUNT;
-                """, p, tx, commandTimeout: TimeoutMasivo, cancellationToken: ct));
+            var n = 0;
+            var retenido = await ArticulosService.RetenerPreciosListaAsync(cn, tx, id, Usuario(), async () =>
+                n = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+                    SET NOCOUNT ON;
+                    UPDATE p SET {sets}, p.DesdeTrigger = 0, p.USUARIO = @Usuario
+                    FROM dbo.V_MA_PRECIOS p
+                    LEFT JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = p.IdArticulo
+                    WHERE {where} AND ({cambia});
+                    SELECT @@ROWCOUNT;
+                    """, p, tx, commandTimeout: TimeoutMasivo, cancellationToken: ct)), ct);
             await tx.CommitAsync(ct);
             await events.LogAuditAsync("ListasPrecios", "Redondeo", "V_MA_PRECIOS", id,
                 $"Redondeo a {request.Multiplo} en la lista {id}: {n} artículo(s), clases {string.Join(",", clases)}", new { request.Filtro }, CancellationToken.None);

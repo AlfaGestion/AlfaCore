@@ -136,10 +136,34 @@ public sealed class PoliticasPreciosService(ISessionService sessions, IAppUserSe
         {
             var p = (await LeerAsync(cn, null, codigo, ct)).FirstOrDefault() ?? throw new ReglaException($"La política {codigo.Trim()} no existe.");
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
-            var r = await AplicarCoreAsync(cn, tx, p.Codigo, Usuario(), ct);
+            // Con PreciosArticulosPorBorrador=SI los precios que recalcula la política van al borrador (no cambian hasta aplicarse).
+            var alcance = (await cn.QueryAsync<string>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(IDARTICULO)) FROM dbo.V_MA_ARTICULOS WHERE POLITICAPRECIOS = @Codigo
+                UNION SELECT LTRIM(RTRIM(IdArticulo)) FROM dbo.V_MA_PRECIOS WHERE POLITICAPRECIOS = @Codigo AND TIPOLISTA = 'V';
+                """, new { p.Codigo }, tx, cancellationToken: ct))).ToList();
+            PoliticaPrecioAplicarResultado r = new();
+            var retenido = await ArticulosService.RetenerPreciosArticulosAsync(cn, tx, alcance, Usuario(),
+                async () => r = await AplicarCoreAsync(cn, tx, p.Codigo, Usuario(), ct), ct);
+            if (retenido.AlBorrador)
+                r.Mensaje = retenido.Articulos == 0
+                    ? "Con esta política los precios no cambian."
+                    : $"Los precios nuevos de {retenido.Articulos} artículo(s) quedaron en el borrador de precios: no cambian hasta aplicarlos.";
+            // Fórmulas de producción: los productos que usan estos artículos como insumo (por su costo o por un
+            // precio, ClasePr) se recalculan en la misma transacción.
+            var codigos = (await cn.QueryAsync<string>(new CommandDefinition(
+                "SELECT LTRIM(RTRIM(IDARTICULO)) FROM dbo.V_MA_ARTICULOS WHERE POLITICAPRECIOS = @Codigo;",
+                new { p.Codigo }, tx, cancellationToken: ct))).ToList();
+            var cascada = await ArticulosService.PropagarCostosAsync(cn, tx, codigos, Usuario(), ct);
+            if (cascada.Cambios.Count > 0)
+            {
+                r.ProductosRecalculados = cascada.Cambios.Count;
+                r.Mensaje += $" Además se recalcularon {cascada.Cambios.Count} producto(s) que los usan como insumo"
+                    + (cascada.AlBorrador ? " (precios nuevos al borrador)." : ".");
+            }
             await tx.CommitAsync(ct);
             await events.LogAuditAsync("PoliticasPrecios", "Aplicar", "V_TA_POLITICAPRECIOS", p.Codigo.Trim(),
-                $"Política {p.Codigo.Trim()} aplicada: {r.Articulos} artículo(s), {r.FilasListas} fila(s) de listas", null, CancellationToken.None);
+                $"Política {p.Codigo.Trim()} aplicada: {r.Articulos} artículo(s), {r.FilasListas} fila(s) de listas, {r.ProductosRecalculados} producto(s) por fórmula",
+                null, CancellationToken.None);
             return r;
         }, ct);
 

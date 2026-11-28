@@ -29,6 +29,15 @@ public interface IArticulosService
     /// partida editable, no reserva nada.</summary>
     Task<string> SaveAsync(ArticuloSaveRequest request, CancellationToken ct = default);
 
+    /// <summary>Igual que SaveAsync y además devuelve lo que se recalculó en cascada (productos que usan este
+    /// artículo como insumo con "Calcular costo automáticamente").</summary>
+    Task<ArticuloGuardadoResultado> GuardarConCascadaAsync(ArticuloSaveRequest request, CancellationToken ct = default)
+        => throw new NotSupportedException();
+
+    /// <summary>Simula el grabado (todo se deshace) y devuelve qué productos cambiarían en cascada, para confirmar antes.</summary>
+    Task<ArticuloCascadaResultado> PrevisualizarCascadaAsync(ArticuloSaveRequest request, CancellationToken ct = default)
+        => Task.FromResult(new ArticuloCascadaResultado());
+
     /// <summary>Próximo código numérico libre (MAX(IDARTICULO numérico) + 1), igual que la planilla
     /// legacy (Ma_art.frm) propone al dar de alta. Solo un punto de partida editable -- el usuario
     /// puede sobreescribirlo con cualquier código, existente (para editar) o no (para crear).</summary>
@@ -55,6 +64,19 @@ public interface IArticulosService
     /// (sin resize) como imagen de tamaño completo y como thumbnail, y se marca
     /// V_MA_ARTICULOS.ModificoImagen='S' para que el catálogo invalide su caché.</summary>
     Task UploadImagenAsync(string codigo, byte[] contenido, string extension, CancellationToken ct = default);
+
+    /// <summary>Solapa "Fórmula": insumos y tareas de producción del artículo (V_MA_INSUMOS / V_MA_INSUMOSTAREAS),
+    /// con el valor de cada insumo ya calculado. Vacía si el artículo no tiene fórmula.</summary>
+    Task<ArticuloFormulaDto> GetFormulaAsync(string codigo, CancellationToken ct = default)
+        => Task.FromResult(new ArticuloFormulaDto());
+
+    /// <summary>Completa un renglón de la fórmula (descripción, unidad, valor por unidad, error) sin grabar nada.</summary>
+    Task<ArticuloFormulaInsumoDto> ResolverInsumoAsync(string? codigoProducto, ArticuloFormulaInsumoDto renglon, CancellationToken ct = default)
+        => Task.FromResult(renglon);
+
+    /// <summary>Búsqueda F5 de insumos (artículos activos); en Stock viene el costo para el buscador compartido.</summary>
+    Task<IReadOnlyList<StockMovimientoArticulo>> BuscarInsumosAsync(string texto, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<StockMovimientoArticulo>>([]);
 
     /// <summary>Familias (V_TA_FAMILIAS) para la accion por lote "Asignar familia".</summary>
     Task<IReadOnlyList<ArticuloLookupOptionDto>> GetFamiliasAsync(CancellationToken ct = default)

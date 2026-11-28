@@ -5,7 +5,8 @@ using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
 
-// Acciones por lote del listado de articulos: aumento %, asignar rubro, marca, familia o utilidad.
+// Acciones por lote del listado de articulos: aumento %, asignar rubro, marca, familia, utilidad o
+// destino de preparacion del salon (cocina/barra/barra 2, en TalleDefault).
 // Se graba articulo por articulo (no un UPDATE masivo) por dos motivos:
 //  - TR_BlockMassUpdate_Precios (presente en bases de clientes) rechaza un UPDATE que toque
 //    COSTO/PRECIOS de mas de 50 filas a la vez.
@@ -88,6 +89,12 @@ public sealed partial class ArticulosService
                     if (codigoAsignar is null)
                         throw new InvalidOperationException("Elegi una familia existente.");
                     break;
+                case ArticuloLoteAcciones.DestinoPreparacion:
+                    codigoAsignar = ArticuloDestinoPreparacion.Normalizar(request.Codigo)
+                        ?? throw new InvalidOperationException("Elegi el destino: cocina, barra, barra 2 o ninguno.");
+                    if (!(await LeerColumnasDestinoAsync(cn, token)).TalleDefault)
+                        throw new InvalidOperationException("Esta base no tiene el campo de destino de preparacion (TalleDefault) en los articulos.");
+                    break;
                 default:
                     throw new InvalidOperationException("Elegi la accion a aplicar.");
             }
@@ -98,83 +105,117 @@ public sealed partial class ArticulosService
             var resultado = new ArticuloLoteResultado();
 
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
-            foreach (var codigo in codigos)
+            var cambiaronValor = new List<string>();
+            async Task ProcesarAsync()
             {
-                var art = await cn.QuerySingleOrDefaultAsync<ArticuloLoteFila>(new CommandDefinition("""
-                    SELECT TOP (1) IDARTICULO AS IdArticulo, ISNULL(COSTO, 0) AS Costo,
-                        ISNULL(PRECIO1, 0) AS P1, ISNULL(PRECIO2, 0) AS P2, ISNULL(PRECIO3, 0) AS P3, ISNULL(PRECIO4, 0) AS P4,
-                        ISNULL(PRECIO5, 0) AS P5, ISNULL(PRECIO6, 0) AS P6, ISNULL(PRECIO7, 0) AS P7, ISNULL(PRECIO8, 0) AS P8,
-                        CAST(ISNULL(TasaIVA, 0) AS decimal(9, 4)) AS TasaIva, ISNULL(EXENTO, 0) AS Exento
-                    FROM dbo.V_MA_ARTICULOS WITH (UPDLOCK)
-                    WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;
-                    """, new { Codigo = codigo }, tx, cancellationToken: token));
-                if (art is null)
+                foreach (var codigo in codigos)
                 {
-                    resultado.Observaciones.Add($"{codigo}: ya no existe en la base.");
-                    continue;
-                }
-
-                switch (accion)
-                {
-                    case ArticuloLoteAcciones.Aumento:
+                    var art = await cn.QuerySingleOrDefaultAsync<ArticuloLoteFila>(new CommandDefinition("""
+                        SELECT TOP (1) IDARTICULO AS IdArticulo, ISNULL(COSTO, 0) AS Costo,
+                            ISNULL(PRECIO1, 0) AS P1, ISNULL(PRECIO2, 0) AS P2, ISNULL(PRECIO3, 0) AS P3, ISNULL(PRECIO4, 0) AS P4,
+                            ISNULL(PRECIO5, 0) AS P5, ISNULL(PRECIO6, 0) AS P6, ISNULL(PRECIO7, 0) AS P7, ISNULL(PRECIO8, 0) AS P8,
+                            CAST(ISNULL(TasaIVA, 0) AS decimal(9, 4)) AS TasaIva, ISNULL(EXENTO, 0) AS Exento
+                        FROM dbo.V_MA_ARTICULOS WITH (UPDLOCK)
+                        WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;
+                        """, new { Codigo = codigo }, tx, cancellationToken: token));
+                    if (art is null)
                     {
-                        var p = request.Porcentaje;
-                        var tocaCosto = request.AplicarA != ArticuloLoteAumentoDestino.Precios;
-                        var tocaPrecios = request.AplicarA != ArticuloLoteAumentoDestino.Costo;
-                        decimal Ajustar(decimal v, bool aplica) => aplica ? ArticuloLoteCalculo.Aumentar(v, p, request.Redondeo) : v;
-                        await cn.ExecuteAsync(new CommandDefinition("""
-                            UPDATE dbo.V_MA_ARTICULOS
-                            SET COSTO = @Costo, PRECIO1 = @P1, PRECIO2 = @P2, PRECIO3 = @P3, PRECIO4 = @P4,
-                                PRECIO5 = @P5, PRECIO6 = @P6, PRECIO7 = @P7, PRECIO8 = @P8,
-                                FhUltimoCosto = CASE WHEN @TocaCosto = 1 THEN GETDATE() ELSE FhUltimoCosto END,
-                                DesdeTrigger = 0
-                            WHERE IDARTICULO = @IdArticulo;
-                            """, new
-                        {
-                            art.IdArticulo,
-                            TocaCosto = tocaCosto,
-                            // El costo no se redondea al paso de los precios (puede ser un valor chico).
-                            Costo = tocaCosto ? ArticuloLoteCalculo.Aumentar(art.Costo, p, 0) : art.Costo,
-                            P1 = Ajustar(art.P1, tocaPrecios), P2 = Ajustar(art.P2, tocaPrecios), P3 = Ajustar(art.P3, tocaPrecios),
-                            P4 = Ajustar(art.P4, tocaPrecios), P5 = Ajustar(art.P5, tocaPrecios), P6 = Ajustar(art.P6, tocaPrecios),
-                            P7 = Ajustar(art.P7, tocaPrecios), P8 = Ajustar(art.P8, tocaPrecios)
-                        }, tx, cancellationToken: token));
-                        break;
+                        resultado.Observaciones.Add($"{codigo}: ya no existe en la base.");
+                        continue;
                     }
-                    case ArticuloLoteAcciones.Utilidad:
+
+                    switch (accion)
                     {
-                        if (art.Costo <= 0)
+                        case ArticuloLoteAcciones.Aumento:
                         {
-                            // Sin costo, el precio daria 0: se guarda la utilidad y el precio no se toca.
-                            await cn.ExecuteAsync(new CommandDefinition(
-                                "UPDATE dbo.V_MA_ARTICULOS SET UTILIDAD = @Utilidad WHERE IDARTICULO = @IdArticulo;",
-                                new { art.IdArticulo, Utilidad = (double)request.Utilidad }, tx, cancellationToken: token));
-                            resultado.Observaciones.Add($"{codigo.Trim()}: sin costo cargado, no se recalculo el precio.");
+                            var p = request.Porcentaje;
+                            var tocaCosto = request.AplicarA != ArticuloLoteAumentoDestino.Precios;
+                            var tocaPrecios = request.AplicarA != ArticuloLoteAumentoDestino.Costo;
+                            decimal Ajustar(decimal v, bool aplica) => aplica ? ArticuloLoteCalculo.Aumentar(v, p, request.Redondeo) : v;
+                            await cn.ExecuteAsync(new CommandDefinition("""
+                                UPDATE dbo.V_MA_ARTICULOS
+                                SET COSTO = @Costo, PRECIO1 = @P1, PRECIO2 = @P2, PRECIO3 = @P3, PRECIO4 = @P4,
+                                    PRECIO5 = @P5, PRECIO6 = @P6, PRECIO7 = @P7, PRECIO8 = @P8,
+                                    FhUltimoCosto = CASE WHEN @TocaCosto = 1 THEN GETDATE() ELSE FhUltimoCosto END,
+                                    DesdeTrigger = 0
+                                WHERE IDARTICULO = @IdArticulo;
+                                """, new
+                            {
+                                art.IdArticulo,
+                                TocaCosto = tocaCosto,
+                                // El costo no se redondea al paso de los precios (puede ser un valor chico).
+                                Costo = tocaCosto ? ArticuloLoteCalculo.Aumentar(art.Costo, p, 0) : art.Costo,
+                                P1 = Ajustar(art.P1, tocaPrecios), P2 = Ajustar(art.P2, tocaPrecios), P3 = Ajustar(art.P3, tocaPrecios),
+                                P4 = Ajustar(art.P4, tocaPrecios), P5 = Ajustar(art.P5, tocaPrecios), P6 = Ajustar(art.P6, tocaPrecios),
+                                P7 = Ajustar(art.P7, tocaPrecios), P8 = Ajustar(art.P8, tocaPrecios)
+                            }, tx, cancellationToken: token));
                             break;
                         }
-                        var alicuota = art.TasaIva > 0 ? art.TasaIva : ivaDefault;
-                        var precio = ArticuloLoteCalculo.PrecioDesdeUtilidad(art.Costo, request.Utilidad, conIva && !art.Exento ? alicuota : 0, request.Redondeo);
-                        await cn.ExecuteAsync(new CommandDefinition($"""
-                            UPDATE dbo.V_MA_ARTICULOS
-                            SET UTILIDAD = @Utilidad, PRECIO{claseVenta} = @Precio, DesdeTrigger = 0
-                            WHERE IDARTICULO = @IdArticulo;
-                            """, new { art.IdArticulo, Utilidad = (double)request.Utilidad, Precio = precio }, tx, cancellationToken: token));
-                        break;
+                        case ArticuloLoteAcciones.Utilidad:
+                        {
+                            if (art.Costo <= 0)
+                            {
+                                // Sin costo, el precio daria 0: se guarda la utilidad y el precio no se toca.
+                                await cn.ExecuteAsync(new CommandDefinition(
+                                    "UPDATE dbo.V_MA_ARTICULOS SET UTILIDAD = @Utilidad WHERE IDARTICULO = @IdArticulo;",
+                                    new { art.IdArticulo, Utilidad = (double)request.Utilidad }, tx, cancellationToken: token));
+                                resultado.Observaciones.Add($"{codigo.Trim()}: sin costo cargado, no se recalculo el precio.");
+                                break;
+                            }
+                            var alicuota = art.TasaIva > 0 ? art.TasaIva : ivaDefault;
+                            var precio = ArticuloLoteCalculo.PrecioDesdeUtilidad(art.Costo, request.Utilidad, conIva && !art.Exento ? alicuota : 0, request.Redondeo);
+                            await cn.ExecuteAsync(new CommandDefinition($"""
+                                UPDATE dbo.V_MA_ARTICULOS
+                                SET UTILIDAD = @Utilidad, PRECIO{claseVenta} = @Precio, DesdeTrigger = 0
+                                WHERE IDARTICULO = @IdArticulo;
+                                """, new { art.IdArticulo, Utilidad = (double)request.Utilidad, Precio = precio }, tx, cancellationToken: token));
+                            break;
+                        }
+                        case ArticuloLoteAcciones.Rubro:
+                            await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.V_MA_ARTICULOS SET IDRUBRO = @Valor WHERE IDARTICULO = @IdArticulo;",
+                                new { art.IdArticulo, Valor = codigoAsignar }, tx, cancellationToken: token));
+                            break;
+                        case ArticuloLoteAcciones.Marca:
+                            await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.V_MA_ARTICULOS SET IDTIPO = @Valor WHERE IDARTICULO = @IdArticulo;",
+                                new { art.IdArticulo, Valor = codigoAsignar }, tx, cancellationToken: token));
+                            break;
+                        case ArticuloLoteAcciones.Familia:
+                            await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.V_MA_ARTICULOS SET IdFamilia = @Valor WHERE IDARTICULO = @IdArticulo;",
+                                new { art.IdArticulo, Valor = codigoAsignar }, tx, cancellationToken: token));
+                            break;
+                        case ArticuloLoteAcciones.DestinoPreparacion:
+                            if (!await GrabarDestinoPreparacionAsync(cn, tx, art.IdArticulo, codigoAsignar!, token))
+                            {
+                                resultado.Observaciones.Add($"{codigo}: usa talles, el talle por defecto no se cambio.");
+                                continue;
+                            }
+                            break;
                     }
-                    case ArticuloLoteAcciones.Rubro:
-                        await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.V_MA_ARTICULOS SET IDRUBRO = @Valor WHERE IDARTICULO = @IdArticulo;",
-                            new { art.IdArticulo, Valor = codigoAsignar }, tx, cancellationToken: token));
-                        break;
-                    case ArticuloLoteAcciones.Marca:
-                        await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.V_MA_ARTICULOS SET IDTIPO = @Valor WHERE IDARTICULO = @IdArticulo;",
-                            new { art.IdArticulo, Valor = codigoAsignar }, tx, cancellationToken: token));
-                        break;
-                    case ArticuloLoteAcciones.Familia:
-                        await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.V_MA_ARTICULOS SET IdFamilia = @Valor WHERE IDARTICULO = @IdArticulo;",
-                            new { art.IdArticulo, Valor = codigoAsignar }, tx, cancellationToken: token));
-                        break;
+                    resultado.Actualizados++;
+                    if (accion is ArticuloLoteAcciones.Aumento or ArticuloLoteAcciones.Utilidad)
+                        cambiaronValor.Add(codigo);
                 }
-                resultado.Actualizados++;
+            }
+
+            // Aumento y utilidad cambian precios: con PreciosArticulosPorBorrador=SI van al borrador (el costo sí se graba).
+            if (accion is ArticuloLoteAcciones.Aumento or ArticuloLoteAcciones.Utilidad)
+            {
+                var retenido = await RetenerPreciosArticulosAsync(cn, tx, codigos, UsuarioQueGraba(), ProcesarAsync, token);
+                resultado.PreciosAlBorrador = retenido.AlBorrador;
+                resultado.ArticulosAlBorrador = retenido.Articulos;
+            }
+            else
+            {
+                await ProcesarAsync();
+            }
+
+            // Los productos que usan como insumo a los artículos tocados se recalculan en la misma transacción.
+            if (cambiaronValor.Count > 0)
+            {
+                var cascada = await PropagarCostosAsync(cn, tx, cambiaronValor, UsuarioQueGraba(), token);
+                resultado.ProductosRecalculados = cascada.Cambios.Count;
+                resultado.PreciosAlBorrador |= cascada.AlBorrador && cascada.Cambios.Count > 0;
+                resultado.Observaciones.AddRange(cascada.Observaciones);
             }
             await tx.CommitAsync(token);
 

@@ -1,0 +1,135 @@
+/* Borrador de precios: misma estética que Historial de precios. */
+.bp-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+}
+
+.bp-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8);
+}
+
+.bp-input {
+    min-width: 260px;
+    padding: 7px 10px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    font: inherit;
+}
+
+.bp-input--select {
+    min-width: 180px;
+}
+
+.bp-input:focus {
+    outline: 2px solid var(--alfa-accent);
+    outline-offset: -1px;
+    border-color: transparent;
+}
+
+.bp-aviso {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.bp-panel {
+    min-width: 0;
+    border: 1px solid var(--alfa-border-subtle);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+}
+
+.bp-scroll {
+    overflow-x: auto;
+}
+
+.bp-tabla {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--alfa-font-small);
+}
+
+.bp-tabla th {
+    padding: var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-table-header);
+    color: var(--alfa-text-secondary);
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.bp-tabla td {
+    padding: var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    color: var(--alfa-text-primary);
+    vertical-align: top;
+}
+
+.bp-tabla .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.bp-tabla .col-check {
+    width: 36px;
+}
+
+.bp-tabla tr.is-selected td {
+    background: color-mix(in srgb, var(--alfa-accent) 9%, transparent);
+}
+
+.bp-tabla tr.is-muted td {
+    opacity: .6;
+}
+
+.bp-tabla td.is-sube {
+    color: var(--alfa-danger, #e5484d);
+}
+
+.bp-tabla td.is-baja {
+    color: var(--alfa-success, #30a46c);
+}
+
+.bp-otros {
+    color: var(--alfa-text-secondary) !important;
+    min-width: 160px;
+}
+
+.bp-error {
+    display: block;
+    color: var(--alfa-danger, #e5484d);
+}
+
+.bp-tabla ::deep .bp-antes {
+    color: var(--alfa-text-secondary);
+}
+
+.bp-pie {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-12);
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.bp-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--alfa-accent);
+    font: inherit;
+    cursor: pointer;
+}
+
+.bp-ayuda {
+    margin-left: auto;
+}

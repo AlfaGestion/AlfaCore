@@ -675,3 +675,39 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Vista previa de la cascada de costos (productos que usan el artículo como insumo) */
+.articulos-cascada {
+    max-height: 50vh;
+    overflow: auto;
+    border: 1px solid var(--alfa-border-subtle);
+    border-radius: var(--alfa-radius-md);
+}
+
+.articulos-cascada__tabla {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.articulos-cascada__tabla th,
+.articulos-cascada__tabla td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    text-align: left;
+}
+
+.articulos-cascada__tabla th {
+    position: sticky;
+    top: 0;
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.articulos-cascada__tabla .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}

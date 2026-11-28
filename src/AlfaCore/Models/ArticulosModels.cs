@@ -88,8 +88,15 @@ public class ArticuloSaveRequest
     public decimal TasaIva { get; set; }
     public bool Exento { get; set; }
 
+    /// <summary>Destino de preparación del salón (ver <see cref="ArticuloDestinoPreparacion"/>), guardado en
+    /// V_MA_ARTICULOS.TalleDefault como el salón de Alfa Gestión. null = no se toca al grabar.</summary>
+    public string? DestinoPreparacion { get; set; }
+
     /// <summary>Política de precios (V_TA_POLITICAPRECIOS.CODIGO); vacía = sin política. La aplica la base al grabar.</summary>
     public string PoliticaPrecios { get; set; } = string.Empty;
+
+    /// <summary>Solapa "Fórmula": insumos y tareas de producción (null = la solapa no se abrió, no se toca).</summary>
+    public ArticuloFormulaDto? Formula { get; set; }
 
     /// <summary>Solapa "Listas": listas de ventas del artículo (null = no se tocan las listas).</summary>
     public List<ArticuloListaPrecioDto>? Listas { get; set; }
@@ -110,6 +117,47 @@ public sealed class ArticuloDetailDto : ArticuloSaveRequest
     public bool PideMedidas { get; set; }
     /// <summary>USALOTE: el trigger FMT_V_MA_ARTICULOS lo apaga si se marca Perecedero. Solo lectura.</summary>
     public bool UsaLote { get; set; }
+    /// <summary>UsaTalle: TalleDefault es el talle real (indumentaria), no el destino de preparación. Solo lectura.</summary>
+    public bool UsaTalle { get; set; }
+    /// <summary>ActualizaCosto: el costo sale de la fórmula (el campo Costo queda de solo lectura). Solo lectura.</summary>
+    public bool CostoPorFormula { get; set; }
+}
+
+/// <summary>
+/// Destino de preparación del salón. Se guarda en V_MA_ARTICULOS.TalleDefault, igual que el salón VB6:
+/// C = cocina, B = barra, R = barra 2, vacío = no se prepara (queda servido al enviar la comanda).
+/// Si hay varias letras gana C, después B, después R (mismo orden que PuntoVentaSalonService y
+/// ArticulosService.GetByIdAsync).
+/// </summary>
+public static class ArticuloDestinoPreparacion
+{
+    public const string Ninguno = "";
+    public const string Cocina = "C";
+    public const string Barra = "B";
+    public const string Barra2 = "R";
+
+    /// <summary>Valor de un combo para "sin destino" (los combos no aceptan clave vacía).</summary>
+    public const string OpcionNinguno = "N";
+
+    public static readonly IReadOnlyList<(string Codigo, string Descripcion)> Opciones =
+    [
+        (OpcionNinguno, "Ninguno (no pasa por cocina)"),
+        (Cocina, "Cocina"),
+        (Barra, "Barra"),
+        (Barra2, "Barra 2")
+    ];
+
+    /// <summary>Valida lo elegido (acepta <see cref="OpcionNinguno"/>); null si no es un destino válido.</summary>
+    public static string? Normalizar(string? valor)
+    {
+        var v = (valor ?? string.Empty).Trim().ToUpperInvariant();
+        return v switch
+        {
+            "" or OpcionNinguno => Ninguno,
+            Cocina or Barra or Barra2 => v,
+            _ => null
+        };
+    }
 }
 
 public sealed class ArticuloLookupOptionDto
@@ -138,6 +186,13 @@ public sealed class ArticuloLookupDataDto
     public bool OfertaPorDescuento { get; set; }
     /// <summary>UsaPerecederos=SI (grupo STOCK): se ven y se graban Perecedero y los días de vencimiento.</summary>
     public bool UsaPerecederos { get; set; }
+    /// <summary>La base tiene V_MA_ARTICULOS.TalleDefault: se puede elegir el destino de preparación del salón.</summary>
+    public bool UsaDestinoPreparacion { get; set; }
+    /// <summary>La base tiene V_MA_INSUMOS: se ve la solapa Fórmula.</summary>
+    public bool UsaFormula { get; set; }
+    /// <summary>Cfg UsaTareasEnArticulos=SI: la fórmula tiene grilla de tareas (como Ma_art.frm).</summary>
+    public bool UsaTareas { get; set; }
+    public List<ArticuloTareaOptionDto> Tareas { get; set; } = [];
 }
 
 public sealed class ArticuloViewSettingsDto
@@ -155,6 +210,7 @@ public static class ArticuloLoteAcciones
     public const string Marca = "marca";
     public const string Familia = "familia";
     public const string Utilidad = "utilidad";
+    public const string DestinoPreparacion = "destino";
 }
 
 /// <summary>Sobre que se aplica el aumento por porcentaje.</summary>
@@ -175,7 +231,7 @@ public sealed class ArticuloLoteRequest
     public string AplicarA { get; set; } = ArticuloLoteAumentoDestino.CostoYPrecios;
     /// <summary>Aumento/utilidad: redondear los precios a este paso (0 = sin redondeo, 2 decimales).</summary>
     public decimal Redondeo { get; set; }
-    /// <summary>Rubro, marca o familia a asignar.</summary>
+    /// <summary>Rubro, marca o familia a asignar; en destino de preparación, C/B/R o N (ninguno).</summary>
     public string Codigo { get; set; } = string.Empty;
     /// <summary>Utilidad % a asignar.</summary>
     public decimal Utilidad { get; set; }
@@ -184,6 +240,12 @@ public sealed class ArticuloLoteRequest
 public sealed class ArticuloLoteResultado
 {
     public int Actualizados { get; set; }
+    /// <summary>Productos recalculados en cascada por usar como insumo a los artículos tocados (fórmulas).</summary>
+    public int ProductosRecalculados { get; set; }
+    /// <summary>Los precios nuevos quedaron en el borrador de precios (PreciosArticulosPorBorrador=SI).</summary>
+    public bool PreciosAlBorrador { get; set; }
+    /// <summary>Artículos del lote con precios nuevos pendientes en el borrador.</summary>
+    public int ArticulosAlBorrador { get; set; }
     /// <summary>Articulos que no se pudieron cambiar del todo (ej. utilidad sin costo), con el motivo.</summary>
     public List<string> Observaciones { get; set; } = [];
 }
